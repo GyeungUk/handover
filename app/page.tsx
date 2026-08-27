@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { createContext, useContext, useMemo, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 
 type Task = { title: string; start: number; duration: number; note: string };
 type Person = { id: string; name: string; role: string; initial: string; tasks: Task[] };
@@ -9,9 +9,29 @@ type View = { type: 'home' } | { type: 'all' } | { type: 'team'; teamId: string 
 
 const months = ['3월','4월','5월','6월','7월','8월','9월','10월','11월','12월','1월','2월'];
 
+type Today = { week: number | null; month: number | null; day: number | null };
+const TodayContext = createContext<Today>({ week: null, month: null, day: null });
+const useToday = () => useContext(TodayContext);
+
+const noToday: Today = { week: null, month: null, day: null };
+
+/** Locate a real date inside the 2026.03 — 2027.02 academic year (48 weeks, 4 per month). */
+function locateToday(now: Date): Today {
+  if (now < new Date(2026, 2, 1) || now >= new Date(2027, 2, 1)) return noToday;
+  const month = (now.getMonth() + 10) % 12;
+  const weekOfMonth = Math.min(3, Math.floor((now.getDate() - 1) / 7));
+  return { week: month * 4 + weekOfMonth, month, day: now.getDate() };
+}
+
+/* the marker resolves on the client only, so the server and client first paint match */
+let clientToday: Today | null = null;
+const subscribeToday = () => () => {};
+const readToday = () => (clientToday ??= locateToday(new Date()));
+const readServerToday = () => noToday;
+
 const teams: Team[] = [
   {
-    id: 'management', title: '유학생관리팀', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#c95350', soft: '#fae9e7',
+    id: 'management', title: '유학생관리팀', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#b8544c', soft: '#f7ebe9',
     description: '유학생의 체류부터 학사·생활까지 안정적인 캠퍼스 생활을 지원합니다.',
     people: [
       { id: 'minseo', name: '박민서', role: '체류·비자 관리', initial: '박', tasks: [
@@ -35,7 +55,7 @@ const teams: Team[] = [
     ],
   },
   {
-    id: 'recruitment', title: '유학생유치팀', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#df8a3d', soft: '#fff0df',
+    id: 'recruitment', title: '유학생유치팀', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#b07d34', soft: '#f8f0e2',
     description: '전 세계의 우수한 학생과 대학을 연결하고 입학 전 과정을 설계합니다.',
     people: [
       { id: 'seoyeon', name: '김서연', role: '입학전형 기획', initial: '김', tasks: [
@@ -59,7 +79,7 @@ const teams: Team[] = [
     ],
   },
   {
-    id: 'exchange', title: '교류팀', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#244764', soft: '#e6edf3',
+    id: 'exchange', title: '교류팀', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#3d6a92', soft: '#e9eff5',
     description: '협정대학 네트워크를 바탕으로 파견·초청 교류의 전 과정을 운영합니다.',
     people: [
       { id: 'yujin', name: '강유진', role: '파견 교환학생', initial: '강', tasks: [
@@ -83,7 +103,7 @@ const teams: Team[] = [
     ],
   },
   {
-    id: 'language', title: '한국어교육원', short: '한국어교육원', english: 'KOREAN LANGUAGE', mark: '04', color: '#d57489', soft: '#f9e9ee',
+    id: 'language', title: '한국어교육원', short: '한국어교육원', english: 'KOREAN LANGUAGE', mark: '04', color: '#4c7f72', soft: '#e8f1ee',
     description: '한국어 정규과정과 문화 프로그램으로 학습자의 성장과 적응을 돕습니다.',
     people: [
       { id: 'hyejin', name: '윤혜진', role: '정규과정 운영', initial: '윤', tasks: [
@@ -109,6 +129,25 @@ const teams: Team[] = [
 ];
 
 const allPeople = teams.flatMap((team) => team.people.map((person) => ({ team, person })));
+
+/** How many of the 12 members are occupied in each of the 48 weeks. */
+const weekLoad = Array.from({ length: 48 }, (_, week) =>
+  allPeople.filter(({ person }) => person.tasks.some((task) => week >= task.start && week < task.start + task.duration)).length);
+const peakLoad = Math.max(...weekLoad);
+
+/** Merge a person's overlapping tasks into continuous busy stretches. */
+function busyRuns(person: Person) {
+  const busy = Array.from({ length: 48 }, (_, week) => person.tasks.some((task) => week >= task.start && week < task.start + task.duration));
+  const runs: { start: number; duration: number }[] = [];
+  let week = 0;
+  while (week < 48) {
+    if (!busy[week]) { week += 1; continue; }
+    const start = week;
+    while (week < 48 && busy[week]) week += 1;
+    runs.push({ start, duration: week - start });
+  }
+  return runs;
+}
 
 function TeamBadge({ team }: { team: Team }) {
   return <span className="team-dot" style={{ '--team': team.color } as CSSProperties}>{team.mark}</span>;
@@ -137,15 +176,28 @@ function AppHeader({ onHome, onSearch, onLogout, compact = false }: { onHome: ()
 
 function Landing({ onOpen }: { onOpen: (id: string) => void }) {
   const spaces = [
-    { id: 'all', eyebrow: 'ALL TEAMS', title: '국제팀 전체', description: '4개 팀의 업무 밀도와 연간 일정을 한눈에 살펴보세요.', count: '12명', tone: 'navy', mark: 'HQ' },
-    ...teams.map((team) => ({ id: team.id, eyebrow: team.english, title: team.title, description: team.description, count: '3명', tone: team.id, mark: team.mark })),
+    { id: 'all', eyebrow: 'ALL TEAMS', title: '국제팀 전체', description: '4개 팀의 업무 밀도와 연간 일정을 한눈에 살펴보세요.', count: '12명', accent: '#e0a94e', mark: 'HQ' },
+    ...teams.map((team) => ({ id: team.id, eyebrow: team.english, title: team.title, description: team.description, count: '3명', accent: team.color, mark: team.mark })),
   ];
   return <>
     <section className="hero" id="top">
-      <div className="hero-copy"><div className="semester-pill"><span /> 2026학년도 업무 캘린더</div><p className="kicker">WORK CONTINUITY, MADE CLEAR</p><h1>이어지는 업무,<br /><em>한눈에 보이는 흐름.</em></h1><p className="hero-description">국제처 구성원의 연간 업무를 한곳에서 확인하고,<br className="desktop-break" /> 빈틈없는 인수인계를 시작하세요.</p><div className="hero-summary"><div><strong>4</strong><span>운영 팀</span></div><i /><div><strong>12</strong><span>담당자</span></div><i /><div><strong>48</strong><span>주간 흐름</span></div></div></div>
-      <div className="hero-visual" aria-hidden="true"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="orbital-card card-a"><b>03</b><span>학기 시작</span></div><div className="orbital-card card-b"><b>08</b><span>집중 업무</span></div><div className="orbital-card card-c"><b>12</b><span>입학 전형</span></div><div className="visual-center"><span>2026</span><strong>WORK<br />FLOW</strong><small>MAR — FEB</small></div><div className="week-lines lines-a">{Array.from({ length: 8 }, (_, i) => <i key={i} />)}</div><div className="week-lines lines-b">{Array.from({ length: 6 }, (_, i) => <i key={i} />)}</div></div>
+      <div className="hero-copy"><div className="semester-pill"><span /> 2026학년도 업무 캘린더</div><p className="kicker eyebrow">WORK CONTINUITY, MADE CLEAR</p><h1>이어지는 업무,<br /><em>한눈에 보이는 흐름.</em></h1><p className="hero-description">국제처 구성원의 연간 업무를 한곳에서 확인하고,<br className="desktop-break" /> 빈틈없는 인수인계를 시작하세요.</p><div className="hero-summary"><div><strong>4</strong><span>운영 팀</span></div><i /><div><strong>12</strong><span>담당자</span></div><i /><div><strong>48</strong><span>주간 흐름</span></div></div></div>
+      <div className="hero-visual" aria-hidden="true">
+        <div className="dial">
+          <div className="dial-ring" />
+          <div className="dial-ring inner" />
+          <div className="dial-ticks">{weekLoad.map((load, week) => {
+            const ratio = load / peakLoad;
+            return <i key={week} style={{ '--i': week, '--len': `${8 + ratio * 23}px`, '--tick': load === 0 ? 'rgba(23,26,31,.1)' : ratio === 1 ? '#c9922f' : `rgba(20,29,43,${(0.22 + ratio * 0.58).toFixed(2)})` } as CSSProperties} />;
+          })}</div>
+          <div className="dial-core"><span>2026</span><strong>WORK<br />FLOW</strong><small>MAR — FEB</small></div>
+        </div>
+        <div className="orbital-card card-a"><b>03</b><span>학기 시작</span></div>
+        <div className="orbital-card card-b"><b>08</b><span>집중 업무</span></div>
+        <div className="orbital-card card-c"><b>12</b><span>입학 전형</span></div>
+      </div>
     </section>
-    <section className="spaces-section" aria-labelledby="spaces-title"><div className="section-heading"><div><p>SELECT WORKSPACE</p><h2 id="spaces-title">어디서 시작할까요?</h2></div><p className="section-note">파트를 선택하면 해당 팀의 연간 업무 흐름을 볼 수 있습니다.</p></div><div className="spaces-grid">{spaces.map((space, index) => <button className={`space-card ${space.id === 'all' ? 'featured' : ''}`} data-tone={space.tone} key={space.id} type="button" onClick={() => onOpen(space.id)}><div className="space-card-top"><span className="card-mark">{space.mark}</span><span className="card-arrow">↗</span></div><div className="space-card-copy"><p>{space.eyebrow}</p><h3>{space.title}</h3><span>{space.description}</span></div><div className="space-card-footer"><span>{space.id === 'all' ? '전체 구성원' : '담당자'}</span><strong>{space.count}</strong><span className="mini-bars" aria-hidden="true">{[0,1,2,3].map((bar) => <i key={bar} className={`b${(bar + index) % 4}`} />)}</span></div></button>)}</div></section>
+    <section className="spaces-section" aria-labelledby="spaces-title"><div className="section-heading"><div><p>SELECT WORKSPACE</p><h2 id="spaces-title">어디서 시작할까요?</h2></div><p className="section-note">파트를 선택하면 해당 팀의 연간 업무 흐름을 볼 수 있습니다.</p></div><div className="spaces-grid">{spaces.map((space, index) => <button className={`space-card ${space.id === 'all' ? 'featured' : ''}`} style={{ '--accent': space.accent } as CSSProperties} key={space.id} type="button" onClick={() => onOpen(space.id)}><div className="space-card-top"><span className="card-mark">{space.mark}</span><span className="card-arrow">↗</span></div><div className="space-card-copy"><p>{space.eyebrow}</p><h3>{space.title}</h3><span>{space.description}</span></div><div className="space-card-footer"><span>{space.id === 'all' ? '전체 구성원' : '담당자'}</span><strong>{space.count}</strong><span className="mini-bars" aria-hidden="true">{[0,1,2,3].map((bar) => <i key={bar} className={`b${(bar + index) % 4}`} />)}</span></div></button>)}</div></section>
     <footer><span>© 2026 GLOBAL AFFAIRS OFFICE</span><span>업무가 사람을 따라 자연스럽게 이어지도록.</span></footer>
   </>;
 }
@@ -154,13 +206,34 @@ function CalendarHeader({ label = '2026. 03 — 2027. 02' }: { label?: string })
   return <div className="calendar-tools"><button type="button" aria-label="이전 연도">‹</button><strong>{label}</strong><button type="button" aria-label="다음 연도">›</button><span className="today-chip">TODAY</span></div>;
 }
 
+/** 48 numbered cells (1·2·3·4 per month) forming the week ruler of one row. */
+function WeekGrid() {
+  return <>{Array.from({ length: 48 }, (_, index) => <i className={`week-cell ${index % 4 === 0 ? 'month-start' : ''}`} key={index}>{index % 4 + 1}</i>)}</>;
+}
+
+/** Wraps the header + rows so the this-week column can run through all of them at once. */
+function CalendarBody({ children }: { children: ReactNode }) {
+  const { week } = useToday();
+  return <div className="calendar-body">
+    {children}
+    {week !== null && <span className="today-column" style={{ '--start': week } as CSSProperties} />}
+  </div>;
+}
+
 function WeekHeader({ lead }: { lead: string }) {
-  return <div className="year-grid month-grid"><div className="grid-lead">{lead}</div>{months.map((month) => <div className="month-label" key={month}>{month}</div>)}</div>;
+  return <div className="month-grid">
+    <div className="grid-lead">{lead}</div>
+    <div className="month-head">
+      <div className="month-labels">{months.map((month) => <div className="month-label" key={month}>{month}</div>)}</div>
+    </div>
+  </div>;
 }
 
 function BusyCells({ person, color, onPerson }: { person: Person; color: string; onPerson?: () => void }) {
-  const busy = Array.from({ length: 48 }, (_, index) => person.tasks.some((task) => index >= task.start && index < task.start + task.duration));
-  return <div className="year-grid person-week-row"><button className="person-cell" type="button" onClick={onPerson}><span className="person-avatar" style={{ background: color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><i>›</i></button>{busy.map((isBusy, index) => <span className={`week-cell ${isBusy ? 'busy' : ''}`} style={isBusy ? { background: color } : undefined} key={index}><em>{(index % 4) + 1}</em></span>)}</div>;
+  return <div className="person-week-row">
+    <button className="person-cell" type="button" onClick={onPerson}><span className="person-avatar" style={{ background: color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><i>›</i></button>
+    <div className="task-timeline"><WeekGrid />{busyRuns(person).map((run) => <span className="load-bar" key={run.start} style={{ '--start': run.start, '--duration': run.duration, background: color } as CSSProperties} title={`${months[Math.floor(run.start / 4)]}부터 ${run.duration}주 연속 업무`} />)}</div>
+  </div>;
 }
 
 function WorkspaceHead({ eyebrow, title, description, onHome, tools = true }: { eyebrow: string; title: string; description: string; onHome: () => void; tools?: boolean }) {
@@ -170,21 +243,21 @@ function WorkspaceHead({ eyebrow, title, description, onHome, tools = true }: { 
 function AllTeams({ onHome, onTeam, onPerson }: { onHome: () => void; onTeam: (id: string) => void; onPerson: (teamId: string, personId: string) => void }) {
   return <main className="workspace-page">
     <WorkspaceHead eyebrow="ALL TEAMS" title="국제팀 전체 업무 흐름" description="12명의 연간 업무 밀도를 주 단위로 한눈에 확인하세요." onHome={onHome} />
-    <div className="legend-row"><span><i className="legend-empty" />여유</span>{teams.map((team) => <span key={team.id}><i style={{ background: team.color }} />{team.title}</span>)}<small>각 칸은 1주를 의미합니다.</small></div>
+    <div className="legend-row"><span><i className="legend-empty" />여유</span>{teams.map((team) => <span key={team.id}><i style={{ background: team.color }} />{team.title}</span>)}<span><i className="legend-today" />이번 주</span><small>각 칸은 1주를 의미합니다.</small></div>
     <div className="overview-layout">
       <aside className="org-rail"><div className="org-emblem"><span>국제처</span><small>GLOBAL<br />AFFAIRS</small></div><div className="org-line" /><p>4개 팀</p><b>12</b><span>MEMBERS</span></aside>
-      <section className="calendar-card overview-calendar"><WeekHeader lead="팀 / 담당자" />
+      <section className="calendar-card overview-calendar"><CalendarBody><WeekHeader lead="팀 / 담당자" />
         {teams.map((team) => <div className="overview-team" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
           <button className="team-strip" type="button" onClick={() => onTeam(team.id)}><TeamBadge team={team} /><span><b>{team.title}</b><small>{team.english}</small></span><em>팀으로 보기</em><i>↗</i></button>
           {team.people.map((person) => <BusyCells key={person.id} person={person} color={team.color} onPerson={() => onPerson(team.id, person.id)} />)}
         </div>)}
-      </section>
+      </CalendarBody></section>
     </div>
   </main>;
 }
 
 function TaskRow({ person, team, onPerson, onTask }: { person: Person; team: Team; onPerson: () => void; onTask: (task: Task, person: Person) => void }) {
-  return <div className="task-person-row"><button className="team-person-card" type="button" onClick={onPerson}><span className="person-avatar large" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><i>›</i></button><div className="task-timeline">{Array.from({ length: 48 }, (_, index) => <i className={index % 4 === 0 ? 'month-start' : ''} key={index} />)}{person.tasks.map((task) => <button className="task-bar" key={`${task.title}-${task.start}`} style={{ '--start': task.start, '--duration': task.duration, '--team': team.color } as CSSProperties} type="button" onClick={() => onTask(task, person)} title={task.title}><b>{task.title}</b><span>{months[Math.floor(task.start / 4)]} {task.start % 4 + 1}주 — {months[Math.floor(Math.min(47, task.start + task.duration - 1) / 4)]}</span></button>)}</div></div>;
+  return <div className="task-person-row"><button className="team-person-card" type="button" onClick={onPerson}><span className="person-avatar large" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><i>›</i></button><div className="task-timeline"><WeekGrid />{person.tasks.map((task) => <button className="task-bar" key={`${task.title}-${task.start}`} style={{ '--start': task.start, '--duration': task.duration, '--team': team.color } as CSSProperties} type="button" onClick={() => onTask(task, person)} title={task.title}><b>{task.title}</b>{task.duration >= 4 && <span>{months[Math.floor(task.start / 4)]} · {task.duration}주</span>}</button>)}</div></div>;
 }
 
 function TeamView({ team, onHome, onAll, onTeam, onPerson, onTask }: { team: Team; onHome: () => void; onAll: () => void; onTeam: (id: string) => void; onPerson: (id: string) => void; onTask: (task: Task, person: Person) => void }) {
@@ -193,13 +266,16 @@ function TeamView({ team, onHome, onAll, onTeam, onPerson, onTask }: { team: Tea
     <WorkspaceHead eyebrow={team.english} title={team.title} description={team.description} onHome={onHome} />
     <nav className="team-switcher" aria-label="팀 전환"><button type="button" onClick={onAll}>전체</button>{teams.map((item) => <button type="button" className={item.id === team.id ? 'active' : ''} onClick={() => onTeam(item.id)} key={item.id}><i style={{ background: item.color }} />{item.short}</button>)}</nav>
     <section className="team-summary"><div className="team-summary-main"><TeamBadge team={team} /><span><small>TEAM WORKLOAD</small><strong>{team.title}</strong></span></div><div><strong>3</strong><span>담당자</span></div><div><strong>{team.people.reduce((sum, p) => sum + p.tasks.length, 0)}</strong><span>주요 업무</span></div><div><strong>{busyWeeks}</strong><span>집중 주간</span></div><p><i /> 색상 막대를 누르면 업무 설명을 볼 수 있습니다.</p></section>
-    <section className="calendar-card team-calendar"><WeekHeader lead="담당자 / 역할" />{team.people.map((person) => <TaskRow key={person.id} person={person} team={team} onPerson={() => onPerson(person.id)} onTask={onTask} />)}</section>
+    <section className="calendar-card team-calendar"><CalendarBody><WeekHeader lead="담당자 / 역할" />{team.people.map((person) => <TaskRow key={person.id} person={person} team={team} onPerson={() => onPerson(person.id)} onTask={onTask} />)}</CalendarBody></section>
     <section className="handover-note"><span>HANDOVER NOTE</span><p><b>팀 인수인계 포인트</b> 업무 막대가 겹치는 시기는 팀 전체의 업무가 집중되는 구간입니다. 해당 담당자를 눌러 세부 일정과 준비사항을 확인하세요.</p><button type="button">인수인계 메모 보기 <i>→</i></button></section>
   </main>;
 }
 
-function AnnualPersonCalendar({ person, team }: { person: Person; team: Team }) {
-  return <section className="person-annual calendar-card"><div className="person-calendar-title"><div><small>ANNUAL FLOW</small><h2>연간 일정</h2></div><CalendarHeader /></div><WeekHeader lead="연간 주요 업무" /><div className="person-year-track"><div className="year-track-lead"><span className="person-avatar" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>총 {person.tasks.length}개 주요 업무</small></span></div><div className="task-timeline large-track">{Array.from({ length: 48 }, (_, index) => <i className={index % 4 === 0 ? 'month-start' : ''} key={index} />)}{person.tasks.map((task) => <div className="task-bar" key={task.title} style={{ '--start': task.start, '--duration': task.duration, '--team': team.color } as CSSProperties}><b>{task.title}</b></div>)}</div></div></section>;
+function AnnualPersonCalendar({ person, team, monthIndex, onSelectMonth }: { person: Person; team: Team; monthIndex: number; onSelectMonth: (month: number) => void }) {
+  return <section className="person-annual calendar-card"><div className="person-calendar-title"><div><small>ANNUAL FLOW</small><h2>연간 일정</h2></div><CalendarHeader /></div><CalendarBody><WeekHeader lead="연간 주요 업무" /><div className="person-year-track"><div className="year-track-lead"><span className="person-avatar" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>총 {person.tasks.length}개 주요 업무</small></span></div><div className="task-timeline large-track"><WeekGrid />{person.tasks.map((task) => {
+    const taskMonth = Math.floor(task.start / 4);
+    return <button className={`task-bar ${taskMonth === monthIndex ? 'is-active' : ''}`} key={task.title} style={{ '--start': task.start, '--duration': task.duration, '--team': team.color } as CSSProperties} type="button" onClick={() => onSelectMonth(taskMonth)} title={`${task.title} · 누르면 ${months[taskMonth]} 월간 일정으로 이동합니다`}><b>{task.title}</b>{task.duration >= 4 && <span>{months[taskMonth]} · {task.duration}주</span>}</button>;
+  })}</div></div></CalendarBody></section>;
 }
 
 function getCalendarDays(monthIndex: number) {
@@ -210,18 +286,19 @@ function getCalendarDays(monthIndex: number) {
   return { year, realMonth, cells: [...Array(first).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)] as (number | null)[] };
 }
 
-function MonthCalendar({ person, team, monthIndex, setMonthIndex, onTask }: { person: Person; team: Team; monthIndex: number; setMonthIndex: (n: number) => void; onTask: (task: Task, person: Person) => void }) {
+function MonthCalendar({ person, team, monthIndex, setMonthIndex, onTask }: { person: Person; team: Team; monthIndex: number; setMonthIndex: Dispatch<SetStateAction<number>>; onTask: (task: Task, person: Person) => void }) {
+  const today = useToday();
   const calendar = getCalendarDays(monthIndex);
   const monthTasks = person.tasks.filter((task) => Math.floor(task.start / 4) <= monthIndex && Math.floor((task.start + task.duration - 1) / 4) >= monthIndex);
   const taskDays = monthTasks.map((task, index) => ({ task, day: Math.min(27, 3 + (task.start % 4) * 7 + index * 2) }));
-  return <section className="month-section"><div className="person-calendar-title"><div><small>MONTHLY DETAIL</small><h2>월간 일정</h2></div><div className="month-nav"><button type="button" onClick={() => setMonthIndex((monthIndex + 11) % 12)}>‹</button><strong>{calendar.year}. {String(calendar.realMonth).padStart(2, '0')}</strong><button type="button" onClick={() => setMonthIndex((monthIndex + 1) % 12)}>›</button></div></div><div className="monthly-layout"><div className="monthly-calendar"><div className="weekday-row">{['일','월','화','수','목','금','토'].map((day) => <span key={day}>{day}</span>)}</div><div className="date-grid">{calendar.cells.map((day, index) => <div className={`date-cell ${day === 17 && monthIndex === 0 ? 'today' : ''}`} key={`${day}-${index}`}>{day && <><span>{day}</span>{taskDays.filter((entry) => day >= entry.day && day < entry.day + Math.max(2, Math.min(5, entry.task.duration))).map((entry) => <button style={{ background: team.soft, color: team.color, borderColor: team.color }} type="button" onClick={() => onTask(entry.task, person)} key={entry.task.title}>{entry.task.title}</button>)}</>}</div>)}</div></div><aside className="month-agenda"><div><small>{months[monthIndex].replace('월','')}</small><span>MONTH</span></div><h3>{months[monthIndex]} 주요 일정</h3>{monthTasks.length ? monthTasks.map((task) => <button type="button" onClick={() => onTask(task, person)} key={task.title}><i style={{ background: team.color }} /><span><b>{task.title}</b><small>{task.note}</small></span><em>›</em></button>) : <p className="empty-agenda">등록된 집중 업무가 없습니다.<br />정기 업무를 진행하는 기간입니다.</p>}<div className="agenda-tip">일정 막대를 누르면 상세 메모를 확인할 수 있어요.</div></aside></div></section>;
+  return <section className="month-section"><div className="person-calendar-title"><div><small>MONTHLY DETAIL</small><h2>월간 일정</h2></div><div className="month-nav"><button type="button" onClick={() => setMonthIndex((current) => (current + 11) % 12)}>‹</button><strong>{calendar.year}. {String(calendar.realMonth).padStart(2, '0')}</strong><button type="button" onClick={() => setMonthIndex((current) => (current + 1) % 12)}>›</button></div></div><div className="monthly-layout"><div className="monthly-calendar"><div className="weekday-row">{['일','월','화','수','목','금','토'].map((day) => <span key={day}>{day}</span>)}</div><div className="date-grid">{calendar.cells.map((day, index) => <div className={`date-cell ${day !== null && day === today.day && monthIndex === today.month ? 'today' : ''}`} key={`${day}-${index}`}>{day && <><span>{day}</span>{taskDays.filter((entry) => day >= entry.day && day < entry.day + Math.max(2, Math.min(5, entry.task.duration))).map((entry) => <button style={{ background: team.soft, color: team.color, borderColor: team.color }} type="button" onClick={() => onTask(entry.task, person)} key={entry.task.title}>{entry.task.title}</button>)}</>}</div>)}</div></div><aside className="month-agenda"><div><small>{months[monthIndex].replace('월','')}</small><span>MONTH</span></div><h3>{months[monthIndex]} 주요 일정</h3>{monthTasks.length ? monthTasks.map((task) => <button type="button" onClick={() => onTask(task, person)} key={task.title}><i style={{ background: team.color }} /><span><b>{task.title}</b><small>{task.note}</small></span><em>›</em></button>) : <p className="empty-agenda">등록된 집중 업무가 없습니다.<br />정기 업무를 진행하는 기간입니다.</p>}<div className="agenda-tip">일정 막대를 누르면 상세 메모를 확인할 수 있어요.</div></aside></div></section>;
 }
 
 function PersonView({ team, person, onHome, onTeam, onTask }: { team: Team; person: Person; onHome: () => void; onTeam: () => void; onTask: (task: Task, person: Person) => void }) {
   const [monthIndex, setMonthIndex] = useState(0);
   return <main className="workspace-page person-page" style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
-    <div className="person-hero"><div className="person-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span><button type="button" onClick={onTeam}>{team.title}</button><span>/</span><small>{person.name}</small></div><div className="person-identity"><span className="person-avatar xlarge" style={{ background: team.color }}>{person.initial}</span><div><span className="role-pill" style={{ color: team.color, background: team.soft }}>{person.role}</span><h1>{person.name} <small>담당자</small></h1><p>{team.title} · 2026학년도 업무 캘린더</p></div></div><div className="person-stats"><div><small>주요 업무</small><strong>{person.tasks.length}</strong><span>건</span></div><div><small>집중 업무기간</small><strong>{person.tasks.reduce((sum, task) => sum + task.duration, 0)}</strong><span>주</span></div><div><small>다음 일정</small><strong>{months[Math.floor(person.tasks[0].start / 4)]}</strong><span>{person.tasks[0].title}</span></div></div></div>
-    <AnnualPersonCalendar person={person} team={team} />
+    <div className="person-hero"><div className="person-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span><button type="button" onClick={onTeam}>{team.title}</button><span>/</span><small>{person.name}</small></div><div className="person-topline"><div className="person-identity"><span className="person-avatar xlarge" style={{ background: team.color }}>{person.initial}</span><div><span className="role-pill" style={{ color: team.color, background: team.soft }}>{person.role}</span><h1>{person.name} <small>담당자</small></h1><p>{team.title} · 2026학년도 업무 캘린더</p></div></div><div className="person-stats"><div><small>주요 업무</small><strong>{person.tasks.length}</strong><span>건</span></div><div><small>집중 업무기간</small><strong>{person.tasks.reduce((sum, task) => sum + task.duration, 0)}</strong><span>주</span></div><div><small>다음 일정</small><strong>{months[Math.floor(person.tasks[0].start / 4)]}</strong><span>{person.tasks[0].title}</span></div></div></div></div>
+    <AnnualPersonCalendar person={person} team={team} monthIndex={monthIndex} onSelectMonth={setMonthIndex} />
     <MonthCalendar person={person} team={team} monthIndex={monthIndex} setMonthIndex={setMonthIndex} onTask={onTask} />
   </main>;
 }
@@ -244,6 +321,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
 
 export default function Home() {
   const [view, setView] = useState<View>({ type: 'home' });
+  const today = useSyncExternalStore(subscribeToday, readToday, readServerToday);
   const [loggedIn, setLoggedIn] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [taskDetail, setTaskDetail] = useState<{ task: Task; person: Person; team: Team } | null>(null);
@@ -253,7 +331,7 @@ export default function Home() {
   const selectedTeam = view.type === 'team' || view.type === 'person' ? teams.find((team) => team.id === view.teamId)! : null;
   const selectedPerson = view.type === 'person' ? selectedTeam!.people.find((person) => person.id === view.personId)! : null;
   const showTask = (task: Task, person: Person) => { const team = teams.find((item) => item.people.some((member) => member.id === person.id))!; setTaskDetail({ task, person, team }); };
-  return <div className={`site-shell ${view.type !== 'home' ? 'dashboard-shell' : ''}`}>
+  return <TodayContext.Provider value={today}><div className={`site-shell ${view.type !== 'home' ? 'dashboard-shell' : ''}`}>
     <AppHeader compact={view.type !== 'home'} onHome={() => setView({ type: 'home' })} onSearch={() => setSearchOpen(true)} onLogout={() => { setLoggedIn(false); setView({ type: 'home' }); }} />
     {view.type === 'home' && <Landing onOpen={(id) => id === 'all' ? setView({ type: 'all' }) : openTeam(id)} />}
     {view.type === 'all' && <AllTeams onHome={() => setView({ type: 'home' })} onTeam={openTeam} onPerson={openPerson} />}
@@ -261,5 +339,5 @@ export default function Home() {
     {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => setView({ type: 'home' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} />}
     {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} onPerson={(teamId, personId) => { openPerson(teamId, personId); setSearchOpen(false); }} />}
     {taskDetail && <TaskModal {...taskDetail} onClose={() => setTaskDetail(null)} />}
-  </div>;
+  </div></TodayContext.Provider>;
 }
