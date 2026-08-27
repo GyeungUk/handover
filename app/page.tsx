@@ -1,11 +1,12 @@
 'use client';
 
-import { createContext, useContext, useMemo, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import HandoverWorkspace from './HandoverWorkspace';
 
 type Task = { title: string; start: number; duration: number; note: string };
 type Person = { id: string; name: string; role: string; initial: string; tasks: Task[] };
 type Team = { id: string; title: string; short: string; english: string; description: string; color: string; soft: string; mark: string; people: Person[] };
-type View = { type: 'home' } | { type: 'all' } | { type: 'team'; teamId: string } | { type: 'person'; teamId: string; personId: string };
+type View = { type: 'home' } | { type: 'handover' } | { type: 'all' } | { type: 'team'; teamId: string } | { type: 'person'; teamId: string; personId: string };
 
 const months = ['3월','4월','5월','6월','7월','8월','9월','10월','11월','12월','1월','2월'];
 
@@ -29,7 +30,7 @@ const subscribeToday = () => () => {};
 const readToday = () => (clientToday ??= locateToday(new Date()));
 const readServerToday = () => noToday;
 
-const teams: Team[] = [
+const seedTeams: Team[] = [
   {
     id: 'management', title: '유학생관리팀', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#b8544c', soft: '#f7ebe9',
     description: '유학생의 체류부터 학사·생활까지 안정적인 캠퍼스 생활을 지원합니다.',
@@ -128,12 +129,8 @@ const teams: Team[] = [
   },
 ];
 
-const allPeople = teams.flatMap((team) => team.people.map((person) => ({ team, person })));
-
-/** How many of the 12 members are occupied in each of the 48 weeks. */
-const weekLoad = Array.from({ length: 48 }, (_, week) =>
-  allPeople.filter(({ person }) => person.tasks.some((task) => week >= task.start && week < task.start + task.duration)).length);
-const peakLoad = Math.max(...weekLoad);
+const OrgContext = createContext<Team[]>(seedTeams);
+const useTeams = () => useContext(OrgContext);
 
 /** Merge a person's overlapping tasks into continuous busy stretches. */
 function busyRuns(person: Person) {
@@ -153,21 +150,22 @@ function TeamBadge({ team }: { team: Team }) {
   return <span className="team-dot" style={{ '--team': team.color } as CSSProperties}>{team.mark}</span>;
 }
 
-function AppHeader({ onHome, onSearch, onLogout, compact = false }: { onHome: () => void; onSearch: () => void; onLogout: () => void; compact?: boolean }) {
+function AppHeader({ onHome, onHandover, onSearch, onManageMembers, onLogout, compact = false, handoverActive = false }: { onHome: () => void; onHandover: () => void; onSearch: () => void; onManageMembers: () => void; onLogout: () => void; compact?: boolean; handoverActive?: boolean }) {
   const [profileOpen, setProfileOpen] = useState(false);
   return (
     <header className={`topbar ${compact ? 'compact' : ''}`}>
-      <button className="brand" type="button" onClick={onHome} aria-label="국제처 업무 인수인계 홈">
+      <button className="brand" type="button" onClick={onHome} aria-label="국제처 업무 캘린더 홈">
         <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-        <span><strong>국제처 업무 인수인계</strong><small>GLOBAL AFFAIRS WORKSPACE</small></span>
+        <span><strong>국제처 업무 캘린더</strong><small>GLOBAL AFFAIRS WORKSPACE</small></span>
       </button>
       <div className="topbar-actions">
+        <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover}><span aria-hidden="true">↗</span><b>인수인계 작성</b></button>
         <button className="search-button" type="button" onClick={onSearch} aria-label="통합 검색"><span aria-hidden="true">⌕</span><span>업무 또는 담당자 검색</span><kbd>⌘ K</kbd></button>
         <div className="profile-wrap">
           <button className="profile" type="button" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen}>
             <span className="avatar">김</span><span className="profile-copy"><strong>김지현</strong><small>국제처 · 관리자</small></span><span className="chevron" aria-hidden="true">⌄</span>
           </button>
-          {profileOpen && <div className="profile-menu"><div><b>김지현</b><span>jihyun.kim@univ.ac.kr</span></div><button type="button" onClick={onLogout}>로그아웃</button></div>}
+          {profileOpen && <div className="profile-menu"><div><b>김지현</b><span>jihyun.kim@univ.ac.kr</span></div><button className="manage-members-button" type="button" onClick={() => { setProfileOpen(false); onManageMembers(); }}><span aria-hidden="true">⚙</span> 팀원 관리</button><button className="logout-button" type="button" onClick={onLogout}>로그아웃</button></div>}
         </div>
       </div>
     </header>
@@ -175,13 +173,18 @@ function AppHeader({ onHome, onSearch, onLogout, compact = false }: { onHome: ()
 }
 
 function Landing({ onOpen }: { onOpen: (id: string) => void }) {
+  const teams = useTeams();
+  const allPeople = teams.flatMap((team) => team.people.map((person) => ({ team, person })));
+  const weekLoad = Array.from({ length: 48 }, (_, week) =>
+    allPeople.filter(({ person }) => person.tasks.some((task) => week >= task.start && week < task.start + task.duration)).length);
+  const peakLoad = Math.max(1, ...weekLoad);
   const spaces = [
-    { id: 'all', eyebrow: 'ALL TEAMS', title: '국제팀 전체', description: '4개 팀의 업무 밀도와 연간 일정을 한눈에 살펴보세요.', count: '12명', accent: '#e0a94e', mark: 'HQ' },
-    ...teams.map((team) => ({ id: team.id, eyebrow: team.english, title: team.title, description: team.description, count: '3명', accent: team.color, mark: team.mark })),
+    { id: 'all', eyebrow: 'ALL TEAMS', title: '국제팀 전체', description: `${teams.length}개 팀의 업무 밀도와 연간 일정을 한눈에 살펴보세요.`, count: `${allPeople.length}명`, accent: '#e0a94e', mark: 'HQ' },
+    ...teams.map((team) => ({ id: team.id, eyebrow: team.english, title: team.title, description: team.description, count: `${team.people.length}명`, accent: team.color, mark: team.mark })),
   ];
   return <>
     <section className="hero" id="top">
-      <div className="hero-copy"><div className="semester-pill"><span /> 2026학년도 업무 캘린더</div><p className="kicker eyebrow">WORK CONTINUITY, MADE CLEAR</p><h1>이어지는 업무,<br /><em>한눈에 보이는 흐름.</em></h1><p className="hero-description">국제처 구성원의 연간 업무를 한곳에서 확인하고,<br className="desktop-break" /> 빈틈없는 인수인계를 시작하세요.</p><div className="hero-summary"><div><strong>4</strong><span>운영 팀</span></div><i /><div><strong>12</strong><span>담당자</span></div><i /><div><strong>48</strong><span>주간 흐름</span></div></div></div>
+      <div className="hero-copy"><div className="semester-pill"><span /> 2026학년도 업무 캘린더</div><p className="kicker eyebrow">WORK CONTINUITY, MADE CLEAR</p><h1>이어지는 업무,<br /><em>한눈에 보이는 흐름.</em></h1><p className="hero-description">국제처 구성원의 연간 업무를 한곳에서 확인하고,<br className="desktop-break" /> 빈틈없는 인수인계를 시작하세요.</p><div className="hero-summary"><div><strong>{teams.length}</strong><span>운영 팀</span></div><i /><div><strong>{allPeople.length}</strong><span>담당자</span></div><i /><div><strong>52</strong><span>주간 흐름</span></div></div></div>
       <div className="hero-visual" aria-hidden="true">
         <div className="dial">
           <div className="dial-ring" />
@@ -241,11 +244,13 @@ function WorkspaceHead({ eyebrow, title, description, onHome, tools = true }: { 
 }
 
 function AllTeams({ onHome, onTeam, onPerson }: { onHome: () => void; onTeam: (id: string) => void; onPerson: (teamId: string, personId: string) => void }) {
+  const teams = useTeams();
+  const memberCount = teams.reduce((sum, team) => sum + team.people.length, 0);
   return <main className="workspace-page">
-    <WorkspaceHead eyebrow="ALL TEAMS" title="국제팀 전체 업무 흐름" description="12명의 연간 업무 밀도를 주 단위로 한눈에 확인하세요." onHome={onHome} />
+    <WorkspaceHead eyebrow="ALL TEAMS" title="국제팀 전체 업무 흐름" description={`${memberCount}명의 연간 업무 밀도를 주 단위로 한눈에 확인하세요.`} onHome={onHome} />
     <div className="legend-row"><span><i className="legend-empty" />여유</span>{teams.map((team) => <span key={team.id}><i style={{ background: team.color }} />{team.title}</span>)}<span><i className="legend-today" />이번 주</span><small>각 칸은 1주를 의미합니다.</small></div>
     <div className="overview-layout">
-      <aside className="org-rail"><div className="org-emblem"><span>국제처</span><small>GLOBAL<br />AFFAIRS</small></div><div className="org-line" /><p>4개 팀</p><b>12</b><span>MEMBERS</span></aside>
+      <aside className="org-rail"><div className="org-emblem"><span>국제처</span><small>GLOBAL<br />AFFAIRS</small></div><div className="org-line" /><p>{teams.length}개 팀</p><b>{memberCount}</b><span>MEMBERS</span></aside>
       <section className="calendar-card overview-calendar"><CalendarBody><WeekHeader lead="팀 / 담당자" />
         {teams.map((team) => <div className="overview-team" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
           <button className="team-strip" type="button" onClick={() => onTeam(team.id)}><TeamBadge team={team} /><span><b>{team.title}</b><small>{team.english}</small></span><em>팀으로 보기</em><i>↗</i></button>
@@ -261,11 +266,12 @@ function TaskRow({ person, team, onPerson, onTask }: { person: Person; team: Tea
 }
 
 function TeamView({ team, onHome, onAll, onTeam, onPerson, onTask }: { team: Team; onHome: () => void; onAll: () => void; onTeam: (id: string) => void; onPerson: (id: string) => void; onTask: (task: Task, person: Person) => void }) {
+  const teams = useTeams();
   const busyWeeks = new Set(team.people.flatMap((person) => person.tasks.flatMap((task) => Array.from({ length: task.duration }, (_, i) => task.start + i)))).size;
   return <main className="workspace-page team-page" style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
     <WorkspaceHead eyebrow={team.english} title={team.title} description={team.description} onHome={onHome} />
     <nav className="team-switcher" aria-label="팀 전환"><button type="button" onClick={onAll}>전체</button>{teams.map((item) => <button type="button" className={item.id === team.id ? 'active' : ''} onClick={() => onTeam(item.id)} key={item.id}><i style={{ background: item.color }} />{item.short}</button>)}</nav>
-    <section className="team-summary"><div className="team-summary-main"><TeamBadge team={team} /><span><small>TEAM WORKLOAD</small><strong>{team.title}</strong></span></div><div><strong>3</strong><span>담당자</span></div><div><strong>{team.people.reduce((sum, p) => sum + p.tasks.length, 0)}</strong><span>주요 업무</span></div><div><strong>{busyWeeks}</strong><span>집중 주간</span></div><p><i /> 색상 막대를 누르면 업무 설명을 볼 수 있습니다.</p></section>
+    <section className="team-summary"><div className="team-summary-main"><TeamBadge team={team} /><span><small>TEAM WORKLOAD</small><strong>{team.title}</strong></span></div><div><strong>{team.people.length}</strong><span>담당자</span></div><div><strong>{team.people.reduce((sum, p) => sum + p.tasks.length, 0)}</strong><span>주요 업무</span></div><div><strong>{busyWeeks}</strong><span>집중 주간</span></div><p><i /> 색상 막대를 누르면 업무 설명을 볼 수 있습니다.</p></section>
     <section className="calendar-card team-calendar"><CalendarBody><WeekHeader lead="담당자 / 역할" />{team.people.map((person) => <TaskRow key={person.id} person={person} team={team} onPerson={() => onPerson(person.id)} onTask={onTask} />)}</CalendarBody></section>
     <section className="handover-note"><span>HANDOVER NOTE</span><p><b>팀 인수인계 포인트</b> 업무 막대가 겹치는 시기는 팀 전체의 업무가 집중되는 구간입니다. 해당 담당자를 눌러 세부 일정과 준비사항을 확인하세요.</p><button type="button">인수인계 메모 보기 <i>→</i></button></section>
   </main>;
@@ -310,9 +316,73 @@ function TaskModal({ task, person, team, onClose }: { task: Task; person: Person
 }
 
 function SearchModal({ onClose, onPerson }: { onClose: () => void; onPerson: (teamId: string, personId: string) => void }) {
+  const teams = useTeams();
+  const allPeople = useMemo(() => teams.flatMap((team) => team.people.map((person) => ({ team, person }))), [teams]);
   const [query, setQuery] = useState('');
-  const results = useMemo(() => allPeople.filter(({ team, person }) => `${team.title} ${person.name} ${person.role} ${person.tasks.map((task) => task.title).join(' ')}`.includes(query.trim())).slice(0, 6), [query]);
+  const results = useMemo(() => allPeople.filter(({ team, person }) => `${team.title} ${person.name} ${person.role} ${person.tasks.map((task) => task.title).join(' ')}`.includes(query.trim())).slice(0, 6), [allPeople, query]);
   return <div className="modal-backdrop search-backdrop" role="presentation" onMouseDown={onClose}><section className="search-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><div className="search-input"><span>⌕</span><input autoFocus placeholder="담당자, 역할 또는 업무를 검색하세요" value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>ESC</kbd></div><div className="search-results"><small>{query ? `검색 결과 ${results.length}건` : '빠른 탐색'}</small>{(query ? results : allPeople.slice(0, 4)).map(({ team, person }) => <button type="button" key={person.id} onClick={() => onPerson(team.id, person.id)}><span className="person-avatar" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>{team.title} · {person.role}</small></span><em>→</em></button>)}</div><p><kbd>↵</kbd> 열기 <kbd>ESC</kbd> 닫기</p></section></div>;
+}
+
+function MemberAdminModal({ removedMemberIds, loading, loadError, onRemove, onRestore, onClose }: { removedMemberIds: string[]; loading: boolean; loadError: string; onRemove: (personId: string, teamId: string) => Promise<void>; onRestore: (personId: string) => Promise<void>; onClose: () => void }) {
+  const [confirmTarget, setConfirmTarget] = useState<{ team: Team; person: Person } | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
+  const totalMembers = seedTeams.reduce((sum, team) => sum + team.people.length, 0);
+  const removedSet = useMemo(() => new Set(removedMemberIds), [removedMemberIds]);
+  const removedPeople = seedTeams.flatMap((team) => team.people.filter((person) => removedSet.has(person.id)).map((person) => ({ team, person })));
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || pendingId) return;
+      if (confirmTarget) setConfirmTarget(null);
+      else onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [confirmTarget, onClose, pendingId]);
+
+  const removeConfirmed = async () => {
+    if (!confirmTarget) return;
+    setActionError('');
+    setPendingId(confirmTarget.person.id);
+    try {
+      await onRemove(confirmTarget.person.id, confirmTarget.team.id);
+      setConfirmTarget(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : '팀원을 방출하지 못했습니다.');
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  const restore = async (personId: string) => {
+    setActionError('');
+    setPendingId(personId);
+    try {
+      await onRestore(personId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : '팀원을 복구하지 못했습니다.');
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  return <div className="modal-backdrop member-admin-backdrop" role="presentation" onMouseDown={() => !pendingId && onClose()}>
+    <section className="member-admin-modal" role="dialog" aria-modal="true" aria-labelledby="member-admin-title" onMouseDown={(event) => event.stopPropagation()}>
+      <header className="member-admin-head"><div><span className="modal-label">ADMINISTRATION</span><h2 id="member-admin-title">팀원 관리</h2><p>현재 워크스페이스에 참여 중인 구성원을 관리합니다.</p></div><button type="button" onClick={onClose} disabled={Boolean(pendingId)} aria-label="팀원 관리 닫기">×</button></header>
+      <div className="member-admin-summary"><div><strong>{totalMembers - removedMemberIds.length}</strong><span>활성 팀원</span></div><i /><div><strong>{removedMemberIds.length}</strong><span>방출된 팀원</span></div><p><span>관리자</span> 팀원 방출 권한이 있습니다.</p></div>
+      {(loadError || actionError) && <div className="member-admin-error" role="alert">{actionError || loadError}</div>}
+      <div className="member-admin-content">
+        {loading ? <div className="member-admin-loading">팀원 정보를 불러오고 있습니다.</div> : seedTeams.map((team) => {
+          const activePeople = team.people.filter((person) => !removedSet.has(person.id));
+          return <section className="member-team-group" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}><div className="member-team-title"><span><i />{team.title}</span><small>{activePeople.length}명</small></div>{activePeople.length ? activePeople.map((person) => <div className="member-admin-row" key={person.id}><span className="person-avatar" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><button type="button" onClick={() => setConfirmTarget({ team, person })} disabled={Boolean(pendingId)}>팀에서 방출</button></div>) : <p className="member-team-empty">현재 소속된 팀원이 없습니다.</p>}</section>;
+        })}
+        {removedPeople.length > 0 && <section className="removed-members"><div className="removed-members-title"><span>방출된 팀원</span><small>필요하면 다시 복구할 수 있습니다.</small></div>{removedPeople.map(({ team, person }) => <div className="member-admin-row removed" key={person.id}><span className="person-avatar" style={{ background: '#9aa1aa' }}>{person.initial}</span><span><b>{person.name}</b><small>{team.title} · {person.role}</small></span><button type="button" onClick={() => restore(person.id)} disabled={Boolean(pendingId)}>{pendingId === person.id ? '복구 중…' : '팀원 복구'}</button></div>)}</section>}
+      </div>
+      <footer className="member-admin-footer"><span>방출된 팀원은 업무 화면과 검색 결과에서 즉시 제외됩니다.</span><button type="button" onClick={onClose} disabled={Boolean(pendingId)}>완료</button></footer>
+      {confirmTarget && <div className="member-confirm-layer"><div className="member-confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="member-confirm-title"><span className="member-confirm-icon">!</span><small>{confirmTarget.team.title}</small><h3 id="member-confirm-title">{confirmTarget.person.name} 님을 방출할까요?</h3><p>해당 팀원의 업무 일정과 담당자 페이지가 워크스페이스에서 숨겨집니다. 이후 팀원 관리에서 복구할 수 있습니다.</p><div>{actionError && <span role="alert">{actionError}</span>}<button type="button" onClick={() => { setConfirmTarget(null); setActionError(''); }} disabled={Boolean(pendingId)}>취소</button><button type="button" className="danger" onClick={removeConfirmed} disabled={Boolean(pendingId)}>{pendingId ? '방출 중…' : '팀에서 방출'}</button></div></div></div>}
+    </section>
+  </div>;
 }
 
 function Login({ onLogin }: { onLogin: () => void }) {
@@ -324,20 +394,55 @@ export default function Home() {
   const today = useSyncExternalStore(subscribeToday, readToday, readServerToday);
   const [loggedIn, setLoggedIn] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [memberAdminOpen, setMemberAdminOpen] = useState(false);
+  const [removedMemberIds, setRemovedMemberIds] = useState<string[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
+  const [membersLoadError, setMembersLoadError] = useState('');
   const [taskDetail, setTaskDetail] = useState<{ task: Task; person: Person; team: Team } | null>(null);
+  const teams = useMemo(() => seedTeams.map((team) => ({ ...team, people: team.people.filter((person) => !removedMemberIds.includes(person.id)) })), [removedMemberIds]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/members', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('팀원 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return response.json() as Promise<{ removedMemberIds: string[] }>;
+      })
+      .then((data) => setRemovedMemberIds(data.removedMemberIds))
+      .catch((error) => { if (error instanceof Error && error.name !== 'AbortError') setMembersLoadError(error.message); })
+      .finally(() => setMembersLoading(false));
+    return () => controller.abort();
+  }, []);
+
+  const removeMember = async (personId: string, teamId: string) => {
+    const response = await fetch('/api/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
+    if (!response.ok) throw new Error('팀원을 방출하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    setRemovedMemberIds((current) => current.includes(personId) ? current : [personId, ...current]);
+    if (view.type === 'person' && view.personId === personId) setView({ type: 'team', teamId });
+    setTaskDetail((current) => current?.person.id === personId ? null : current);
+  };
+
+  const restoreMember = async (personId: string) => {
+    const response = await fetch('/api/members', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
+    if (!response.ok) throw new Error('팀원을 복구하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    setRemovedMemberIds((current) => current.filter((id) => id !== personId));
+  };
+
   const openTeam = (teamId: string) => setView({ type: 'team', teamId });
   const openPerson = (teamId: string, personId: string) => setView({ type: 'person', teamId, personId });
   if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
-  const selectedTeam = view.type === 'team' || view.type === 'person' ? teams.find((team) => team.id === view.teamId)! : null;
-  const selectedPerson = view.type === 'person' ? selectedTeam!.people.find((person) => person.id === view.personId)! : null;
-  const showTask = (task: Task, person: Person) => { const team = teams.find((item) => item.people.some((member) => member.id === person.id))!; setTaskDetail({ task, person, team }); };
-  return <TodayContext.Provider value={today}><div className={`site-shell ${view.type !== 'home' ? 'dashboard-shell' : ''}`}>
-    <AppHeader compact={view.type !== 'home'} onHome={() => setView({ type: 'home' })} onSearch={() => setSearchOpen(true)} onLogout={() => { setLoggedIn(false); setView({ type: 'home' }); }} />
+  const selectedTeam = view.type === 'team' || view.type === 'person' ? teams.find((team) => team.id === view.teamId) ?? null : null;
+  const selectedPerson = view.type === 'person' ? selectedTeam?.people.find((person) => person.id === view.personId) ?? null : null;
+  const showTask = (task: Task, person: Person) => { const team = teams.find((item) => item.people.some((member) => member.id === person.id)); if (team) setTaskDetail({ task, person, team }); };
+  return <OrgContext.Provider value={teams}><TodayContext.Provider value={today}><div className={`site-shell ${view.type !== 'home' ? 'dashboard-shell' : ''}`}>
+    <AppHeader compact={view.type !== 'home'} handoverActive={view.type === 'handover'} onHome={() => setView({ type: 'home' })} onHandover={() => setView({ type: 'handover' })} onSearch={() => setSearchOpen(true)} onManageMembers={() => setMemberAdminOpen(true)} onLogout={() => { setLoggedIn(false); setView({ type: 'home' }); }} />
     {view.type === 'home' && <Landing onOpen={(id) => id === 'all' ? setView({ type: 'all' }) : openTeam(id)} />}
+    {view.type === 'handover' && <HandoverWorkspace onHome={() => setView({ type: 'home' })} />}
     {view.type === 'all' && <AllTeams onHome={() => setView({ type: 'home' })} onTeam={openTeam} onPerson={openPerson} />}
     {view.type === 'team' && selectedTeam && <TeamView team={selectedTeam} onHome={() => setView({ type: 'home' })} onAll={() => setView({ type: 'all' })} onTeam={openTeam} onPerson={(id) => openPerson(selectedTeam.id, id)} onTask={showTask} />}
     {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => setView({ type: 'home' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} />}
     {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} onPerson={(teamId, personId) => { openPerson(teamId, personId); setSearchOpen(false); }} />}
+    {memberAdminOpen && <MemberAdminModal removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {taskDetail && <TaskModal {...taskDetail} onClose={() => setTaskDetail(null)} />}
-  </div></TodayContext.Provider>;
+  </div></TodayContext.Provider></OrgContext.Provider>;
 }
