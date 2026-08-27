@@ -1,0 +1,160 @@
+/** Shared org chart + academic-year helpers, used by the client workspace and the API routes. */
+
+export type Task = {
+  title: string;
+  start: number;
+  duration: number;
+  note: string;
+  /** week the task originally started on, present only while a reschedule is in effect */
+  movedFrom?: number;
+};
+export type Person = { id: string; name: string; role: string; initial: string; tasks: Task[] };
+export type Team = { id: string; title: string; short: string; english: string; description: string; color: string; soft: string; mark: string; people: Person[] };
+
+/** the academic year runs 2026.03 — 2027.02 as 48 week slots, 4 per month */
+export const WEEKS_IN_YEAR = 48;
+export const months = ['3월','4월','5월','6월','7월','8월','9월','10월','11월','12월','1월','2월'];
+
+export const seedTeams: Team[] = [
+  {
+    id: 'management', title: '유학생관리팀', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#b8544c', soft: '#f7ebe9',
+    description: '유학생의 체류부터 학사·생활까지 안정적인 캠퍼스 생활을 지원합니다.',
+    people: [
+      { id: 'minseo', name: '박민서', role: '체류·비자 관리', initial: '박', tasks: [
+        { title: '신입생 체류자격 변경', start: 0, duration: 4, note: '신입 외국인 학생 D-2 체류자격 변경 서류 접수 및 검토' },
+        { title: '외국인등록 단체접수', start: 5, duration: 3, note: '출입국관리사무소 단체 접수 및 학생별 보완 안내' },
+        { title: '비자 연장 집중기간', start: 21, duration: 5, note: '재학생 체류기간 만료 대상자 안내와 서류 검토' },
+        { title: '동계 체류 현황 점검', start: 39, duration: 3, note: '방학 중 출국 및 체류지 변경 현황 확인' },
+      ]},
+      { id: 'jiwoo', name: '최지우', role: '생활·상담 지원', initial: '최', tasks: [
+        { title: '신입생 오리엔테이션', start: 0, duration: 2, note: '캠퍼스 생활, 보험, 주요 행정 절차 안내' },
+        { title: '상반기 정기상담', start: 8, duration: 4, note: '학업·생활 적응 확인 및 고위험군 연계 상담' },
+        { title: '문화체험 프로그램', start: 25, duration: 3, note: '가을학기 유학생 지역문화 체험 운영' },
+        { title: '동계 생활지원', start: 43, duration: 3, note: '겨울방학 잔류 학생 대상 생활지원 안내' },
+      ]},
+      { id: 'dohyun', name: '이도현', role: '학사·장학 지원', initial: '이', tasks: [
+        { title: '외국인 장학 선발', start: 4, duration: 4, note: '성적 및 한국어능력 기준 검토, 장학생 선발' },
+        { title: '학사경고자 집중관리', start: 13, duration: 3, note: '학사경고 유학생 면담 및 학습지원 연계' },
+        { title: '2학기 장학 심사', start: 22, duration: 4, note: '2학기 외국인 재학생 장학금 심사' },
+        { title: '졸업예정자 점검', start: 40, duration: 4, note: '졸업요건, 비자변경 및 귀국 관련 안내' },
+      ]},
+    ],
+  },
+  {
+    id: 'recruitment', title: '유학생유치팀', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#b07d34', soft: '#f8f0e2',
+    description: '전 세계의 우수한 학생과 대학을 연결하고 입학 전 과정을 설계합니다.',
+    people: [
+      { id: 'seoyeon', name: '김서연', role: '입학전형 기획', initial: '김', tasks: [
+        { title: '후기전형 모집요강', start: 1, duration: 4, note: '후기 외국인 특별전형 모집요강 확정 및 공고' },
+        { title: '서류·면접 심사', start: 8, duration: 5, note: '지원자 자격 검토와 학과별 온라인 면접 운영' },
+        { title: '전기전형 기획', start: 24, duration: 4, note: '다음 학년도 전기전형 일정 및 선발 계획 수립' },
+        { title: '합격자 등록', start: 35, duration: 3, note: '합격자 등록 확인과 표준입학허가서 발급' },
+      ]},
+      { id: 'junho', name: '정준호', role: '해외홍보·박람회', initial: '정', tasks: [
+        { title: '동남아 유학박람회', start: 6, duration: 3, note: '베트남·태국 현지 박람회 및 고교 설명회 참가' },
+        { title: '글로벌 홍보 콘텐츠', start: 14, duration: 4, note: '다국어 입학 홍보 영상과 디지털 캠페인 제작' },
+        { title: '중앙아시아 출장', start: 27, duration: 3, note: '우즈베키스탄·카자흐스탄 현지 유치 활동' },
+        { title: '온라인 입학설명회', start: 38, duration: 3, note: '국가별 온라인 입학설명회 진행' },
+      ]},
+      { id: 'eunchae', name: '한은채', role: '지원자·기관 관리', initial: '한', tasks: [
+        { title: '지원자 문의 집중응대', start: 4, duration: 5, note: '이메일·메신저 입학 문의 및 서류 사전검토' },
+        { title: '에이전시 성과점검', start: 15, duration: 3, note: '해외 협력기관별 지원·등록 성과 분석' },
+        { title: '지원서 접수 운영', start: 29, duration: 5, note: '온라인 원서접수 시스템 운영과 미비서류 안내' },
+        { title: '신입생 입국 안내', start: 45, duration: 3, note: '입국, 기숙사 및 오리엔테이션 사전 안내' },
+      ]},
+    ],
+  },
+  {
+    id: 'exchange', title: '교류팀', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#3d6a92', soft: '#e9eff5',
+    description: '협정대학 네트워크를 바탕으로 파견·초청 교류의 전 과정을 운영합니다.',
+    people: [
+      { id: 'yujin', name: '강유진', role: '파견 교환학생', initial: '강', tasks: [
+        { title: '파견학생 출국 점검', start: 0, duration: 3, note: '보험, 수강계획, 안전교육 및 출국서류 최종 점검' },
+        { title: '차기 파견자 선발', start: 10, duration: 5, note: '교환학생 지원 접수, 면접 및 대학 배정' },
+        { title: '귀국보고회', start: 19, duration: 2, note: '귀국 학생 경험공유회 및 학점인정 안내' },
+        { title: '상반기 파견 준비', start: 37, duration: 5, note: '협정대학 nomination과 출국 전 교육' },
+      ]},
+      { id: 'taeyang', name: '오태양', role: '초청 교환학생', initial: '오', tasks: [
+        { title: '봄학기 버디 매칭', start: 0, duration: 3, note: '초청학생과 재학생 버디 선발 및 매칭' },
+        { title: '수강변경 집중지원', start: 3, duration: 2, note: '교환학생 수강신청 변경 및 학과 협의' },
+        { title: '가을학기 입국지원', start: 22, duration: 4, note: '공항 픽업, 기숙사 입사, 오리엔테이션 운영' },
+        { title: '성적표 발송', start: 41, duration: 3, note: '수학 종료학생 성적표 검수 및 파트너대학 발송' },
+      ]},
+      { id: 'sujin', name: '배수진', role: '협정·의전', initial: '배', tasks: [
+        { title: '협정 갱신 현황조사', start: 5, duration: 4, note: '만료 예정 협정 검토와 교류실적 확인' },
+        { title: '해외대학 방문단', start: 14, duration: 3, note: '방문단 일정, 면담 및 캠퍼스 투어 의전' },
+        { title: '글로벌 파트너 데이', start: 26, duration: 4, note: '해외 협정대학 대상 네트워킹 행사 운영' },
+        { title: '연간 교류실적 보고', start: 42, duration: 4, note: '대학별 교류실적 취합과 차년도 계획 수립' },
+      ]},
+    ],
+  },
+  {
+    id: 'language', title: '한국어교육원', short: '한국어교육원', english: 'KOREAN LANGUAGE', mark: '04', color: '#4c7f72', soft: '#e8f1ee',
+    description: '한국어 정규과정과 문화 프로그램으로 학습자의 성장과 적응을 돕습니다.',
+    people: [
+      { id: 'hyejin', name: '윤혜진', role: '정규과정 운영', initial: '윤', tasks: [
+        { title: '봄학기 개강', start: 0, duration: 4, note: '분반, 교재 배부, 강사 배정 및 개강 운영' },
+        { title: '여름학기 등록', start: 9, duration: 4, note: '재등록·신규등록 접수와 분반시험 준비' },
+        { title: '가을학기 운영', start: 22, duration: 5, note: '가을학기 개강 및 수업 운영 모니터링' },
+        { title: '겨울학기 개강', start: 35, duration: 4, note: '겨울학기 수강생 등록 및 개강 준비' },
+      ]},
+      { id: 'seongmin', name: '임성민', role: '강사·교육과정', initial: '임', tasks: [
+        { title: '강사 오리엔테이션', start: 0, duration: 2, note: '학사일정, 평가기준 및 수업운영 지침 안내' },
+        { title: '중간평가 문항검토', start: 7, duration: 3, note: '급별 중간평가 문항 검수 및 인쇄' },
+        { title: '교재개발 워크숍', start: 17, duration: 4, note: '수준별 자체 교재 개발 회의와 집필' },
+        { title: '강사 재위촉 평가', start: 39, duration: 4, note: '수업평가 및 근무실적 기반 재위촉 심사' },
+      ]},
+      { id: 'nayeon', name: '송나연', role: '학생·문화지원', initial: '송', tasks: [
+        { title: '신입생 생활안내', start: 0, duration: 3, note: '기숙사, 보험, 은행 및 휴대전화 개통 안내' },
+        { title: '봄 문화체험', start: 10, duration: 2, note: '한국문화 체험학습 사전답사 및 행사 운영' },
+        { title: '한국어 말하기 대회', start: 27, duration: 3, note: '참가 접수, 예선심사와 본선 행사 운영' },
+        { title: '수료식·진급상담', start: 44, duration: 3, note: '수료식 운영과 다음 학기 진급 상담' },
+      ]},
+    ],
+  },
+];
+
+/** stable identity for a task across reschedules: a person never repeats a task title */
+export const taskKey = (personId: string, title: string) => `${personId}::${title}`;
+
+export function findSeedTask(personId: string, title: string) {
+  for (const team of seedTeams) {
+    const person = team.people.find((item) => item.id === personId);
+    if (person) return person.tasks.find((task) => task.title === title) ?? null;
+  }
+  return null;
+}
+
+/** "3월 2주" — the label used everywhere a week slot is shown to a user */
+export const weekLabel = (week: number) => `${months[Math.floor(week / 4)]} ${(week % 4) + 1}주`;
+
+export type Today = { week: number | null; month: number | null; day: number | null };
+export const noToday: Today = { week: null, month: null, day: null };
+
+/** Locate a real date inside the 2026.03 — 2027.02 academic year (48 weeks, 4 per month). */
+export function locateToday(now: Date): Today {
+  if (now < new Date(2026, 2, 1) || now >= new Date(2027, 2, 1)) return noToday;
+  const month = (now.getMonth() + 10) % 12;
+  const weekOfMonth = Math.min(3, Math.floor((now.getDate() - 1) / 7));
+  return { week: month * 4 + weekOfMonth, month, day: now.getDate() };
+}
+
+/** "8월 2주 ~ 9월 2주" — the span a task occupies, both ends inclusive */
+export const taskPeriodLabel = (task: Task) => `${weekLabel(task.start)} ~ ${weekLabel(task.start + task.duration - 1)}`;
+
+export type TaskPhase = 'done' | 'active' | 'upcoming';
+
+/** Where a task sits relative to today. Drives which handover section it seeds. */
+export function taskPhase(task: Task, todayWeek: number): TaskPhase {
+  if (task.start + task.duration <= todayWeek) return 'done';
+  if (task.start <= todayWeek) return 'active';
+  return 'upcoming';
+}
+
+export function findPerson(personId: string) {
+  for (const team of seedTeams) {
+    const person = team.people.find((item) => item.id === personId);
+    if (person) return { team, person };
+  }
+  return null;
+}

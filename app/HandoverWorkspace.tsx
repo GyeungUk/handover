@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
 
-export type HandoverCategory = 'responsibility' | 'plan' | 'issue' | 'pending';
+import { propertyFieldsByCategory, type DraftItem, type DraftResponse, type HandoverCategory, type PropertyField, type QualityResponse } from './handover-schema';
+import { seedTeams } from './org-data';
+
+export type { HandoverCategory };
 type WorkspaceTab = 'write' | 'compose' | 'review';
 type WorkflowStatus = 'draft' | 'pending' | 'rejected' | 'approved';
 type ReviewDecision = 'approved' | 'rejected' | null;
@@ -13,11 +16,12 @@ type HandoverEntry = {
   title: string;
   detail: string;
   properties: Record<string, string>;
+  attachments: EntryAttachment[];
   formatting: EntryFormatting;
 };
 
+type EntryAttachment = { id: string; name: string; size: number; type: string; url: string };
 type EntryFormatting = { fontFamily: string; fontSize: string };
-type PropertyField = { key: string; label: string; placeholder: string; options?: string[] };
 
 type WorkBundle = {
   id: string;
@@ -40,39 +44,23 @@ type CategoryMeta = {
 };
 
 const categories: CategoryMeta[] = [
-  { id: 'responsibility', step: '01', label: '담당업무', short: '담당업무', description: '현재 맡고 있는 역할과 책임 범위를 기록합니다.', accent: '#315a83', soft: '#edf3f8', placeholder: '예: 외국인 유학생 체류·비자 관리', propertyFields: [
-    { key: 'cycle', label: '업무 주기', placeholder: '선택', options: ['수시', '매일', '매주', '매월', '학기별', '연 1회'] },
-    { key: 'department', label: '협업 부서', placeholder: '예: 학사지원팀' },
-    { key: 'importance', label: '중요도', placeholder: '선택', options: ['일반', '중요', '핵심'] },
-  ] },
-  { id: 'plan', step: '02', label: '주요업무계획 및 진행사항', short: '계획 및 진행', description: '예정된 일정과 현재까지의 진행 상황을 남깁니다.', accent: '#3f7768', soft: '#edf5f2', placeholder: '예: 2학기 체류기간 연장 단체접수', propertyFields: [
-    { key: 'due', label: '목표 일정', placeholder: '예: 2026. 09. 06' },
-    { key: 'progress', label: '진행률', placeholder: '선택', options: ['준비 전', '25%', '50%', '75%', '완료'] },
-    { key: 'next', label: '다음 담당', placeholder: '예: 박민서 주임' },
-  ] },
-  { id: 'issue', step: '03', label: '현안사항 및 문제점', short: '현안 및 문제', description: '주의가 필요한 이슈와 대응 상황을 정리합니다.', accent: '#b56c3d', soft: '#fbf2eb', placeholder: '예: 보완서류 제출 지연 학생 발생', propertyFields: [
-    { key: 'impact', label: '영향도', placeholder: '선택', options: ['낮음', '보통', '높음', '긴급'] },
-    { key: 'response', label: '대응 상태', placeholder: '선택', options: ['확인 중', '대응 중', '협의 중', '해결'] },
-    { key: 'department', label: '관련 부서', placeholder: '예: 출입국관리사무소' },
-  ] },
-  { id: 'pending', step: '04', label: '주요미결사항', short: '미결사항', description: '아직 완료되지 않아 후속 조치가 필요한 일을 적습니다.', accent: '#9b4d58', soft: '#faeef0', placeholder: '예: 출입국 방문 일정 최종 확정 대기', propertyFields: [
-    { key: 'due', label: '완료 예정일', placeholder: '예: 2026. 09. 02' },
-    { key: 'priority', label: '우선순위', placeholder: '선택', options: ['낮음', '보통', '높음', '긴급'] },
-    { key: 'owner', label: '후속 담당', placeholder: '예: 김지현' },
-  ] },
+  { id: 'responsibility', step: '01', label: '담당업무', short: '담당업무', description: '현재 맡고 있는 역할과 책임 범위를 기록합니다.', accent: '#315a83', soft: '#edf3f8', placeholder: '예: 외국인 유학생 체류·비자 관리', propertyFields: propertyFieldsByCategory.responsibility },
+  { id: 'plan', step: '02', label: '주요업무계획 및 진행사항', short: '계획 및 진행', description: '예정된 일정과 현재까지의 진행 상황을 남깁니다.', accent: '#3f7768', soft: '#edf5f2', placeholder: '예: 2학기 체류기간 연장 단체접수', propertyFields: propertyFieldsByCategory.plan },
+  { id: 'issue', step: '03', label: '현안사항 및 문제점', short: '현안 및 문제', description: '주의가 필요한 이슈와 대응 상황을 정리합니다.', accent: '#b56c3d', soft: '#fbf2eb', placeholder: '예: 보완서류 제출 지연 학생 발생', propertyFields: propertyFieldsByCategory.issue },
+  { id: 'pending', step: '04', label: '주요미결사항', short: '미결사항', description: '아직 완료되지 않아 후속 조치가 필요한 일을 적습니다.', accent: '#9b4d58', soft: '#faeef0', placeholder: '예: 출입국 방문 일정 최종 확정 대기', propertyFields: propertyFieldsByCategory.pending },
 ];
 
 const defaultFormatting: EntryFormatting = { fontFamily: 'Pretendard', fontSize: '16' };
 
 const initialEntries: HandoverEntry[] = [
-  { id: 'r1', category: 'responsibility', title: '유학생 체류·비자 관리', detail: '<p>D-2 체류자격 변경, 기간 연장, 외국인등록 단체접수를 담당합니다.</p><ul><li>대상자 명단 및 체류기간 확인</li><li>제출서류 검토와 보완 안내</li></ul>', properties: { cycle: '수시', department: '학사지원팀', importance: '핵심' }, formatting: defaultFormatting },
-  { id: 'r2', category: 'responsibility', title: '유학생 보험 및 생활지원', detail: '<p>보험 가입 현황과 생활 민원을 확인하고 관련 기관과 협의합니다.</p>', properties: { cycle: '매월', department: '학생지원팀', importance: '중요' }, formatting: defaultFormatting },
-  { id: 'p1', category: 'plan', title: '2학기 체류기간 연장 단체접수', detail: '<p><strong>대상자 84명 중 71명</strong>의 서류 검토를 완료했습니다.</p><table><thead><tr><th>구분</th><th>진행 현황</th><th>비고</th></tr></thead><tbody><tr><td>서류 접수</td><td>71 / 84명</td><td>13명 보완 중</td></tr><tr><td>출입국 제출</td><td>9월 6일 예정</td><td>방문 예약 완료</td></tr></tbody></table>', properties: { due: '2026. 09. 06', progress: '75%', next: '박민서 주임' }, formatting: defaultFormatting },
-  { id: 'p2', category: 'plan', title: '외국인등록증 신규 발급', detail: '<p>신입생 안내를 완료했고 학과별 서류를 취합하고 있습니다.</p>', properties: { due: '2026. 09. 12', progress: '50%', next: '최지우 주임' }, formatting: defaultFormatting },
-  { id: 'i1', category: 'issue', title: '보완서류 제출 지연', detail: '<p>재정증명 보완 대상 6명 중 2명의 회신이 지연되고 있습니다.</p><p><strong>9월 1일까지 미회신 시 학과에 협조 요청</strong>이 필요합니다.</p>', properties: { impact: '높음', response: '대응 중', department: '출입국관리사무소' }, formatting: defaultFormatting },
-  { id: 'i2', category: 'issue', title: '보험사 시스템 변경', detail: '<p>신규 관리자 페이지 전환으로 단체 가입 명단 형식 확인이 필요합니다.</p>', properties: { impact: '보통', response: '협의 중', department: '보험사 담당센터' }, formatting: defaultFormatting },
-  { id: 'm1', category: 'pending', title: '출입국 방문 일정 확정', detail: '<p>담당 주무관 회신 대기 중이며 확정 후 학생 공지가 필요합니다.</p>', properties: { due: '2026. 09. 02', priority: '높음', owner: '김지현' }, formatting: defaultFormatting },
-  { id: 'm2', category: 'pending', title: '보험 미가입자 3명 후속 확인', detail: '<p>개별 가입 증빙을 받지 못한 학생에게 2차 안내가 필요합니다.</p>', properties: { due: '2026. 09. 05', priority: '보통', owner: '최지우' }, formatting: defaultFormatting },
+  { id: 'r1', category: 'responsibility', title: '유학생 체류·비자 관리', detail: '<p>D-2 체류자격 변경, 기간 연장, 외국인등록 단체접수를 담당합니다.</p><ul><li>대상자 명단 및 체류기간 확인</li><li>제출서류 검토와 보완 안내</li></ul>', properties: { cycle: '수시', department: '학사지원팀', importance: '핵심' }, attachments: [], formatting: defaultFormatting },
+  { id: 'r2', category: 'responsibility', title: '유학생 보험 및 생활지원', detail: '<p>보험 가입 현황과 생활 민원을 확인하고 관련 기관과 협의합니다.</p>', properties: { cycle: '매월', department: '학생지원팀', importance: '중요' }, attachments: [], formatting: defaultFormatting },
+  { id: 'p1', category: 'plan', title: '2학기 체류기간 연장 단체접수', detail: '<p><strong>대상자 84명 중 71명</strong>의 서류 검토를 완료했습니다.</p><table><thead><tr><th>구분</th><th>진행 현황</th><th>비고</th></tr></thead><tbody><tr><td>서류 접수</td><td>71 / 84명</td><td>13명 보완 중</td></tr><tr><td>출입국 제출</td><td>9월 6일 예정</td><td>방문 예약 완료</td></tr></tbody></table>', properties: { due: '2026. 09. 06', progress: '75%', next: '박민서 주임' }, attachments: [], formatting: defaultFormatting },
+  { id: 'p2', category: 'plan', title: '외국인등록증 신규 발급', detail: '<p>신입생 안내를 완료했고 학과별 서류를 취합하고 있습니다.</p>', properties: { due: '2026. 09. 12', progress: '50%', next: '최지우 주임' }, attachments: [], formatting: defaultFormatting },
+  { id: 'i1', category: 'issue', title: '보완서류 제출 지연', detail: '<p>재정증명 보완 대상 6명 중 2명의 회신이 지연되고 있습니다.</p><p><strong>9월 1일까지 미회신 시 학과에 협조 요청</strong>이 필요합니다.</p>', properties: { impact: '높음', response: '대응 중', department: '출입국관리사무소' }, attachments: [], formatting: defaultFormatting },
+  { id: 'i2', category: 'issue', title: '보험사 시스템 변경', detail: '<p>신규 관리자 페이지 전환으로 단체 가입 명단 형식 확인이 필요합니다.</p>', properties: { impact: '보통', response: '협의 중', department: '보험사 담당센터' }, attachments: [], formatting: defaultFormatting },
+  { id: 'm1', category: 'pending', title: '출입국 방문 일정 확정', detail: '<p>담당 주무관 회신 대기 중이며 확정 후 학생 공지가 필요합니다.</p>', properties: { due: '2026. 09. 02', priority: '높음', owner: '김지현' }, attachments: [], formatting: defaultFormatting },
+  { id: 'm2', category: 'pending', title: '보험 미가입자 3명 후속 확인', detail: '<p>개별 가입 증빙을 받지 못한 학생에게 2차 안내가 필요합니다.</p>', properties: { due: '2026. 09. 05', priority: '보통', owner: '최지우' }, attachments: [], formatting: defaultFormatting },
 ];
 
 const initialBundles: WorkBundle[] = [
@@ -92,14 +80,33 @@ function StatusBadge({ status }: { status: WorkflowStatus }) {
   return <span className={`ho-status ${status}`}><i />{labels[status]}</span>;
 }
 
+const maxAttachments = 10;
+const maxAttachmentBytes = 20 * 1024 * 1024;
+
+function formatBytes(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileKind(name: string) {
+  const extension = name.includes('.') ? name.split('.').pop() ?? '' : '';
+  return extension ? extension.slice(0, 4).toUpperCase() : 'FILE';
+}
+
 function plainText(html: string) {
   return html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function EntryEditor({ category, entry, onSave, onClose }: { category: CategoryMeta; entry?: HandoverEntry; onSave: (title: string, detail: string, properties: Record<string, string>, formatting: EntryFormatting) => void; onClose: () => void }) {
+function EntryEditor({ category, entry, onSave, onClose }: { category: CategoryMeta; entry?: HandoverEntry; onSave: (title: string, detail: string, properties: Record<string, string>, formatting: EntryFormatting, attachments: EntryAttachment[]) => void; onClose: () => void }) {
   const [title, setTitle] = useState(entry?.title ?? '');
   const [properties, setProperties] = useState<Record<string, string>>(entry?.properties ?? {});
   const [formatting, setFormatting] = useState<EntryFormatting>(entry?.formatting ?? defaultFormatting);
+  const [attachments, setAttachments] = useState<EntryAttachment[]>(entry?.attachments ?? []);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [dropActive, setDropActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const createdUrls = useRef(new Set<string>());
   const editorRef = useRef<HTMLDivElement>(null);
   const initialDetail = entry?.detail ?? '';
   const detailRef = useRef(initialDetail);
@@ -146,14 +153,50 @@ function EntryEditor({ category, entry, onSave, onClose }: { category: CategoryM
     syncEditorValue();
   };
 
+  const addFiles = (fileList: FileList | null) => {
+    const incoming = Array.from(fileList ?? []);
+    if (!incoming.length) return;
+    const room = maxAttachments - attachments.length;
+    if (room <= 0) {
+      setAttachmentError(`첨부파일은 항목당 최대 ${maxAttachments}개까지 올릴 수 있습니다.`);
+      return;
+    }
+    const oversized = incoming.filter((file) => file.size > maxAttachmentBytes);
+    const accepted = incoming.filter((file) => file.size <= maxAttachmentBytes).slice(0, room);
+    setAttachments((current) => [...current, ...accepted.map((file) => {
+      const url = URL.createObjectURL(file);
+      createdUrls.current.add(url);
+      return { id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name: file.name, size: file.size, type: file.type, url };
+    })]);
+    setAttachmentError(oversized.length
+      ? `${oversized[0].name} 등 ${oversized.length}개 파일이 20MB를 넘어 제외되었습니다.`
+      : incoming.length > accepted.length ? `최대 ${maxAttachments}개까지만 추가했습니다.` : '');
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((current) => current.filter((file) => {
+      if (file.id !== id) return true;
+      if (createdUrls.current.delete(file.url)) URL.revokeObjectURL(file.url);
+      return false;
+    }));
+    setAttachmentError('');
+  };
+
+  const discardAndClose = () => {
+    createdUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    createdUrls.current.clear();
+    onClose();
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim() || !hasContent) return;
-    onSave(title.trim(), detailRef.current.trim(), properties, formatting);
+    createdUrls.current.clear();
+    onSave(title.trim(), detailRef.current.trim(), properties, formatting, attachments);
   };
-  return <div className="modal-backdrop ho-modal-backdrop" role="presentation" onMouseDown={onClose}>
+  return <div className="modal-backdrop ho-modal-backdrop" role="presentation" onMouseDown={discardAndClose}>
     <form className="ho-entry-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}>
-      <button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button>
+      <button className="modal-close" type="button" onClick={discardAndClose} aria-label="닫기">×</button>
       <div className="ho-editor-heading"><div className="ho-modal-icon"><CategoryIcon category={category.id} /></div><div><span className="modal-label">{entry ? 'EDIT DOCUMENT' : 'NEW DOCUMENT'} · SECTION {category.step}</span><h2>{category.label}</h2><p>{category.description}</p></div><span className="ho-autosave"><i /> 임시 저장됨</span></div>
       <label className="ho-title-field">문서 제목<span>*</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder={category.placeholder} maxLength={80} /></label>
       <fieldset className="ho-property-fields"><legend>문서 속성</legend>{category.propertyFields.map((field) => <label key={field.key}><span>{field.label}</span>{field.options ? <select value={properties[field.key] ?? ''} onChange={(event) => setProperties((current) => ({ ...current, [field.key]: event.target.value }))}><option value="">{field.placeholder}</option>{field.options.map((option) => <option value={option} key={option}>{option}</option>)}</select> : <input value={properties[field.key] ?? ''} onChange={(event) => setProperties((current) => ({ ...current, [field.key]: event.target.value }))} placeholder={field.placeholder} />}</label>)}</fieldset>
@@ -179,18 +222,171 @@ function EntryEditor({ category, entry, onSave, onClose }: { category: CategoryM
         <div ref={editorRef} className="ho-rich-editor" contentEditable suppressContentEditableWarning data-placeholder="다음 담당자가 바로 업무를 이어갈 수 있도록 내용을 작성하세요. 표, 목록, 강조 서식을 함께 사용할 수 있습니다." style={{ fontFamily: formatting.fontFamily, fontSize: `${formatting.fontSize}px` }} onInput={syncEditorValue} />
         <div className="ho-editor-status"><span>▦ 표 삽입 가능</span><span>{contentLength}자</span></div>
       </div>
-      <div className="ho-modal-actions"><p><span>ⓘ</span> 작성한 서식과 표는 제출 문서에도 그대로 표시됩니다.</p><button type="button" onClick={onClose}>취소</button><button type="submit" disabled={!title.trim() || !hasContent}>{entry ? '문서 저장' : '항목 추가'}</button></div>
+      <div className="ho-attach-block">
+        <div className="ho-document-label"><span>첨부파일</span><small>최대 {maxAttachments}개 · 파일당 20MB까지</small></div>
+        <div
+          className={`ho-dropzone ${dropActive ? 'active' : ''}`}
+          onDragOver={(event) => { event.preventDefault(); setDropActive(true); }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={(event) => { event.preventDefault(); setDropActive(false); addFiles(event.dataTransfer.files); }}
+        >
+          <span className="ho-dropzone-icon" aria-hidden="true">⇪</span>
+          <p><b>파일을 끌어다 놓으세요</b><small>공문, 서식, 명단, 화면 캡처 등 이 항목과 관련된 자료를 함께 남길 수 있습니다.</small></p>
+          <button type="button" onClick={() => fileInputRef.current?.click()}>파일 선택</button>
+          <input ref={fileInputRef} type="file" multiple hidden onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />
+        </div>
+        {attachmentError && <p className="ho-attach-error" role="alert">{attachmentError}</p>}
+        {attachments.length > 0 && <ul className="ho-attach-list">{attachments.map((file) => <li key={file.id}>
+          <span className="ho-file-kind">{fileKind(file.name)}</span>
+          <span className="ho-file-meta"><b>{file.name}</b><small>{formatBytes(file.size)}</small></span>
+          <a href={file.url} download={file.name} target="_blank" rel="noreferrer">열기</a>
+          <button type="button" onClick={() => removeAttachment(file.id)} aria-label={`${file.name} 첨부 삭제`}>삭제</button>
+        </li>)}</ul>}
+      </div>
+      <div className="ho-modal-actions"><p><span>ⓘ</span> 작성한 서식과 표, 첨부파일은 제출 문서에도 그대로 표시됩니다.</p><button type="button" onClick={discardAndClose}>취소</button><button type="submit" disabled={!title.trim() || !hasContent}>{entry ? '문서 저장' : '항목 추가'}</button></div>
     </form>
   </div>;
 }
 
-function BundleReadOnly({ bundle, entries }: { bundle: WorkBundle; entries: HandoverEntry[] }) {
+function BundleReadOnly({ bundle, entries, onOpenEntry }: { bundle: WorkBundle; entries: HandoverEntry[]; onOpenEntry: (entryId: string) => void }) {
   return <div className="ho-read-bundle">
     <div className="ho-read-bundle-head"><span>{String(bundle.title).slice(0, 1)}</span><div><small>HANDOVER UNIT</small><h3>{bundle.title}</h3></div><b>{bundle.entryIds.length}개 항목</b></div>
     <div className="ho-read-columns">{categories.map((category) => {
       const items = entries.filter((entry) => entry.category === category.id && bundle.entryIds.includes(entry.id));
-      return <div key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><span><i />{category.short}<em>{items.length}</em></span>{items.length ? items.map((item) => <article key={item.id}><b>{item.title}</b><div className="ho-read-properties">{category.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}>{field.label} · {item.properties[field.key]}</span>)}</div><div className="ho-rich-read" style={{ fontFamily: item.formatting.fontFamily, fontSize: `${item.formatting.fontSize}px` }} dangerouslySetInnerHTML={{ __html: item.detail }} /></article>) : <p className="ho-no-item">연결된 항목 없음</p>}</div>;
+      return <div key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><span><i />{category.short}<em>{items.length}</em></span>{items.length ? items.map((item) => <article key={item.id}><b>{item.title}</b><div className="ho-read-properties">{category.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}>{field.label} · {item.properties[field.key]}</span>)}</div><div className="ho-rich-read" style={{ fontFamily: item.formatting.fontFamily, fontSize: `${item.formatting.fontSize}px` }} dangerouslySetInnerHTML={{ __html: item.detail }} />{item.attachments.length > 0 && <div className="ho-read-files">{item.attachments.map((file) => <a key={file.id} href={file.url} download={file.name} target="_blank" rel="noreferrer"><i>{fileKind(file.name)}</i><b>{file.name}</b><em>{formatBytes(file.size)}</em></a>)}</div>}<button type="button" className="ho-read-open" onClick={() => onOpenEntry(item.id)}>자세히 보기 <span aria-hidden="true">→</span></button></article>) : <p className="ho-no-item">연결된 항목 없음</p>}</div>;
     })}</div>
+  </div>;
+}
+
+function EntryDetailModal({ entry, bundle, entries, onSelect, onClose }: { entry: HandoverEntry; bundle: WorkBundle; entries: HandoverEntry[]; onSelect: (entryId: string) => void; onClose: () => void }) {
+  const category = categories.find((item) => item.id === entry.category)!;
+  const ordered = categories.flatMap((meta) => entries.filter((item) => item.category === meta.id && bundle.entryIds.includes(item.id)));
+  const index = ordered.findIndex((item) => item.id === entry.id);
+  const filled = category.propertyFields.filter((field) => entry.properties[field.key]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key === 'ArrowLeft' && index > 0) onSelect(ordered[index - 1].id);
+      if (event.key === 'ArrowRight' && index >= 0 && index < ordered.length - 1) onSelect(ordered[index + 1].id);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  });
+
+  return <div className="modal-backdrop ho-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="ho-detail-modal" role="dialog" aria-modal="true" aria-labelledby="ho-detail-title" onMouseDown={(event) => event.stopPropagation()} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}>
+      <button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button>
+      <div className="ho-detail-head">
+        <div className="ho-modal-icon"><CategoryIcon category={category.id} /></div>
+        <div><span className="modal-label">{bundle.title} · SECTION {category.step}</span><h2 id="ho-detail-title">{entry.title}</h2><p>{category.label}</p></div>
+      </div>
+      <div className="ho-detail-body">
+        {filled.length > 0 && <dl className="ho-detail-properties">{filled.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{entry.properties[field.key]}</dd></div>)}</dl>}
+        <div className="ho-detail-content" style={{ fontFamily: entry.formatting.fontFamily, fontSize: `${entry.formatting.fontSize}px` }} dangerouslySetInnerHTML={{ __html: entry.detail }} />
+        <div className="ho-detail-files">
+          <span>첨부파일 <b>{entry.attachments.length}개</b></span>
+          {entry.attachments.length > 0
+            ? <ul>{entry.attachments.map((file) => <li key={file.id}><span className="ho-file-kind">{fileKind(file.name)}</span><span className="ho-file-meta"><b>{file.name}</b><small>{formatBytes(file.size)}</small></span><a href={file.url} download={file.name} target="_blank" rel="noreferrer">내려받기</a></li>)}</ul>
+            : <p>이 항목에 첨부된 파일이 없습니다.</p>}
+        </div>
+      </div>
+      <div className="ho-detail-actions">
+        <button type="button" disabled={index <= 0} onClick={() => onSelect(ordered[index - 1].id)}><span aria-hidden="true">←</span> 이전 항목</button>
+        <em>{index + 1} / {ordered.length}</em>
+        <button type="button" disabled={index < 0 || index >= ordered.length - 1} onClick={() => onSelect(ordered[index + 1].id)}>다음 항목 <span aria-hidden="true">→</span></button>
+        <button type="button" className="ho-detail-close" onClick={onClose}>닫기</button>
+      </div>
+    </section>
+  </div>;
+}
+
+/** Turns a person's calendar into proposed entries. Nothing is saved until the author adopts it. */
+function DraftModal({ onAdopt, onClose }: { onAdopt: (item: DraftItem) => void; onClose: () => void }) {
+  const [personId, setPersonId] = useState(seedTeams[0].people[0].id);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<DraftResponse | null>(null);
+  const [adopted, setAdopted] = useState<string[]>([]);
+
+  const generate = async () => {
+    setLoading(true);
+    setError('');
+    setResult(null);
+    setAdopted([]);
+    try {
+      const response = await fetch('/api/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
+      const data = await response.json() as DraftResponse & { error?: string };
+      if (!response.ok) setError(data.error ?? '초안을 만들지 못했습니다.');
+      else if (!data.drafts.length) setError('이 담당자의 일정에서는 만들 수 있는 초안이 없습니다.');
+      else setResult(data);
+    } catch {
+      setError('네트워크 오류로 초안을 만들지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const adopt = (item: DraftItem) => {
+    onAdopt(item);
+    setAdopted((current) => [...current, item.id]);
+  };
+
+  const adoptAll = () => {
+    if (!result) return;
+    result.drafts.filter((item) => !adopted.includes(item.id)).forEach(onAdopt);
+    setAdopted(result.drafts.map((item) => item.id));
+  };
+
+  const remaining = result ? result.drafts.filter((item) => !adopted.includes(item.id)).length : 0;
+
+  return <div className="modal-backdrop ho-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="ho-draft-modal" role="dialog" aria-modal="true" aria-labelledby="ho-draft-title" onMouseDown={(event) => event.stopPropagation()}>
+      <button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button>
+      <div className="ho-draft-head">
+        <span className="ho-draft-spark" aria-hidden="true">✦</span>
+        <div><span className="modal-label">DRAFT FROM CALENDAR</span><h2 id="ho-draft-title">캘린더에서 초안 만들기</h2><p>담당자의 연간 일정과 일정 변경 이력만을 근거로 초안을 제안합니다. 채택하기 전까지 아무것도 저장되지 않습니다.</p></div>
+      </div>
+      <div className="ho-draft-controls">
+        <label><span>담당자</span><select value={personId} onChange={(event) => setPersonId(event.target.value)} disabled={loading}>{seedTeams.map((team) => <optgroup label={team.title} key={team.id}>{team.people.map((person) => <option value={person.id} key={person.id}>{person.name} · {person.role}</option>)}</optgroup>)}</select></label>
+        <button type="button" onClick={generate} disabled={loading}>{loading ? '초안 만드는 중…' : result ? '다시 만들기' : '초안 만들기'}</button>
+      </div>
+
+      {loading && <div className="ho-draft-loading"><i /><i /><i /><p>연간 일정과 일정 변경 이력을 정리하고 있습니다.</p></div>}
+      {error && <p className="ho-draft-error" role="alert">{error}</p>}
+
+      {result && <>
+        <div className="ho-draft-summary">
+          <p><b>{result.person.name}</b> · {result.person.team} · 오늘 기준 {result.todayLabel}</p>
+          <span>{result.drafts.length}건 제안 · {adopted.length}건 채택됨</span>
+        </div>
+        <div className="ho-draft-list">{result.drafts.map((item) => {
+          const meta = categories.find((category) => category.id === item.category)!;
+          const isAdopted = adopted.includes(item.id);
+          return <article className={`ho-draft-card ${isAdopted ? 'is-adopted' : ''}`} key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as React.CSSProperties}>
+            <div className="ho-draft-card-head">
+              <span className="ho-draft-chip"><i />{meta.short}</span>
+              <span className={`ho-draft-basis ${item.basis}`}>{item.basis === 'record' ? '기록 기반' : '확인 필요'}</span>
+              <small>근거 · {item.sourceTask}</small>
+            </div>
+            <h4>{item.title}</h4>
+            {Object.keys(item.properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
+            <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />
+            <div className="ho-draft-card-actions">
+              {isAdopted
+                ? <span className="ho-draft-done">✓ 항목으로 추가됨</span>
+                : <button type="button" onClick={() => adopt(item)}>이 초안 채택</button>}
+            </div>
+          </article>;
+        })}</div>
+      </>}
+
+      <div className="ho-modal-actions">
+        <p><span>ⓘ</span> 초안은 일정 기록만을 근거로 합니다. ‘확인이 필요한 내용’의 질문은 작성자가 직접 채워 주세요.</p>
+        <button type="button" onClick={onClose}>닫기</button>
+        <button type="button" onClick={adoptAll} disabled={!result || remaining === 0}>남은 {remaining}건 모두 채택</button>
+      </div>
+    </section>
   </div>;
 }
 
@@ -203,35 +399,82 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
   const [role, setRole] = useState<'author' | 'manager'>('author');
   const [editor, setEditor] = useState<{ category: HandoverCategory; entry?: HandoverEntry } | null>(null);
   const [expandedBundle, setExpandedBundle] = useState<string | null>('b1');
+  const [detailView, setDetailView] = useState<{ bundleId: string; entryId: string } | null>(null);
   const [toast, setToast] = useState('');
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [quality, setQuality] = useState<QualityResponse | null>(null);
+  const [qualityLoading, setQualityLoading] = useState(false);
+  const [qualityError, setQualityError] = useState('');
 
   const assignedIds = useMemo(() => new Set(bundles.flatMap((bundle) => bundle.entryIds)), [bundles]);
   const unassignedEntries = entries.filter((entry) => !assignedIds.has(entry.id));
   const activeMeta = categories.find((category) => category.id === activeCategory)!;
   const canSubmit = bundles.length > 0 && entries.length > 0 && unassignedEntries.length === 0 && bundles.every((bundle) => bundle.entryIds.length > 0 && bundle.title.trim());
   const isLocked = status === 'pending' || status === 'approved';
+  const detailBundle = detailView ? bundles.find((bundle) => bundle.id === detailView.bundleId) : undefined;
+  const detailEntry = detailView ? entries.find((entry) => entry.id === detailView.entryId) : undefined;
 
   const flash = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2400);
   };
 
-  const saveEntry = (title: string, detail: string, properties: Record<string, string>, formatting: EntryFormatting) => {
+  const saveEntry = (title: string, detail: string, properties: Record<string, string>, formatting: EntryFormatting, attachments: EntryAttachment[]) => {
     if (!editor) return;
     if (editor.entry) {
-      setEntries((current) => current.map((entry) => entry.id === editor.entry?.id ? { ...entry, title, detail, properties, formatting } : entry));
+      setEntries((current) => current.map((entry) => entry.id === editor.entry?.id ? { ...entry, title, detail, properties, attachments, formatting } : entry));
+      setQuality(null);
       flash('항목을 수정했습니다.');
     } else {
       const id = `${editor.category}-${Date.now()}`;
-      setEntries((current) => [...current, { id, category: editor.category, title, detail, properties, formatting }]);
+      setEntries((current) => [...current, { id, category: editor.category, title, detail, properties, attachments, formatting }]);
       flash('새 항목을 추가했습니다.');
     }
     setEditor(null);
   };
 
+  /* findings quote the text as it was checked, so any edit retires them */
+  const runQualityCheck = async () => {
+    setQualityLoading(true);
+    setQualityError('');
+    setQuality(null);
+    try {
+      const response = await fetch('/api/quality', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entries: entries.map((entry) => ({ id: entry.id, category: entry.category, title: entry.title, text: plainText(entry.detail) })) }),
+      });
+      const data = await response.json() as QualityResponse & { error?: string };
+      if (!response.ok) setQualityError(data.error ?? '점검에 실패했습니다.');
+      else setQuality(data);
+    } catch {
+      setQualityError('네트워크 오류로 점검하지 못했습니다.');
+    } finally {
+      setQualityLoading(false);
+    }
+  };
+
+  const editEntry = (entryId: string) => {
+    const entry = entries.find((item) => item.id === entryId);
+    if (!entry) return;
+    setActiveCategory(entry.category);
+    setTab('write');
+    setEditor({ category: entry.category, entry });
+  };
+
+  const adoptDraft = (item: DraftItem) => {
+    const id = `${item.category}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setEntries((current) => [...current, { id, category: item.category, title: item.title, detail: item.detail, properties: item.properties, attachments: [], formatting: defaultFormatting }]);
+    setActiveCategory(item.category);
+    setQuality(null);
+    flash('초안을 항목으로 추가했습니다.');
+  };
+
   const removeEntry = (id: string) => {
+    entries.find((entry) => entry.id === id)?.attachments.forEach((file) => URL.revokeObjectURL(file.url));
     setEntries((current) => current.filter((entry) => entry.id !== id));
     setBundles((current) => current.map((bundle) => ({ ...bundle, entryIds: bundle.entryIds.filter((entryId) => entryId !== id) })));
+    setQuality(null);
     flash('항목을 삭제했습니다.');
   };
 
@@ -285,13 +528,18 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
     {role === 'author' && tab === 'write' && <section className="ho-content ho-write-view">
       <div className="ho-section-title"><div><span>STEP 01</span><h2>인수인계 항목 작성</h2><p>순서에 관계없이 필요한 섹션부터 작성할 수 있습니다.</p></div><button type="button" onClick={() => setTab('compose')}>업무 단위 조합하기 <span>→</span></button></div>
       {status === 'rejected' && <div className="ho-reject-banner"><span>!</span><div><b>팀장 검토 후 반려되었습니다.</b><p>아래 항목을 보완한 뒤 업무 단위 조합 화면에서 다시 제출해 주세요.</p></div><button type="button" onClick={() => setTab('review')}>검토 의견 보기</button></div>}
+      <div className="ho-draft-cta">
+        <span className="ho-draft-spark" aria-hidden="true">✦</span>
+        <div><b>캘린더에서 초안 불러오기</b><p>연간 일정과 일정 변경 사유를 근거로 4개 섹션의 초안을 제안합니다.</p></div>
+        <button type="button" onClick={() => setDraftOpen(true)} disabled={isLocked}>초안 만들기</button>
+      </div>
       <div className="ho-category-tabs">{categories.map((category) => {
         const count = entries.filter((entry) => entry.category === category.id).length;
         return <button type="button" key={category.id} className={activeCategory === category.id ? 'active' : ''} onClick={() => setActiveCategory(category.id)} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><span className="ho-category-icon"><CategoryIcon category={category.id} /></span><span><small>{category.step}</small><b>{category.short}</b><em>{count}개</em></span></button>;
       })}</div>
       <div className="ho-entry-panel" style={{ '--category': activeMeta.accent, '--category-soft': activeMeta.soft } as React.CSSProperties}>
         <div className="ho-entry-head"><div className="ho-category-icon large"><CategoryIcon category={activeMeta.id} /></div><div><span>SECTION {activeMeta.step}</span><h3>{activeMeta.label}</h3><p>{activeMeta.description}</p></div><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span>＋</span> 새 항목 추가</button></div>
-        <div className="ho-entry-list">{entries.filter((entry) => entry.category === activeMeta.id).map((entry, index) => <article key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}</div><p>{plainText(entry.detail)}</p><span className="ho-linked">{assignedIds.has(entry.id) ? `업무 단위에 연결됨` : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => setEditor({ category: activeMeta.id, entry })} disabled={isLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={isLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>)}{entries.every((entry) => entry.category !== activeMeta.id) && <div className="ho-empty"><div className="ho-category-icon"><CategoryIcon category={activeMeta.id} /></div><b>아직 작성된 항목이 없습니다.</b><p>새 항목을 추가해 인수인계를 시작하세요.</p></div>}</div>
+        <div className="ho-entry-list">{entries.filter((entry) => entry.category === activeMeta.id).map((entry, index) => <article key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><p>{plainText(entry.detail)}</p><span className="ho-linked">{assignedIds.has(entry.id) ? `업무 단위에 연결됨` : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => setEditor({ category: activeMeta.id, entry })} disabled={isLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={isLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>)}{entries.every((entry) => entry.category !== activeMeta.id) && <div className="ho-empty"><div className="ho-category-icon"><CategoryIcon category={activeMeta.id} /></div><b>아직 작성된 항목이 없습니다.</b><p>새 항목을 추가해 인수인계를 시작하세요.</p></div>}</div>
       </div>
       <aside className="ho-writing-tip"><span>TIP</span><p>한 항목에는 하나의 주제를 적어두면, 최종 조합 단계에서 여러 담당업무 단위로 정리하기 쉽습니다.</p><div>{categories.map((category) => <span key={category.id}><i style={{ background: category.accent }} />{category.short}<b>{entries.filter((entry) => entry.category === category.id).length}</b></span>)}</div></aside>
     </section>}
@@ -308,6 +556,37 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
         })}</div>)}</div>}
         {expandedBundle === bundle.id && !isLocked && <div className="ho-bundle-footer"><button type="button" onClick={() => { setBundles((current) => current.filter((item) => item.id !== bundle.id)); setExpandedBundle(null); }}>업무 단위 삭제</button><span>선택한 항목 <b>{bundle.entryIds.length}개</b></span></div>}
       </article>)}{bundles.length === 0 && <div className="ho-empty-bundle"><b>아직 만들어진 담당업무 단위가 없습니다.</b><p>새 업무 단위를 만들고 작성한 항목을 자유롭게 조합해 주세요.</p><button type="button" onClick={addBundle}>＋ 첫 업무 단위 만들기</button></div>}</div>
+      <div className="ho-quality">
+        <div className="ho-quality-head">
+          <span className="ho-quality-icon" aria-hidden="true">✓</span>
+          <div><b>제출 전 점검</b><p>후임자가 이 문서만 보고 업무를 이어받을 수 있는지 확인합니다. 점검하지 않아도 제출할 수 있습니다.</p></div>
+          <button type="button" onClick={runQualityCheck} disabled={qualityLoading || isLocked || !entries.length}>{qualityLoading ? '점검하는 중…' : quality ? '다시 점검' : '점검 실행'}</button>
+        </div>
+        {qualityError && <p className="ho-quality-error" role="alert">{qualityError}</p>}
+        {quality && quality.findings.length === 0 && <p className="ho-quality-clear"><span aria-hidden="true">✓</span> {quality.checked}개 항목을 확인했고, 후임자가 막힐 만한 내용은 없었습니다.</p>}
+        {quality && quality.findings.length > 0 && <>
+          <div className="ho-quality-counts">
+            <span className="high">보완 필요 <b>{quality.findings.filter((finding) => finding.severity === 'high').length}</b></span>
+            <span className="low">확인 권장 <b>{quality.findings.filter((finding) => finding.severity === 'low').length}</b></span>
+            <small>{quality.checked}개 항목 점검함</small>
+          </div>
+          <ul className="ho-quality-list">{quality.findings.map((finding) => {
+            const entry = entries.find((item) => item.id === finding.entryId);
+            const meta = entry ? categories.find((category) => category.id === entry.category) : undefined;
+            return <li className={finding.severity} key={finding.id} style={meta ? { '--category': meta.accent, '--category-soft': meta.soft } as React.CSSProperties : undefined}>
+              <div className="ho-finding-head">
+                <span className="ho-finding-severity">{finding.severity === 'high' ? '보완 필요' : '확인 권장'}</span>
+                <span className="ho-finding-kind">{finding.kind}</span>
+                <small>{meta?.short} · {entry?.title ?? '삭제된 항목'}</small>
+              </div>
+              <p className="ho-finding-quote">“{finding.quote}”</p>
+              <p className="ho-finding-message">{finding.message}</p>
+              {finding.suggestion && <p className="ho-finding-suggestion"><b>보완</b>{finding.suggestion}</p>}
+              {entry && <button type="button" onClick={() => editEntry(finding.entryId)}>이 항목 편집 <span aria-hidden="true">→</span></button>}
+            </li>;
+          })}</ul>
+        </>}
+      </div>
       <div className="ho-submit-bar"><div><span>{canSubmit ? '✓' : '!'}</span><p><b>{canSubmit ? '제출 준비가 완료되었습니다.' : '아직 제출할 수 없습니다.'}</b><small>{canSubmit ? `${bundles.length}개 담당업무 단위 · 총 ${entries.length}개 항목` : '미배치 항목과 비어 있는 업무 단위를 확인해 주세요.'}</small></p></div><button type="button" disabled={!canSubmit || isLocked} onClick={submitHandover}>{status === 'pending' ? '검토 대기 중' : status === 'approved' ? '승인 완료' : '팀장에게 제출'} <span>→</span></button></div>
     </section>}
 
@@ -318,7 +597,7 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
         <div className={`ho-review-banner ${status}`}><div className="ho-review-symbol">{status === 'pending' ? '⌛' : status === 'approved' ? '✓' : '!'}</div><div><span>{status === 'pending' ? 'REVIEW IN PROGRESS' : status === 'approved' ? 'HANDOVER APPROVED' : 'REVISION REQUESTED'}</span><h3>{status === 'pending' ? (role === 'manager' ? '검토할 인수인계서가 도착했습니다.' : '팀장 검토를 기다리고 있습니다.') : status === 'approved' ? '인수인계가 정상적으로 승인되었습니다.' : '보완 후 다시 제출해 주세요.'}</h3><p>{status === 'pending' ? `담당업무 ${bundles.length}개 단위 · 총 ${entries.length}개 항목` : status === 'approved' ? '승인 절차가 완료되어 인수인계가 정상 처리되었습니다.' : '반려된 담당업무 단위의 코멘트를 확인하고 내용을 수정할 수 있습니다.'}</p></div><StatusBadge status={status} /></div>
         <div className="ho-review-layout"><div className="ho-review-bundles">{bundles.map((bundle, index) => <article className={`ho-review-card ${bundle.decision ?? ''}`} key={bundle.id}>
           <div className="ho-review-card-head"><span>A-{String(index + 1).padStart(2, '0')}</span><div><small>담당업무 단위</small><h3>{bundle.title}</h3></div><div>{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{bundle.decision && <b className={bundle.decision}>{bundle.decision === 'approved' ? '승인' : '반려'}</b>}</div>
-          <BundleReadOnly bundle={bundle} entries={entries} />
+          <BundleReadOnly bundle={bundle} entries={entries} onOpenEntry={(entryId) => setDetailView({ bundleId: bundle.id, entryId })} />
           {role === 'manager' && status === 'pending' && <div className="ho-manager-decision"><div><span>검토 결과</span><button type="button" className={bundle.decision === 'approved' ? 'active approve' : ''} onClick={() => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, decision: 'approved', comment: '' } : item))}>✓ 승인</button><button type="button" className={bundle.decision === 'rejected' ? 'active reject' : ''} onClick={() => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, decision: 'rejected' } : item))}>↩ 반려</button></div>{bundle.decision === 'rejected' && <label>보완 요청 코멘트 <span>*</span><textarea value={bundle.comment} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, comment: event.target.value } : item))} placeholder="이 담당업무 단위에서 보완해야 할 내용을 구체적으로 적어주세요." rows={3} /></label>}</div>}
           {role === 'author' && bundle.decision === 'rejected' && bundle.comment && <div className="ho-manager-comment"><span>팀장 코멘트</span><p>{bundle.comment}</p></div>}
         </article>)}</div>
@@ -327,6 +606,8 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
         {role === 'author' && status === 'rejected' && <div className="ho-resubmit"><div><span>↻</span><p><b>수정 후 다시 제출할 수 있습니다.</b><small>기존 항목과 조합은 그대로 유지되며, 필요한 내용만 보완하면 됩니다.</small></p></div><button type="button" onClick={reopenDraft}>수정 시작하기 <span>→</span></button></div>}
       </>}
     </section>}
+    {draftOpen && <DraftModal onAdopt={adoptDraft} onClose={() => setDraftOpen(false)} />}
     {editor && <EntryEditor category={categories.find((category) => category.id === editor.category)!} entry={editor.entry} onSave={saveEntry} onClose={() => setEditor(null)} />}
+    {detailBundle && detailEntry && <EntryDetailModal entry={detailEntry} bundle={detailBundle} entries={entries} onSelect={(entryId) => setDetailView({ bundleId: detailBundle.id, entryId })} onClose={() => setDetailView(null)} />}
   </main>;
 }
