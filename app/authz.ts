@@ -6,6 +6,7 @@ const ADMIN_EMAIL = 'gyeunguk2062@gmail.com';
 const MEMBER_EMAILS = new Set([
   'ruddnr2062@gmail.com',
   'seongwhan0712@gmail.com',
+  'hyk@ssu.ac.kr',
 ]);
 
 export function getAppRole(user: ChatGPTUser): AppRole | null {
