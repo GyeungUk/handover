@@ -78,3 +78,59 @@ export type QualityFinding = {
 };
 
 export type QualityResponse = { checked: number; findings: QualityFinding[] };
+
+/**
+ * One entry proposed from an uploaded document.
+ * `sourceQuote` is verified to appear in the uploaded text before it is returned; when the model
+ * paraphrased instead of quoting, it comes back empty and the card shows no evidence line.
+ */
+export type ImportItem = {
+  id: string;
+  category: HandoverCategory;
+  title: string;
+  detail: string;
+  properties: Record<string, string>;
+  questions: string[];
+  sourceQuote: string;
+  /** `high` — the source clearly belongs in this section. `low` — the section was a judgement call. */
+  confidence: 'high' | 'low';
+};
+
+export type ImportResponse = {
+  fileName: string;
+  charCount: number;
+  items: ImportItem[];
+  /** content the model could not place in any of the four sections, kept visible rather than dropped */
+  unmapped: string[];
+};
+
+/** What next year's document should do with a current entry. */
+export type AnnualAction = 'keep' | 'revise' | 'new' | 'archive';
+
+export const annualActionLabels: Record<AnnualAction, string> = {
+  keep: '그대로 유지',
+  revise: '내용 수정',
+  new: '신규 추가',
+  archive: '올해는 제외',
+};
+
+export type AnnualItem = {
+  id: string;
+  action: AnnualAction;
+  /** the entry this proposal acts on; null for `new` */
+  entryId: string | null;
+  previousTitle: string;
+  category: HandoverCategory;
+  title: string;
+  detail: string;
+  properties: Record<string, string>;
+  reason: string;
+  questions: string[];
+};
+
+export type AnnualResponse = {
+  fromYear: number;
+  toYear: number;
+  reviewed: number;
+  items: AnnualItem[];
+};

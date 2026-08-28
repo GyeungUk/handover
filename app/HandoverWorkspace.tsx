@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
 
-import { propertyFieldsByCategory, type DraftItem, type DraftResponse, type HandoverCategory, type PropertyField, type QualityResponse } from './handover-schema';
+import { annualActionLabels, propertyFieldsByCategory, type AnnualAction, type AnnualItem, type AnnualResponse, type DraftItem, type DraftResponse, type HandoverCategory, type ImportItem, type ImportResponse, type PropertyField, type QualityResponse } from './handover-schema';
+import { extractText, supportedNote } from './file-text';
 import { seedTeams } from './org-data';
 
 export type { HandoverCategory };
@@ -19,6 +20,9 @@ type HandoverEntry = {
   attachments: EntryAttachment[];
   formatting: EntryFormatting;
 };
+
+/** The shape every AI proposal boils down to before it becomes a real entry. */
+type AdoptableItem = { category: HandoverCategory; title: string; detail: string; properties: Record<string, string> };
 
 type EntryAttachment = { id: string; name: string; size: number; type: string; url: string };
 type EntryFormatting = { fontFamily: string; fontSize: string };
@@ -390,6 +394,248 @@ function DraftModal({ onAdopt, onClose }: { onAdopt: (item: DraftItem) => void; 
   </div>;
 }
 
+
+/** Reads a handover document the author already has and proposes entries for all four sections. */
+function ImportModal({ onAdopt, onClose }: { onAdopt: (item: ImportItem) => void; onClose: () => void }) {
+  const [source, setSource] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [reading, setReading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<ImportResponse | null>(null);
+  const [adopted, setAdopted] = useState<string[]>([]);
+  const [dropActive, setDropActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => { setResult(null); setAdopted([]); setError(''); };
+
+  const takeFile = async (file: File | null | undefined) => {
+    if (!file) return;
+    setReading(true);
+    reset();
+    try {
+      const text = await extractText(file);
+      if (text.trim().length < 30) throw new Error('파일에서 읽어낸 내용이 너무 짧습니다. 문서 내용을 복사해 아래에 붙여넣어 주세요.');
+      setSource(text);
+      setFileName(file.name);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '파일을 읽지 못했습니다.');
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const classify = async () => {
+    setLoading(true);
+    reset();
+    try {
+      const response = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, fileName: fileName || '붙여넣은 내용' }),
+      });
+      const data = await response.json() as ImportResponse & { error?: string };
+      if (!response.ok) setError(data.error ?? '자동 분류에 실패했습니다.');
+      else if (!data.items.length) setError('네 개 섹션에 넣을 만한 내용을 찾지 못했습니다. 자료를 확인해 주세요.');
+      else setResult(data);
+    } catch {
+      setError('네트워크 오류로 분류하지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const adopt = (item: ImportItem) => {
+    onAdopt(item);
+    setAdopted((current) => [...current, item.id]);
+  };
+
+  const adoptAll = () => {
+    if (!result) return;
+    result.items.filter((item) => !adopted.includes(item.id)).forEach(onAdopt);
+    setAdopted(result.items.map((item) => item.id));
+  };
+
+  const remaining = result ? result.items.filter((item) => !adopted.includes(item.id)).length : 0;
+  const ready = source.trim().length >= 30;
+
+  return <div className="modal-backdrop ho-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="ho-draft-modal" role="dialog" aria-modal="true" aria-labelledby="ho-import-title" onMouseDown={(event) => event.stopPropagation()}>
+      <button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button>
+      <div className="ho-draft-head">
+        <span className="ho-draft-spark" aria-hidden="true">⇪</span>
+        <div><span className="modal-label">IMPORT EXISTING DOCUMENT</span><h2 id="ho-import-title">기존 자료 불러오기</h2><p>예전에 쓰던 인수인계 문서를 올리면 담당업무·계획·현안·미결 네 개 섹션으로 나누어 초안을 제안합니다. 채택하기 전까지 아무것도 저장되지 않습니다.</p></div>
+      </div>
+
+      <div className="ho-import-input">
+        <div
+          className={`ho-dropzone ${dropActive ? 'active' : ''}`}
+          onDragOver={(event) => { event.preventDefault(); setDropActive(true); }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={(event) => { event.preventDefault(); setDropActive(false); void takeFile(event.dataTransfer.files?.[0]); }}
+        >
+          <span className="ho-dropzone-icon" aria-hidden="true">⇪</span>
+          <p><b>{reading ? '파일을 읽는 중입니다…' : '기존 인수인계 자료를 끌어다 놓으세요'}</b><small>{supportedNote} 다른 형식은 내용을 복사해 붙여넣어 주세요.</small></p>
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={reading || loading}>파일 선택</button>
+          <input ref={fileInputRef} type="file" hidden accept=".txt,.md,.csv,.tsv,.json,.html,.docx,text/*" onChange={(event) => { void takeFile(event.target.files?.[0]); event.target.value = ''; }} />
+        </div>
+        <label className="ho-import-paste">
+          <span>또는 문서 내용을 그대로 붙여넣기</span>
+          <textarea value={source} onChange={(event) => { setSource(event.target.value); setFileName(''); reset(); }} rows={5} placeholder={'예)\n담당업무: 외국인 유학생 체류·비자 관리\n2학기 연장 단체접수 진행 중 (84명 중 71명 서류 검토 완료)\n재정증명 보완 대상 2명 회신 지연\n출입국 방문 일정 미확정'} />
+        </label>
+        <div className="ho-import-actions">
+          <small>{fileName ? `${fileName} · ${source.length.toLocaleString()}자 읽음` : source.trim() ? `${source.length.toLocaleString()}자 입력됨` : '아직 읽어들인 내용이 없습니다.'}</small>
+          <button type="button" onClick={classify} disabled={!ready || loading || reading}>{loading ? '분류하는 중…' : result ? '다시 분류' : '섹션 자동 분류'}</button>
+        </div>
+      </div>
+
+      {loading && <div className="ho-draft-loading"><i /><i /><i /><p>자료를 읽고 네 개 섹션으로 나누고 있습니다.</p></div>}
+      {error && <p className="ho-draft-error" role="alert">{error}</p>}
+
+      {result && <>
+        <div className="ho-import-summary">
+          <p><b>{result.fileName}</b> · {result.charCount.toLocaleString()}자에서 {result.items.length}건을 정리했습니다.</p>
+          <div className="ho-import-counts">{categories.map((category) => {
+            const count = result.items.filter((item) => item.category === category.id).length;
+            return <span key={category.id} className={count ? '' : 'empty'} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><i />{category.short}<b>{count}</b></span>;
+          })}</div>
+        </div>
+        {result.unmapped.length > 0 && <div className="ho-import-unmapped"><b>섹션에 넣지 못한 내용</b><ul>{result.unmapped.map((line) => <li key={line}>{line}</li>)}</ul></div>}
+        <div className="ho-draft-list">{result.items.map((item) => {
+          const meta = categories.find((category) => category.id === item.category)!;
+          const isAdopted = adopted.includes(item.id);
+          return <article className={`ho-draft-card ${isAdopted ? 'is-adopted' : ''}`} key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as React.CSSProperties}>
+            <div className="ho-draft-card-head">
+              <span className="ho-draft-chip"><i />{meta.short}</span>
+              <span className={`ho-draft-basis ${item.confidence === 'high' ? 'record' : 'inferred'}`}>{item.confidence === 'high' ? '섹션 확실' : '섹션 확인 필요'}</span>
+              <small>{item.sourceQuote ? '원문 근거 확인됨' : '원문 요약'}</small>
+            </div>
+            <h4>{item.title}</h4>
+            {Object.keys(item.properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
+            <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />
+            {item.sourceQuote && <p className="ho-import-quote"><span>원문</span>“{item.sourceQuote}”</p>}
+            <div className="ho-draft-card-actions">
+              {isAdopted ? <span className="ho-draft-done">✓ 항목으로 추가됨</span> : <button type="button" onClick={() => adopt(item)}>이 항목 채택</button>}
+            </div>
+          </article>;
+        })}</div>
+      </>}
+
+      <div className="ho-modal-actions">
+        <p><span>ⓘ</span> 원문에 없는 내용은 만들지 않습니다. 비어 있는 부분은 ‘확인이 필요한 내용’ 질문으로 남습니다.</p>
+        <button type="button" onClick={onClose}>닫기</button>
+        <button type="button" onClick={adoptAll} disabled={!result || remaining === 0}>남은 {remaining}건 모두 채택</button>
+      </div>
+    </section>
+  </div>;
+}
+
+/** Rolls this year's document forward: what repeats, what needs new dates, what should drop out. */
+function AnnualModal({ entries, onApply, onClose }: { entries: HandoverEntry[]; onApply: (item: AnnualItem) => void; onClose: () => void }) {
+  const thisYear = new Date().getFullYear();
+  const [year, setYear] = useState(thisYear);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<AnnualResponse | null>(null);
+  const [applied, setApplied] = useState<string[]>([]);
+
+  const generate = async () => {
+    setLoading(true);
+    setError('');
+    setResult(null);
+    setApplied([]);
+    try {
+      const response = await fetch('/api/annual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          year,
+          entries: entries.map((entry) => ({ id: entry.id, category: entry.category, title: entry.title, text: plainText(entry.detail), properties: entry.properties })),
+        }),
+      });
+      const data = await response.json() as AnnualResponse & { error?: string };
+      if (!response.ok) setError(data.error ?? '초안을 만들지 못했습니다.');
+      else setResult(data);
+    } catch {
+      setError('네트워크 오류로 초안을 만들지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = (item: AnnualItem) => {
+    onApply(item);
+    setApplied((current) => [...current, item.id]);
+  };
+
+  const actionable = result ? result.items.filter((item) => item.action !== 'keep') : [];
+  const remaining = actionable.filter((item) => !applied.includes(item.id));
+
+  const applyAll = () => {
+    remaining.forEach(onApply);
+    setApplied(actionable.map((item) => item.id));
+  };
+
+  const countOf = (action: AnnualAction) => result?.items.filter((item) => item.action === action).length ?? 0;
+
+  return <div className="modal-backdrop ho-modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="ho-draft-modal" role="dialog" aria-modal="true" aria-labelledby="ho-annual-title" onMouseDown={(event) => event.stopPropagation()}>
+      <button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button>
+      <div className="ho-draft-head">
+        <span className="ho-draft-spark" aria-hidden="true">↻</span>
+        <div><span className="modal-label">ANNUAL UPDATE</span><h2 id="ho-annual-title">연간 업데이트 1차 초안</h2><p>지난 학년도 인수인계서를 그대로 두지 않고, 해마다 달라지는 부분만 골라 다음 학년도 초안으로 만들어 드립니다. 최종 확인은 작성자가 합니다.</p></div>
+      </div>
+      <div className="ho-draft-controls">
+        <label><span>기준 학년도</span><select value={year} onChange={(event) => { setYear(Number(event.target.value)); setResult(null); setApplied([]); }} disabled={loading}>{[thisYear - 1, thisYear, thisYear + 1].map((option) => <option value={option} key={option}>{option}학년도 → {option + 1}학년도</option>)}</select></label>
+        <button type="button" onClick={generate} disabled={loading || !entries.length}>{loading ? '초안 만드는 중…' : result ? '다시 만들기' : '1차 초안 만들기'}</button>
+      </div>
+
+      {loading && <div className="ho-draft-loading"><i /><i /><i /><p>{entries.length}개 항목에서 해마다 달라지는 부분을 찾고 있습니다.</p></div>}
+      {error && <p className="ho-draft-error" role="alert">{error}</p>}
+
+      {result && <>
+        <div className="ho-annual-summary">
+          <p><b>{result.fromYear}학년도 → {result.toYear}학년도</b> · {result.reviewed}개 항목 검토</p>
+          <div className="ho-annual-counts">
+            <span className="revise">수정 <b>{countOf('revise')}</b></span>
+            <span className="new">신규 <b>{countOf('new')}</b></span>
+            <span className="archive">제외 <b>{countOf('archive')}</b></span>
+            <span className="keep">유지 <b>{countOf('keep')}</b></span>
+          </div>
+        </div>
+        <div className="ho-draft-list">{result.items.map((item) => {
+          const meta = categories.find((category) => category.id === item.category)!;
+          const isApplied = applied.includes(item.id);
+          return <article className={`ho-draft-card ho-annual-card ${item.action} ${isApplied ? 'is-adopted' : ''}`} key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as React.CSSProperties}>
+            <div className="ho-draft-card-head">
+              <span className="ho-draft-chip"><i />{meta.short}</span>
+              <span className={`ho-annual-action ${item.action}`}>{annualActionLabels[item.action]}</span>
+              <small>{item.action === 'new' ? '신규 제안' : `전년도 · ${item.previousTitle}`}</small>
+            </div>
+            <h4>{item.title}</h4>
+            {item.reason && <p className="ho-annual-reason">{item.reason}</p>}
+            {Object.keys(item.properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
+            {item.detail && item.action !== 'keep' && <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />}
+            <div className="ho-draft-card-actions">
+              {item.action === 'keep'
+                ? <span className="ho-annual-hold">그대로 두면 됩니다</span>
+                : isApplied
+                  ? <span className="ho-draft-done">✓ 반영됨</span>
+                  : <button type="button" onClick={() => apply(item)}>{item.action === 'archive' ? '올해 문서에서 제외' : item.action === 'new' ? '항목으로 추가' : '수정 내용 반영'}</button>}
+            </div>
+          </article>;
+        })}</div>
+      </>}
+
+      <div className="ho-modal-actions">
+        <p><span>ⓘ</span> 날짜를 한 해 뒤로 옮긴 항목은 실제 학사일정과 다를 수 있어 확인 질문이 함께 붙습니다.</p>
+        <button type="button" onClick={onClose}>닫기</button>
+        <button type="button" onClick={applyAll} disabled={!result || remaining.length === 0}>남은 {remaining.length}건 모두 반영</button>
+      </div>
+    </section>
+  </div>;
+}
+
 export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
   const [tab, setTab] = useState<WorkspaceTab>('write');
   const [activeCategory, setActiveCategory] = useState<HandoverCategory>('responsibility');
@@ -402,6 +648,8 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
   const [detailView, setDetailView] = useState<{ bundleId: string; entryId: string } | null>(null);
   const [toast, setToast] = useState('');
   const [draftOpen, setDraftOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [annualOpen, setAnnualOpen] = useState(false);
   const [quality, setQuality] = useState<QualityResponse | null>(null);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [qualityError, setQualityError] = useState('');
@@ -462,20 +710,41 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
     setEditor({ category: entry.category, entry });
   };
 
-  const adoptDraft = (item: DraftItem) => {
-    const id = `${item.category}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setEntries((current) => [...current, { id, category: item.category, title: item.title, detail: item.detail, properties: item.properties, attachments: [], formatting: defaultFormatting }]);
-    setActiveCategory(item.category);
-    setQuality(null);
-    flash('초안을 항목으로 추가했습니다.');
-  };
-
   const removeEntry = (id: string) => {
     entries.find((entry) => entry.id === id)?.attachments.forEach((file) => URL.revokeObjectURL(file.url));
     setEntries((current) => current.filter((entry) => entry.id !== id));
     setBundles((current) => current.map((bundle) => ({ ...bundle, entryIds: bundle.entryIds.filter((entryId) => entryId !== id) })));
     setQuality(null);
     flash('항목을 삭제했습니다.');
+  };
+
+  /** Every AI proposal — calendar draft, uploaded document, next-year update — lands here. */
+  const adoptProposal = (item: AdoptableItem, message = '초안을 항목으로 추가했습니다.') => {
+    const id = `${item.category}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setEntries((current) => [...current, { id, category: item.category, title: item.title, detail: item.detail, properties: item.properties, attachments: [], formatting: defaultFormatting }]);
+    setActiveCategory(item.category);
+    setQuality(null);
+    flash(message);
+  };
+
+  /** Applies one line of next year's draft: rewrite in place, add, or drop the entry. */
+  const applyAnnual = (item: AnnualItem) => {
+    if (item.action === 'keep') return;
+    if (item.action === 'new' || !item.entryId) {
+      adoptProposal(item, '이월 항목을 추가했습니다.');
+      return;
+    }
+    if (item.action === 'archive') {
+      removeEntry(item.entryId);
+      flash('올해 문서에서 제외했습니다.');
+      return;
+    }
+    setEntries((current) => current.map((entry) => entry.id === item.entryId
+      ? { ...entry, title: item.title, detail: item.detail, properties: { ...entry.properties, ...item.properties } }
+      : entry));
+    setActiveCategory(item.category);
+    setQuality(null);
+    flash('수정 내용을 반영했습니다.');
   };
 
   const addBundle = () => {
@@ -528,10 +797,32 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
     {role === 'author' && tab === 'write' && <section className="ho-content ho-write-view">
       <div className="ho-section-title"><div><span>STEP 01</span><h2>인수인계 항목 작성</h2><p>순서에 관계없이 필요한 섹션부터 작성할 수 있습니다.</p></div><button type="button" onClick={() => setTab('compose')}>업무 단위 조합하기 <span>→</span></button></div>
       {status === 'rejected' && <div className="ho-reject-banner"><span>!</span><div><b>팀장 검토 후 반려되었습니다.</b><p>아래 항목을 보완한 뒤 업무 단위 조합 화면에서 다시 제출해 주세요.</p></div><button type="button" onClick={() => setTab('review')}>검토 의견 보기</button></div>}
-      <div className="ho-draft-cta">
-        <span className="ho-draft-spark" aria-hidden="true">✦</span>
-        <div><b>캘린더에서 초안 불러오기</b><p>연간 일정과 일정 변경 사유를 근거로 4개 섹션의 초안을 제안합니다.</p></div>
-        <button type="button" onClick={() => setDraftOpen(true)} disabled={isLocked}>초안 만들기</button>
+      <div className="ho-ai-panel">
+        <div className="ho-ai-panel-head">
+          <span className="ho-draft-spark" aria-hidden="true">✦</span>
+          <div><b>AI 1차 초안 도우미</b><p>백지에서 시작하지 않아도 됩니다. 아래 세 가지 방법으로 4개 섹션을 채운 뒤 다듬어 주세요.</p></div>
+          <em>채택 전까지 저장되지 않음</em>
+        </div>
+        <div className="ho-ai-cards">
+          <button type="button" onClick={() => setImportOpen(true)} disabled={isLocked}>
+            <span className="ho-ai-icon" aria-hidden="true">⇪</span>
+            <b>기존 자료 업로드</b>
+            <small>쓰고 있던 인수인계 문서를 올리면 담당업무·계획·현안·미결로 자동 분류합니다.</small>
+            <em>파일 · 붙여넣기 <span aria-hidden="true">→</span></em>
+          </button>
+          <button type="button" onClick={() => setDraftOpen(true)} disabled={isLocked}>
+            <span className="ho-ai-icon" aria-hidden="true">▤</span>
+            <b>캘린더에서 초안</b>
+            <small>연간 일정과 일정 변경 사유를 근거로 네 개 섹션의 초안을 제안합니다.</small>
+            <em>일정 기록 기반 <span aria-hidden="true">→</span></em>
+          </button>
+          <button type="button" onClick={() => setAnnualOpen(true)} disabled={isLocked || !entries.length}>
+            <span className="ho-ai-icon" aria-hidden="true">↻</span>
+            <b>연간 업데이트</b>
+            <small>전년도 문서에서 해마다 달라지는 부분만 골라 올해 초안으로 갱신합니다.</small>
+            <em>{entries.length}개 항목 기준 <span aria-hidden="true">→</span></em>
+          </button>
+        </div>
       </div>
       <div className="ho-category-tabs">{categories.map((category) => {
         const count = entries.filter((entry) => entry.category === category.id).length;
@@ -606,7 +897,9 @@ export default function HandoverWorkspace({ onHome }: { onHome: () => void }) {
         {role === 'author' && status === 'rejected' && <div className="ho-resubmit"><div><span>↻</span><p><b>수정 후 다시 제출할 수 있습니다.</b><small>기존 항목과 조합은 그대로 유지되며, 필요한 내용만 보완하면 됩니다.</small></p></div><button type="button" onClick={reopenDraft}>수정 시작하기 <span>→</span></button></div>}
       </>}
     </section>}
-    {draftOpen && <DraftModal onAdopt={adoptDraft} onClose={() => setDraftOpen(false)} />}
+    {draftOpen && <DraftModal onAdopt={adoptProposal} onClose={() => setDraftOpen(false)} />}
+    {importOpen && <ImportModal onAdopt={(item) => adoptProposal(item, '분류된 항목을 추가했습니다.')} onClose={() => setImportOpen(false)} />}
+    {annualOpen && <AnnualModal entries={entries} onApply={applyAnnual} onClose={() => setAnnualOpen(false)} />}
     {editor && <EntryEditor category={categories.find((category) => category.id === editor.category)!} entry={editor.entry} onSave={saveEntry} onClose={() => setEditor(null)} />}
     {detailBundle && detailEntry && <EntryDetailModal entry={detailEntry} bundle={detailBundle} entries={entries} onSelect={(entryId) => setDetailView({ bundleId: detailBundle.id, entryId })} onClose={() => setDetailView(null)} />}
   </main>;

@@ -2669,3 +2669,203 @@ footer {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   html { scroll-behavior: auto; }
 }
+
+/* ==========================================================================
+   Handover — AI first-draft helpers (upload · calendar · annual update)
+   ========================================================================== */
+.ho-ai-panel {
+  margin-bottom: 18px; padding: 15px 18px 17px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: linear-gradient(120deg, #fbfaf8, #f4f6fa);
+}
+.ho-ai-panel-head { display: flex; align-items: center; gap: 13px; }
+.ho-ai-panel-head > div { flex: 1; }
+.ho-ai-panel-head b { display: block; font-size: 13px; letter-spacing: -.01em; }
+.ho-ai-panel-head p { margin: 3px 0 0; color: var(--ink-2); font-size: 11px; }
+.ho-ai-panel-head em {
+  flex: 0 0 auto; padding: 4px 9px; border-radius: 999px;
+  background: #fff; border: 1px solid var(--line); color: var(--ink-3);
+  font-size: 9px; font-style: normal; font-weight: 650; letter-spacing: .02em;
+}
+.ho-ai-cards { margin-top: 13px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ho-ai-cards > button {
+  padding: 14px 15px 13px; display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  border: 1px solid var(--line); border-radius: 12px; background: #fff; text-align: left;
+  transition: border-color .15s var(--ease), transform .15s var(--ease), box-shadow .15s var(--ease);
+}
+.ho-ai-cards > button:hover:not(:disabled) { border-color: var(--navy); transform: translateY(-2px); box-shadow: var(--sh-1, 0 6px 18px rgba(20, 30, 50, .08)); }
+.ho-ai-cards > button:disabled { cursor: not-allowed; opacity: .42; }
+.ho-ai-cards b { font-size: 12.5px; letter-spacing: -.01em; }
+.ho-ai-cards small { color: var(--ink-2); font-size: 10.5px; line-height: 1.55; }
+.ho-ai-cards em { margin-top: auto; padding-top: 6px; color: var(--ink-3); font-size: 9.5px; font-style: normal; font-weight: 650; letter-spacing: .03em; }
+.ho-ai-icon {
+  width: 28px; height: 28px; display: grid; place-items: center; margin-bottom: 3px;
+  border-radius: 8px; background: var(--surface-3, #f1f2f5); color: var(--navy); font-size: 13px;
+}
+
+/* both AI modals reuse the draft shell, so give it a default accent to paint against */
+.ho-draft-modal { --category: var(--navy); --category-soft: #eef2f7; }
+
+.ho-import-input { padding: 18px 30px 16px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.ho-import-input .ho-dropzone { margin: 0; background: #fff; }
+.ho-import-paste { margin-top: 12px; display: block; }
+.ho-import-paste span { display: block; margin-bottom: 6px; color: var(--ink-2); font-size: 10px; font-weight: 650; letter-spacing: .04em; }
+.ho-import-paste textarea {
+  width: 100%; padding: 11px 13px; border: 1px solid var(--line-strong); border-radius: 9px;
+  background: #fff; color: var(--ink); font: inherit; font-size: 12px; line-height: 1.6; resize: vertical;
+}
+.ho-import-paste textarea::placeholder { color: var(--ink-3); }
+.ho-import-actions { margin-top: 11px; display: flex; align-items: center; gap: 12px; }
+.ho-import-actions small { flex: 1; color: var(--ink-3); font-size: 10px; }
+.ho-import-actions > button { height: 38px; padding: 0 18px; border: 1px solid var(--navy); border-radius: 9px; background: var(--navy); color: #fff; font-size: 11px; font-weight: 650; }
+.ho-import-actions > button:disabled { cursor: not-allowed; opacity: .4; }
+
+.ho-import-summary { padding: 16px 30px 0; }
+.ho-import-summary p { margin: 0; color: var(--ink-2); font-size: 12px; }
+.ho-import-counts { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }
+.ho-import-counts span {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+  border-radius: 999px; background: var(--category-soft); color: var(--category); font-size: 10.5px; font-weight: 650;
+}
+.ho-import-counts span.empty { background: var(--surface-3, #f1f2f5); color: var(--ink-3); }
+.ho-import-counts i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.ho-import-counts b { font-variant-numeric: tabular-nums; }
+.ho-import-unmapped { margin: 14px 30px 0; padding: 11px 14px; border: 1px solid #ecdfc8; border-radius: 10px; background: #fdf8ee; }
+.ho-import-unmapped b { color: #8a6a2c; font-size: 10.5px; }
+.ho-import-unmapped ul { margin: 6px 0 0; padding-left: 16px; color: var(--ink-2); font-size: 11.5px; line-height: 1.6; }
+.ho-import-quote {
+  margin: 10px 0 0; padding: 9px 12px; border-left: 2px solid var(--category);
+  background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; line-height: 1.6;
+}
+.ho-import-quote span { margin-right: 7px; color: var(--ink-3); font-size: 9px; font-weight: 700; letter-spacing: .06em; }
+
+.ho-annual-summary { padding: 16px 30px 0; }
+.ho-annual-summary p { margin: 0; color: var(--ink-2); font-size: 12px; }
+.ho-annual-counts { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }
+.ho-annual-counts span { padding: 5px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 650; }
+.ho-annual-counts b { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.ho-annual-counts .revise, .ho-annual-action.revise { background: #eaf0f7; color: #315a83; }
+.ho-annual-counts .new, .ho-annual-action.new { background: #e8f1ee; color: #35705f; }
+.ho-annual-counts .archive, .ho-annual-action.archive { background: #f7ecee; color: #9b4d58; }
+.ho-annual-counts .keep, .ho-annual-action.keep { background: var(--surface-3, #f1f2f5); color: var(--ink-3); }
+.ho-annual-action { padding: 3px 9px; border-radius: 999px; font-size: 9px; font-weight: 700; letter-spacing: .03em; }
+.ho-annual-card.keep { background: var(--surface-2); }
+.ho-annual-card.archive { border-left-color: #9b4d58; }
+.ho-annual-reason { margin: 7px 0 0; color: var(--ink-2); font-size: 11.5px; line-height: 1.6; }
+.ho-annual-hold { color: var(--ink-3); font-size: 11px; }
+
+@media (max-width: 820px) {
+  .ho-ai-cards { grid-template-columns: 1fr; }
+  .ho-ai-panel-head em { display: none; }
+  .ho-import-input { padding: 16px 20px; }
+  .ho-import-summary, .ho-annual-summary { padding-left: 20px; padding-right: 20px; }
+  .ho-import-unmapped { margin-left: 20px; margin-right: 20px; }
+  .ho-import-actions { flex-wrap: wrap; }
+  .ho-import-actions > button { width: 100%; }
+}
+
+/* ==========================================================================
+   Academic calendar alignment
+   ========================================================================== */
+.cal-check-cta {
+  max-width: 1180px; margin: 0 auto 4px; padding: 14px 18px; display: flex; align-items: center; gap: 14px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: linear-gradient(120deg, #fbfaf8, #f4f6fa);
+}
+.cal-check-cta > div { flex: 1; }
+.cal-check-cta b { display: block; font-size: 13px; letter-spacing: -.01em; }
+.cal-check-cta p { margin: 3px 0 0; color: var(--ink-2); font-size: 11px; }
+.cal-check-cta > button {
+  height: 38px; padding: 0 16px; border: 1px solid var(--team); border-radius: 9px;
+  background: var(--team); color: #fff; font-size: 11px; font-weight: 650; white-space: nowrap;
+}
+.cal-check-spark {
+  width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center;
+  border-radius: 10px; background: var(--team, var(--navy)); color: #fff; font-size: 15px;
+}
+
+.cal-check-modal {
+  position: relative; width: min(900px, 100%); max-height: calc(100vh - 40px);
+  border-radius: 18px; background: #fff; box-shadow: var(--sh-3); overflow: auto;
+}
+.cal-check-head { padding: 26px 30px 18px; display: flex; align-items: flex-start; gap: 14px; border-bottom: 1px solid var(--line); }
+.cal-check-head h2 { margin: 6px 0 4px; font-size: 21px; letter-spacing: -.03em; }
+.cal-check-head p { margin: 0; max-width: 64ch; color: var(--ink-2); font-size: 12px; line-height: 1.6; }
+.cal-check-controls { padding: 18px 30px; display: flex; align-items: flex-end; gap: 12px; background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.cal-check-controls label { flex: 1; display: block; }
+.cal-check-controls label span { display: block; margin-bottom: 6px; color: var(--ink-2); font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.cal-check-controls select { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; }
+.cal-check-controls > button { height: 40px; padding: 0 18px; border: 1px solid var(--team); border-radius: 9px; background: var(--team); color: #fff; font-size: 11px; font-weight: 650; }
+.cal-check-controls > button:disabled { cursor: not-allowed; opacity: .45; }
+
+.cal-check-loading { padding: 44px 30px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.cal-check-loading i { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: var(--ink-3); animation: ho-draft-pulse 1s infinite ease-in-out; }
+.cal-check-loading i:nth-child(2) { animation-delay: .15s; }
+.cal-check-loading i:nth-child(3) { animation-delay: .3s; }
+.cal-check-loading p { margin: 0; color: var(--ink-2); font-size: 12px; }
+.cal-check-error { margin: 16px 30px 0; padding: 12px 14px; border: 1px solid #e6c9c4; border-radius: 10px; background: #fbf1ef; color: #8c3f36; font-size: 12px; }
+
+.cal-check-shifts { margin: 18px 30px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.cal-check-shifts-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cal-check-shifts-head b { font-size: 12.5px; }
+.cal-check-shifts-head small { color: var(--ink-3); font-size: 10.5px; }
+.cal-check-shifts ul { margin: 10px 0 0; padding: 0; display: grid; gap: 6px; list-style: none; }
+.cal-check-shifts li { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 8px; background: #fff; border: 1px solid var(--line); font-size: 11.5px; }
+.cal-check-shifts li b { flex: 1; min-width: 0; font-weight: 650; }
+.cal-check-shifts li em { color: var(--ink-2); font-style: normal; font-variant-numeric: tabular-nums; }
+.cal-check-shifts li em i { margin: 0 4px; color: var(--ink-3); font-style: normal; }
+.cal-phase { padding: 2px 7px; border-radius: 999px; background: var(--surface-3, #f1f2f5); color: var(--ink-3); font-size: 9px; font-weight: 700; }
+.cal-shift { padding: 3px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 700; }
+.cal-shift.late { background: #fbf1e3; color: #97682a; }
+.cal-shift.early { background: #eaf0f7; color: #315a83; }
+.cal-check-none { margin: 10px 0 0; color: var(--ink-3); font-size: 11.5px; }
+
+.cal-check-summary { margin: 14px 30px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.cal-check-summary span { padding: 5px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 650; }
+.cal-check-summary b { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.cal-check-summary small { margin-left: auto; color: var(--ink-3); font-size: 10px; }
+.cal-check-summary .shift, .cal-action.shift { background: #eaf0f7; color: #315a83; }
+.cal-check-summary .review, .cal-action.review { background: #fbf1e3; color: #97682a; }
+.cal-check-summary .keep, .cal-action.keep { background: var(--surface-3, #f1f2f5); color: var(--ink-3); }
+
+.cal-check-list { padding: 14px 30px 4px; display: grid; gap: 10px; }
+.cal-check-card { padding: 14px 16px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: 12px; background: #fff; }
+.cal-check-card.shift { border-left-color: #315a83; }
+.cal-check-card.review { border-left-color: #b58a45; }
+.cal-check-card.keep { background: var(--surface-2); }
+.cal-check-card.is-applied { opacity: .58; }
+.cal-check-card-head { display: flex; align-items: center; gap: 9px; }
+.cal-check-card-head b { flex: 1; min-width: 0; font-size: 14px; letter-spacing: -.01em; }
+.cal-check-card-head small { color: var(--ink-3); font-size: 10px; text-align: right; }
+.cal-action { padding: 3px 9px; border-radius: 999px; font-size: 9px; font-weight: 700; letter-spacing: .03em; white-space: nowrap; }
+.cal-check-move { margin-top: 9px; display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.cal-check-move span { padding: 5px 11px; border-radius: 8px; background: var(--surface-3, #f1f2f5); color: var(--ink-2); font-size: 12px; font-weight: 650; }
+.cal-check-move .to { background: #eaf0f7; color: #315a83; }
+.cal-check-move .to.same { background: var(--surface-3, #f1f2f5); color: var(--ink-3); }
+.cal-check-move i { color: var(--ink-3); font-style: normal; }
+.cal-check-move em { color: var(--ink-3); font-size: 10.5px; font-style: normal; }
+.cal-check-reason { margin: 9px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.6; }
+.cal-check-note { margin: 7px 0 0; padding: 8px 11px; border-radius: 8px; background: #fdf8ee; color: #8a6a2c; font-size: 11.5px; line-height: 1.55; }
+.cal-check-note b { margin-right: 6px; font-size: 9.5px; font-weight: 700; letter-spacing: .04em; }
+.cal-check-card-actions { margin-top: 11px; display: flex; justify-content: flex-end; }
+.cal-check-card-actions button { height: 32px; padding: 0 14px; border: 1px solid #315a83; border-radius: 8px; background: #315a83; color: #fff; font-size: 11px; font-weight: 650; }
+.cal-check-card-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.cal-check-done { color: #35705f; font-size: 11px; font-weight: 650; }
+
+.cal-check-actions { margin-top: 18px; padding: 15px 30px 20px; display: flex; align-items: center; justify-content: flex-end; gap: 7px; border-top: 1px solid var(--line); background: #fbfbfb; }
+.cal-check-actions > p { flex: 1; margin: 0; color: var(--ink-3); font-size: 9px; }
+.cal-check-actions > p span { margin-right: 5px; color: var(--team); }
+.cal-check-actions button { height: 39px; padding: 0 16px; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; font-weight: 650; }
+.cal-check-actions button:last-child { min-width: 100px; border-color: var(--team); background: var(--team); color: #fff; }
+.cal-check-actions button:disabled { cursor: not-allowed; opacity: .35; }
+
+@media (max-width: 820px) {
+  .cal-check-cta { flex-wrap: wrap; }
+  .cal-check-cta > button { width: 100%; }
+  .cal-check-head, .cal-check-controls { padding-left: 20px; padding-right: 20px; }
+  .cal-check-shifts, .cal-check-summary, .cal-check-list, .cal-check-error { margin-left: 20px; margin-right: 20px; }
+  .cal-check-list { padding-left: 0; padding-right: 0; }
+  .cal-check-actions { padding: 14px 20px 18px; }
+  .cal-check-actions > p { display: none; }
+  .cal-check-shifts li { flex-wrap: wrap; }
+}

@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
 import HandoverWorkspace from './HandoverWorkspace';
 import { WEEKS_IN_YEAR, locateToday, months, noToday, seedTeams, taskKey, weekLabel, type Person, type Task, type Team, type Today } from './org-data';
+import { academicYears, alignmentActionLabels, baseAcademicYear, shiftLabel, type AlignmentItem, type AlignmentResponse } from './academic-calendar';
 
 /** one recorded move of a task, kept as an append-only trail so the reason survives */
 type ScheduleChange = { taskKey: string; personId: string; taskTitle: string; fromStart: number; toStart: number; reason: string; changedBy: string; changedAt: string };
@@ -190,10 +191,15 @@ function MonthCalendar({ person, team, monthIndex, setMonthIndex, onTask }: { pe
   return <section className="month-section"><div className="person-calendar-title"><div><small>MONTHLY DETAIL</small><h2>월간 일정</h2></div><div className="month-nav"><button type="button" onClick={() => setMonthIndex((current) => (current + 11) % 12)}>‹</button><strong>{calendar.year}. {String(calendar.realMonth).padStart(2, '0')}</strong><button type="button" onClick={() => setMonthIndex((current) => (current + 1) % 12)}>›</button></div></div><div className="monthly-layout"><div className="monthly-calendar"><div className="weekday-row">{['일','월','화','수','목','금','토'].map((day) => <span key={day}>{day}</span>)}</div><div className="date-grid">{calendar.cells.map((day, index) => <div className={`date-cell ${day !== null && day === today.day && monthIndex === today.month ? 'today' : ''}`} key={`${day}-${index}`}>{day && <><span>{day}</span>{taskDays.filter((entry) => day >= entry.day && day < entry.day + Math.max(2, Math.min(5, entry.task.duration))).map((entry) => <button style={{ background: team.soft, color: team.color, borderColor: team.color }} type="button" onClick={() => onTask(entry.task, person)} key={entry.task.title}>{entry.task.title}</button>)}</>}</div>)}</div></div><aside className="month-agenda"><div><small>{months[monthIndex].replace('월','')}</small><span>MONTH</span></div><h3>{months[monthIndex]} 주요 일정</h3>{monthTasks.length ? monthTasks.map((task) => <button type="button" onClick={() => onTask(task, person)} key={task.title}><i style={{ background: team.color }} /><span><b>{task.title}{task.movedFrom !== undefined && <mark>일정 변경</mark>}</b><small>{task.note}</small></span><em>›</em></button>) : <p className="empty-agenda">등록된 집중 업무가 없습니다.<br />정기 업무를 진행하는 기간입니다.</p>}<div className="agenda-tip">일정 막대를 누르면 상세 메모를 확인하고, 사유와 함께 일정을 미룰 수 있어요.</div></aside></div></section>;
 }
 
-function PersonView({ team, person, onHome, onTeam, onTask }: { team: Team; person: Person; onHome: () => void; onTeam: () => void; onTask: (task: Task, person: Person) => void }) {
+function PersonView({ team, person, onHome, onTeam, onTask, onCalendarCheck }: { team: Team; person: Person; onHome: () => void; onTeam: () => void; onTask: (task: Task, person: Person) => void; onCalendarCheck: () => void }) {
   const [monthIndex, setMonthIndex] = useState(0);
   return <main className="workspace-page person-page" style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
     <div className="person-hero"><div className="person-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span><button type="button" onClick={onTeam}>{team.title}</button><span>/</span><small>{person.name}</small></div><div className="person-topline"><div className="person-identity"><span className="person-avatar xlarge" style={{ background: team.color }}>{person.initial}</span><div><span className="role-pill" style={{ color: team.color, background: team.soft }}>{person.role}</span><h1>{person.name} <small>담당자</small></h1><p>{team.title} · 2026학년도 업무 캘린더</p></div></div><div className="person-stats"><div><small>주요 업무</small><strong>{person.tasks.length}</strong><span>건</span></div><div><small>집중 업무기간</small><strong>{person.tasks.reduce((sum, task) => sum + task.duration, 0)}</strong><span>주</span></div><div><small>다음 일정</small><strong>{months[Math.floor(person.tasks[0].start / 4)]}</strong><span>{person.tasks[0].title}</span></div></div></div></div>
+    <div className="cal-check-cta">
+      <span className="cal-check-spark" aria-hidden="true">↻</span>
+      <div><b>학사일정 기준 일정 점검</b><p>다음 학년도 학사일정과 비교해 옮겨야 할 업무와 그 시기를 제안합니다.</p></div>
+      <button type="button" onClick={onCalendarCheck}>일정 점검</button>
+    </div>
     <AnnualPersonCalendar person={person} team={team} monthIndex={monthIndex} onSelectMonth={setMonthIndex} />
     <MonthCalendar person={person} team={team} monthIndex={monthIndex} setMonthIndex={setMonthIndex} onTask={onTask} />
   </main>;
@@ -281,6 +287,131 @@ function TaskModal({ task, person, team, history, onReschedule, onClose }: { tas
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="task-modal" role="dialog" aria-modal="true" aria-labelledby="task-title" onMouseDown={(event) => event.stopPropagation()} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}><button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button><span className="modal-label">WORK DETAIL</span><div className="modal-team"><TeamBadge team={team} /><span><b>{team.title}</b><small>{person.name} · {person.role}</small></span></div><h2 id="task-title">{task.title}</h2><p>{task.note}</p>{task.movedFrom !== undefined && <p className="moved-note"><span>일정 변경됨</span> 최초 계획 {weekLabel(task.movedFrom)} → 현재 {weekLabel(task.start)}</p>}<div className="task-period"><div><small>시작</small><b>{startMonth} {task.start % 4 + 1}주</b></div><i>→</i><div><small>종료</small><b>{endMonth} {(task.start + task.duration - 1) % 4 + 1}주</b></div><span>{task.duration}주간</span></div><RescheduleForm key={task.start} task={task} person={person} onReschedule={onReschedule} /><RescheduleHistory history={history} /><div className="modal-checklist"><strong>인수인계 체크</strong><label><input type="checkbox" defaultChecked /> 전년도 결과보고서 확인</label><label><input type="checkbox" /> 관련 부서 일정 공유</label><label><input type="checkbox" /> 담당자 연락망 최신화</label></div><button className="modal-primary" type="button" onClick={onClose}>확인</button></section></div>;
 }
 
+/**
+ * Compares a person's plan against the next academic calendar and proposes the moves.
+ * Adopting a proposal writes through the same reschedule trail a manual move uses, so the reason
+ * and the before/after weeks stay in the task's history.
+ */
+function CalendarCheckModal({ person, team, onReschedule, onClose }: { person: Person; team: Team; onReschedule: (personId: string, taskTitle: string, toStart: number, reason: string) => Promise<void>; onClose: () => void }) {
+  const targetYears = academicYears.filter((item) => item.year !== baseAcademicYear);
+  const [year, setYear] = useState(targetYears[targetYears.length - 1]?.year ?? baseAcademicYear + 1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<AlignmentResponse | null>(null);
+  const [applied, setApplied] = useState<string[]>([]);
+  const [applyError, setApplyError] = useState('');
+  const [busyId, setBusyId] = useState('');
+
+  const run = async () => {
+    setLoading(true);
+    setError('');
+    setApplyError('');
+    setResult(null);
+    setApplied([]);
+    try {
+      const response = await fetch('/api/calendar-check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId: person.id, year }) });
+      const data = await response.json() as AlignmentResponse & { error?: string };
+      if (!response.ok) setError(data.error ?? '일정을 점검하지 못했습니다.');
+      else setResult(data);
+    } catch {
+      setError('네트워크 오류로 점검하지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = async (item: AlignmentItem) => {
+    if (!result) return;
+    setBusyId(item.id);
+    setApplyError('');
+    try {
+      await onReschedule(person.id, item.taskTitle, item.suggestedStart, `${result.toYear}학년도 학사일정 반영 · ${item.reason}`);
+      setApplied((current) => [...current, item.id]);
+    } catch (failure) {
+      setApplyError(failure instanceof Error ? failure.message : '일정을 조정하지 못했습니다.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const proposals = result ? result.items.filter((item) => item.action === 'shift') : [];
+  const remaining = proposals.filter((item) => !applied.includes(item.id));
+  const moved = result ? result.shifts.filter((item) => item.shift !== 0) : [];
+
+  const applyAll = async () => {
+    for (const item of remaining) await apply(item);
+  };
+  const countOf = (action: AlignmentItem['action']) => result?.items.filter((item) => item.action === action).length ?? 0;
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="cal-check-modal" role="dialog" aria-modal="true" aria-labelledby="cal-check-title" onMouseDown={(event) => event.stopPropagation()} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
+      <button className="modal-close" type="button" onClick={onClose} aria-label="닫기">×</button>
+      <div className="cal-check-head">
+        <span className="cal-check-spark" aria-hidden="true">↻</span>
+        <div><span className="modal-label">ACADEMIC CALENDAR ALIGNMENT</span><h2 id="cal-check-title">학사일정 기준 일정 점검</h2><p>{person.name} 담당자의 연간 업무를 새 학년도 학사일정과 맞춰 봅니다. 조정하기 전까지 일정은 바뀌지 않습니다.</p></div>
+      </div>
+      <div className="cal-check-controls">
+        <label><span>대상 학년도</span><select value={year} onChange={(event) => { setYear(Number(event.target.value)); setResult(null); setApplied([]); }} disabled={loading}>{targetYears.map((item) => <option value={item.year} key={item.year}>{baseAcademicYear}학년도 → {item.label}</option>)}</select></label>
+        <button type="button" onClick={run} disabled={loading}>{loading ? '점검하는 중…' : result ? '다시 점검' : '일정 점검'}</button>
+      </div>
+
+      {loading && <div className="cal-check-loading"><i /><i /><i /><p>학사일정 변동과 업무 시기를 맞춰 보고 있습니다.</p></div>}
+      {error && <p className="cal-check-error" role="alert">{error}</p>}
+
+      {result && <>
+        <div className="cal-check-shifts">
+          <div className="cal-check-shifts-head"><b>학사일정 변동</b><small>{result.shifts.length}개 중 {moved.length}개 이동 · {result.fromYear}학년도 → {result.toYear}학년도</small></div>
+          {moved.length ? <ul>{moved.map((item) => <li key={item.name}>
+            <span className="cal-phase">{item.phase}</span>
+            <b>{item.name}</b>
+            <em>{item.fromLabel} <i aria-hidden="true">→</i> {item.toLabel}</em>
+            <span className={`cal-shift ${item.shift > 0 ? 'late' : 'early'}`}>{shiftLabel(item.shift)}</span>
+          </li>)}</ul> : <p className="cal-check-none">올해와 달라진 학사일정이 없습니다.</p>}
+        </div>
+
+        <div className="cal-check-summary">
+          <span className="shift">조정 제안 <b>{countOf('shift')}</b></span>
+          <span className="review">확인 필요 <b>{countOf('review')}</b></span>
+          <span className="keep">유지 <b>{countOf('keep')}</b></span>
+          <small>{result.items.length}개 업무 점검함</small>
+        </div>
+
+        {applyError && <p className="cal-check-error" role="alert">{applyError}</p>}
+
+        <div className="cal-check-list">{result.items.map((item) => {
+          const isApplied = applied.includes(item.id);
+          return <article className={`cal-check-card ${item.action} ${isApplied ? 'is-applied' : ''}`} key={item.id}>
+            <div className="cal-check-card-head">
+              <span className={`cal-action ${item.action}`}>{alignmentActionLabels[item.action]}</span>
+              <b>{item.taskTitle}</b>
+              {item.anchorEvent && <small>근거 · {item.anchorEvent} {item.anchorLabel}</small>}
+            </div>
+            <div className="cal-check-move">
+              <span className="from">{item.currentLabel}</span>
+              <i aria-hidden="true">→</i>
+              <span className={item.action === 'shift' ? 'to' : 'to same'}>{item.suggestedLabel}</span>
+              {item.action !== 'shift' && <em>변동 없음</em>}
+            </div>
+            {item.reason && <p className="cal-check-reason">{item.reason}</p>}
+            {item.note && <p className="cal-check-note"><b>확인</b>{item.note}</p>}
+            {item.action === 'shift' && <div className="cal-check-card-actions">
+              {isApplied
+                ? <span className="cal-check-done">✓ 일정에 반영됨</span>
+                : <button type="button" onClick={() => apply(item)} disabled={busyId === item.id}>{busyId === item.id ? '반영하는 중…' : '이 일정으로 조정'}</button>}
+            </div>}
+          </article>;
+        })}</div>
+      </>}
+
+      <div className="cal-check-actions">
+        <p><span>ⓘ</span> 조정한 일정은 사유와 함께 업무의 변경 이력에 남습니다.</p>
+        <button type="button" onClick={onClose}>닫기</button>
+        <button type="button" onClick={applyAll} disabled={!result || remaining.length === 0 || Boolean(busyId)}>남은 {remaining.length}건 모두 조정</button>
+      </div>
+    </section>
+  </div>;
+}
+
 function SearchModal({ onClose, onPerson }: { onClose: () => void; onPerson: (teamId: string, personId: string) => void }) {
   const teams = useTeams();
   const allPeople = useMemo(() => teams.flatMap((team) => team.people.map((person) => ({ team, person }))), [teams]);
@@ -361,6 +492,7 @@ export default function WorkspaceClient({ currentUser, signOutHref }: { currentU
   const [membersLoadError, setMembersLoadError] = useState('');
   const [taskFocus, setTaskFocus] = useState<{ personId: string; taskTitle: string } | null>(null);
   const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>([]);
+  const [calendarCheckId, setCalendarCheckId] = useState<string | null>(null);
 
   /* every recorded move of a task, oldest first; the last one is the schedule in effect */
   const historyByTask = useMemo(() => {
@@ -453,9 +585,10 @@ export default function WorkspaceClient({ currentUser, signOutHref }: { currentU
     {view.type === 'handover' && <HandoverWorkspace onHome={() => setView({ type: 'home' })} />}
     {view.type === 'all' && <AllTeams onHome={() => setView({ type: 'home' })} onTeam={openTeam} onPerson={openPerson} />}
     {view.type === 'team' && selectedTeam && <TeamView team={selectedTeam} onHome={() => setView({ type: 'home' })} onAll={() => setView({ type: 'all' })} onTeam={openTeam} onPerson={(id) => openPerson(selectedTeam.id, id)} onTask={showTask} />}
-    {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => setView({ type: 'home' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} />}
+    {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => setView({ type: 'home' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} onCalendarCheck={() => setCalendarCheckId(selectedPerson.id)} />}
     {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} onPerson={(teamId, personId) => { openPerson(teamId, personId); setSearchOpen(false); }} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
+    {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}
     {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onClose={() => setTaskFocus(null)} />}
   </div></TodayContext.Provider></OrgContext.Provider>;
 }

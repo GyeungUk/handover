@@ -1,12 +1,12 @@
 import { env } from 'cloudflare:workers';
 import { findingKinds, handoverCategoryLabels, type FindingKind, type HandoverCategory, type QualityFinding } from '../../handover-schema';
+import { askModel, normalize } from '../../ai-shared';
 import { getAppRole } from '../../authz';
 import { getChatGPTUser } from '../../chatgpt-auth';
 
 type AppEnv = Cloudflare.Env & { OPENAI_API_KEY?: string };
 type IncomingEntry = { id?: string; category?: string; title?: string; text?: string };
 
-const MODEL = 'gpt-5.4-mini';
 const MAX_ENTRIES = 40;
 const TEXT_MAX = 1500;
 const MAX_FINDINGS = 20;
@@ -56,8 +56,6 @@ const responseSchema = {
   additionalProperties: false,
 };
 
-const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
-
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user || !getAppRole(user)) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -84,38 +82,22 @@ export async function POST(request: Request) {
     .map((doc) => `<문서 id="${doc.id}" 섹션="${doc.섹션}">\n제목: ${doc.제목}\n본문: ${doc.본문}\n</문서>`)
     .join('\n\n');
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      response_format: { type: 'json_schema', json_schema: { name: 'handover_quality', strict: true, schema: responseSchema } },
-    }),
+  const result = await askModel<{ findings: { entryId: string; kind: string; severity: string; quote: string; message: string; suggestion: string }[] }>({
+    apiKey,
+    label: 'quality',
+    schemaName: 'handover_quality',
+    schema: responseSchema,
+    system: systemPrompt,
+    user: userContent,
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error('quality: openai request failed', response.status, detail.slice(0, 400));
-    return Response.json({ error: '점검에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, { status: 502 });
-  }
-
-  const completion = await response.json<{ choices: { message: { content: string } }[] }>();
-  let parsed: { findings: { entryId: string; kind: string; severity: string; quote: string; message: string; suggestion: string }[] };
-  try {
-    parsed = JSON.parse(completion.choices[0].message.content);
-  } catch {
-    return Response.json({ error: '점검 결과를 읽지 못했습니다. 다시 시도해 주세요.' }, { status: 502 });
-  }
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
   const byId = new Map(documents.map((doc) => [doc.id, doc]));
   const perEntry = new Map<string, number>();
   const findings: QualityFinding[] = [];
 
-  for (const item of parsed.findings ?? []) {
+  for (const item of result.data.findings ?? []) {
     const document = byId.get(item.entryId);
     const quote = normalize(item.quote ?? '');
     /* a finding only counts if the phrase it names is really in that entry */

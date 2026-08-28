@@ -1,14 +1,14 @@
 import { env } from 'cloudflare:workers';
 import { createTaskReschedulesTable } from '../../../db/schema';
 import { findPerson, taskPeriodLabel, taskPhase, weekLabel, locateToday, type Task } from '../../org-data';
-import { handoverCategories, handoverCategoryLabels, propertyFieldsByCategory, type DraftItem, type HandoverCategory } from '../../handover-schema';
+import { handoverCategories, handoverCategoryLabels, type DraftItem, type HandoverCategory } from '../../handover-schema';
+import { allowedProperties, askModel, cleanProperties, detailHtml } from '../../ai-shared';
 import { getAppRole } from '../../authz';
 import { getChatGPTUser } from '../../chatgpt-auth';
 
 type AppEnv = Cloudflare.Env & { DB: D1Database; OPENAI_API_KEY?: string };
 type MoveRow = { task_title: string; from_start: number; to_start: number; reason: string; changed_at: string };
 
-const MODEL = 'gpt-5.4-mini';
 const MAX_DRAFTS = 8;
 const MAX_QUESTIONS = 3;
 const TITLE_MAX = 80;
@@ -140,30 +140,6 @@ const responseSchema = {
  */
 const inferableKeys = new Set(['importance', 'impact', 'response', 'priority']);
 
-const escapeHtml = (value: string) =>
-  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** The model returns plain text only; the HTML the editor renders is built here, fully escaped. */
-function detailHtml(paragraphs: string[], questions: string[]) {
-  const body = paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
-  if (!questions.length) return body;
-  return `${body}<p><strong>확인이 필요한 내용</strong></p><ul>${questions.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`;
-}
-
-/** Drop anything the editor's own property fields would not accept. */
-function cleanProperties(category: HandoverCategory, pairs: { key: string; value: string }[]) {
-  const fields = propertyFieldsByCategory[category];
-  const cleaned: Record<string, string> = {};
-  for (const { key, value } of pairs) {
-    const field = fields.find((item) => item.key === key);
-    const trimmed = (value ?? '').trim();
-    if (!field || !trimmed || !inferableKeys.has(key)) continue;
-    if (field.options && !field.options.includes(trimmed)) continue;
-    cleaned[key] = trimmed;
-  }
-  return cleaned;
-}
-
 export async function POST(request: Request) {
   const user = await authorizedUser();
   if (!user) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
@@ -189,43 +165,22 @@ export async function POST(request: Request) {
   const payload = {
     담당자: { 이름: found.person.name, 역할: found.person.role, 소속팀: found.team.title },
     오늘: weekLabel(today.week),
-    허용속성: Object.fromEntries(handoverCategories.map((category) => [
-      category,
-      propertyFieldsByCategory[category]
-        .filter((field) => inferableKeys.has(field.key))
-        .map((field) => (field.options ? `${field.key}(${field.options.join('/')})` : field.key)),
-    ])),
+    허용속성: allowedProperties((key) => inferableKeys.has(key)),
     업무목록: facts,
   };
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(payload, null, 1) },
-      ],
-      response_format: { type: 'json_schema', json_schema: { name: 'handover_draft', strict: true, schema: responseSchema } },
-    }),
+  const result = await askModel<{ drafts: { category: string; title: string; paragraphs: string[]; properties: { key: string; value: string }[]; basis: string; questions: string[]; sourceTask: string }[] }>({
+    apiKey,
+    label: 'draft',
+    schemaName: 'handover_draft',
+    schema: responseSchema,
+    system: systemPrompt,
+    user: JSON.stringify(payload, null, 1),
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error('draft: openai request failed', response.status, detail.slice(0, 400));
-    return Response.json({ error: '초안 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.' }, { status: 502 });
-  }
+  if (!result.ok) return Response.json({ error: result.error }, { status: result.status });
 
-  const completion = await response.json<{ choices: { message: { content: string } }[] }>();
-  let parsed: { drafts: { category: string; title: string; paragraphs: string[]; properties: { key: string; value: string }[]; basis: string; questions: string[]; sourceTask: string }[] };
-  try {
-    parsed = JSON.parse(completion.choices[0].message.content);
-  } catch {
-    return Response.json({ error: '초안 형식을 읽지 못했습니다. 다시 시도해 주세요.' }, { status: 502 });
-  }
-
-  const drafts: DraftItem[] = parsed.drafts
+  const drafts: DraftItem[] = result.data.drafts
     .filter((item) => handoverCategories.includes(item.category as HandoverCategory) && item.title?.trim() && item.paragraphs?.length)
     .slice(0, MAX_DRAFTS)
     .map((item, index) => {
@@ -237,7 +192,7 @@ export async function POST(request: Request) {
         category,
         title: item.title.trim().slice(0, TITLE_MAX),
         detail: detailHtml(paragraphs, questions),
-        properties: cleanProperties(category, item.properties ?? []),
+        properties: cleanProperties(category, item.properties ?? [], (key) => inferableKeys.has(key)),
         basis: item.basis === 'record' ? 'record' : 'inferred',
         questions,
         sourceTask: (item.sourceTask ?? '').trim() || handoverCategoryLabels[category],
