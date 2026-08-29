@@ -1,10 +1,14 @@
 import { env } from 'cloudflare:workers';
 import { createRemovedMembersTable } from '../../../db/schema';
+import { findPerson } from '../../org-data';
 import { getAppRole } from '../../authz';
 import { getChatGPTUser } from '../../chatgpt-auth';
 
 type AppEnv = Cloudflare.Env & { DB: D1Database };
-const validMemberIds = new Set(['minseo', 'jiwoo', 'dohyun', 'seoyeon', 'junho', 'eunchae', 'yujin', 'taeyang', 'sujin', 'hyejin', 'seongmin', 'nayeon']);
+
+/** The org chart is the only list of valid ids; a second copy here would drift the moment it changes. */
+const isKnownMember = (personId: string | undefined): personId is string =>
+  Boolean(personId && findPerson(personId));
 
 function database() {
   return (env as AppEnv).DB;
@@ -30,7 +34,7 @@ export async function GET() {
 export async function POST(request: Request) {
   if (await authorizedRole() !== 'admin') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
   const { personId } = await request.json<{ personId?: string }>();
-  if (!personId || !validMemberIds.has(personId)) return Response.json({ error: '유효한 팀원 정보가 필요합니다.' }, { status: 400 });
+  if (!isKnownMember(personId)) return Response.json({ error: '유효한 파트원 정보가 필요합니다.' }, { status: 400 });
 
   const db = database();
   await ensureSchema(db);
@@ -43,7 +47,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   if (await authorizedRole() !== 'admin') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
   const { personId } = await request.json<{ personId?: string }>();
-  if (!personId || !validMemberIds.has(personId)) return Response.json({ error: '유효한 팀원 정보가 필요합니다.' }, { status: 400 });
+  if (!isKnownMember(personId)) return Response.json({ error: '유효한 파트원 정보가 필요합니다.' }, { status: 400 });
 
   const db = database();
   await ensureSchema(db);

@@ -1,0 +1,16 @@
+# Copy to `.dev.vars` and fill in. `.dev.vars` is gitignored — never commit real values.
+# Wrangler/Miniflare loads this into the Worker environment for `npm run dev`; in production the
+# same names are set as Worker secrets.
+
+# --- Authorisation ------------------------------------------------------------
+# Comma-separated allow lists, compared lowercase. An empty list denies everyone.
+# The Spring backend reads the same names from `backend/.env`, so one set of values fits either.
+HANDOVER_ADMIN_EMAILS=admin@example.com
+HANDOVER_MEMBER_EMAILS=member-one@example.com,member-two@example.com
+
+# --- OpenAI -------------------------------------------------------------------
+# Without a key the five model-backed endpoints answer 503 and the rest of the app works normally.
+OPENAI_API_KEY=
+# Optional overrides; the defaults live in app/ai-shared.ts.
+# OPENAI_MODEL=gpt-5.4-mini
+# OPENAI_BASE_URL=https://api.openai.com/v1/chat/completions
