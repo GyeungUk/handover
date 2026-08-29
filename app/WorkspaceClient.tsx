@@ -54,9 +54,9 @@ function AppHeader({ user, signOutHref, onHome, onHandover, onSearch, onManageMe
         <button className="search-button" type="button" onClick={onSearch} aria-label="통합 검색"><span aria-hidden="true">⌕</span><span>업무 또는 담당자 검색</span><kbd>⌘ K</kbd></button>
         <div className="profile-wrap">
           <button className="profile" type="button" onClick={() => setProfileOpen((open) => !open)} aria-expanded={profileOpen}>
-            <span className="avatar">{displayName.slice(0, 1).toUpperCase()}</span><span className="profile-copy"><strong>{displayName}</strong><small>국제처 · {user.role === 'admin' ? '관리자' : '팀원'}</small></span><span className="chevron" aria-hidden="true">⌄</span>
+            <span className="avatar">{displayName.slice(0, 1).toUpperCase()}</span><span className="profile-copy"><strong>{displayName}</strong><small>국제처 · {user.role === 'admin' ? '관리자' : '파트원'}</small></span><span className="chevron" aria-hidden="true">⌄</span>
           </button>
-          {profileOpen && <div className="profile-menu"><div><b>{displayName}</b><span>{user.email}</span></div>{user.role === 'admin' && <button className="manage-members-button" type="button" onClick={() => { setProfileOpen(false); onManageMembers(); }}><span aria-hidden="true">⚙</span> 팀원 관리</button>}<a className="logout-button" href={signOutHref}>로그아웃</a></div>}
+          {profileOpen && <div className="profile-menu"><div><b>{displayName}</b><span>{user.email}</span></div>{user.role === 'admin' && <button className="manage-members-button" type="button" onClick={() => { setProfileOpen(false); onManageMembers(); }}><span aria-hidden="true">⚙</span> 파트원 관리</button>}<a className="logout-button" href={signOutHref}>로그아웃</a></div>}
         </div>
       </div>
     </header>
@@ -70,12 +70,12 @@ function Landing({ onOpen }: { onOpen: (id: string) => void }) {
     allPeople.filter(({ person }) => person.tasks.some((task) => week >= task.start && week < task.start + task.duration)).length);
   const peakLoad = Math.max(1, ...weekLoad);
   const spaces = [
-    { id: 'all', eyebrow: 'ALL TEAMS', title: '국제팀 전체', description: `${teams.length}개 팀의 업무 밀도와 연간 일정을 한눈에 살펴보세요.`, count: `${allPeople.length}명`, accent: '#e0a94e', mark: 'HQ' },
+    { id: 'all', eyebrow: 'ALL PARTS', title: '국제처 전체', description: `${teams.length}개 파트의 업무 밀도와 연간 일정을 한눈에 살펴보세요.`, count: `${allPeople.length}명`, accent: '#e0a94e', mark: 'HQ' },
     ...teams.map((team) => ({ id: team.id, eyebrow: team.english, title: team.title, description: team.description, count: `${team.people.length}명`, accent: team.color, mark: team.mark })),
   ];
   return <>
     <section className="hero" id="top">
-      <div className="hero-copy"><div className="semester-pill"><span /> 2026학년도 업무 캘린더</div><p className="kicker eyebrow">WORK CONTINUITY, MADE CLEAR</p><h1>이어지는 업무,<br /><em>한눈에 보이는 흐름.</em></h1><p className="hero-description">국제처 구성원의 연간 업무를 한곳에서 확인하고,<br className="desktop-break" /> 빈틈없는 인수인계를 시작하세요.</p><div className="hero-summary"><div><strong>{teams.length}</strong><span>운영 팀</span></div><i /><div><strong>{allPeople.length}</strong><span>담당자</span></div><i /><div><strong>52</strong><span>주간 흐름</span></div></div></div>
+      <div className="hero-copy"><div className="semester-pill"><span /> 2026학년도 업무 캘린더</div><p className="kicker eyebrow">WORK CONTINUITY, MADE CLEAR</p><h1>이어지는 업무,<br /><em>한눈에 보이는 흐름.</em></h1><p className="hero-description">국제처 구성원의 연간 업무를 한곳에서 확인하고,<br className="desktop-break" /> 빈틈없는 인수인계를 시작하세요.</p><div className="hero-summary"><div><strong>{teams.length}</strong><span>운영 파트</span></div><i /><div><strong>{allPeople.length}</strong><span>담당자</span></div><i /><div><strong>52</strong><span>주간 흐름</span></div></div></div>
       <div className="hero-visual" aria-hidden="true">
         <div className="dial">
           <div className="dial-ring" />
@@ -91,7 +91,7 @@ function Landing({ onOpen }: { onOpen: (id: string) => void }) {
         <div className="orbital-card card-c"><b>12</b><span>입학 전형</span></div>
       </div>
     </section>
-    <section className="spaces-section" aria-labelledby="spaces-title"><div className="section-heading"><div><p>SELECT WORKSPACE</p><h2 id="spaces-title">어디서 시작할까요?</h2></div><p className="section-note">파트를 선택하면 해당 팀의 연간 업무 흐름을 볼 수 있습니다.</p></div><div className="spaces-grid">{spaces.map((space, index) => <button className={`space-card ${space.id === 'all' ? 'featured' : ''}`} style={{ '--accent': space.accent } as CSSProperties} key={space.id} type="button" onClick={() => onOpen(space.id)}><div className="space-card-top"><span className="card-mark">{space.mark}</span><span className="card-arrow">↗</span></div><div className="space-card-copy"><p>{space.eyebrow}</p><h3>{space.title}</h3><span>{space.description}</span></div><div className="space-card-footer"><span>{space.id === 'all' ? '전체 구성원' : '담당자'}</span><strong>{space.count}</strong><span className="mini-bars" aria-hidden="true">{[0,1,2,3].map((bar) => <i key={bar} className={`b${(bar + index) % 4}`} />)}</span></div></button>)}</div></section>
+    <section className="spaces-section" aria-labelledby="spaces-title"><div className="section-heading"><div><p>SELECT WORKSPACE</p><h2 id="spaces-title">어디서 시작할까요?</h2></div><p className="section-note">파트를 선택하면 해당 파트의 연간 업무 흐름을 볼 수 있습니다.</p></div><div className="spaces-grid">{spaces.map((space, index) => <button className={`space-card ${space.id === 'all' ? 'featured' : ''}`} style={{ '--accent': space.accent } as CSSProperties} key={space.id} type="button" onClick={() => onOpen(space.id)}><div className="space-card-top"><span className="card-mark">{space.mark}</span><span className="card-arrow">↗</span></div><div className="space-card-copy"><p>{space.eyebrow}</p><h3>{space.title}</h3><span>{space.description}</span></div><div className="space-card-footer"><span>{space.id === 'all' ? '전체 구성원' : '담당자'}</span><strong>{space.count}</strong><span className="mini-bars" aria-hidden="true">{[0,1,2,3].map((bar) => <i key={bar} className={`b${(bar + index) % 4}`} />)}</span></div></button>)}</div></section>
     <footer><span>© 2026 GLOBAL AFFAIRS OFFICE</span><span>업무가 사람을 따라 자연스럽게 이어지도록.</span></footer>
   </>;
 }
@@ -138,13 +138,13 @@ function AllTeams({ onHome, onTeam, onPerson }: { onHome: () => void; onTeam: (i
   const teams = useTeams();
   const memberCount = teams.reduce((sum, team) => sum + team.people.length, 0);
   return <main className="workspace-page">
-    <WorkspaceHead eyebrow="ALL TEAMS" title="국제팀 전체 업무 흐름" description={`${memberCount}명의 연간 업무 밀도를 주 단위로 한눈에 확인하세요.`} onHome={onHome} />
+    <WorkspaceHead eyebrow="ALL PARTS" title="국제처 전체 업무 흐름" description={`${memberCount}명의 연간 업무 밀도를 주 단위로 한눈에 확인하세요.`} onHome={onHome} />
     <div className="legend-row"><span><i className="legend-empty" />여유</span>{teams.map((team) => <span key={team.id}><i style={{ background: team.color }} />{team.title}</span>)}<span><i className="legend-today" />이번 주</span><small>각 칸은 1주를 의미합니다.</small></div>
     <div className="overview-layout">
-      <aside className="org-rail"><div className="org-emblem"><span>국제처</span><small>GLOBAL<br />AFFAIRS</small></div><div className="org-line" /><p>{teams.length}개 팀</p><b>{memberCount}</b><span>MEMBERS</span></aside>
-      <section className="calendar-card overview-calendar"><CalendarBody><WeekHeader lead="팀 / 담당자" />
+      <aside className="org-rail"><div className="org-emblem"><span>국제처</span><small>GLOBAL<br />AFFAIRS</small></div><div className="org-line" /><p>{teams.length}개 파트</p><b>{memberCount}</b><span>MEMBERS</span></aside>
+      <section className="calendar-card overview-calendar"><CalendarBody><WeekHeader lead="파트 / 담당자" />
         {teams.map((team) => <div className="overview-team" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
-          <button className="team-strip" type="button" onClick={() => onTeam(team.id)}><TeamBadge team={team} /><span><b>{team.title}</b><small>{team.english}</small></span><em>팀으로 보기</em><i>↗</i></button>
+          <button className="team-strip" type="button" onClick={() => onTeam(team.id)}><TeamBadge team={team} /><span><b>{team.title}</b><small>{team.english}</small></span><em>파트로 보기</em><i>↗</i></button>
           {team.people.map((person) => <BusyCells key={person.id} person={person} color={team.color} onPerson={() => onPerson(team.id, person.id)} />)}
         </div>)}
       </CalendarBody></section>
@@ -161,10 +161,10 @@ function TeamView({ team, onHome, onAll, onTeam, onPerson, onTask }: { team: Tea
   const busyWeeks = new Set(team.people.flatMap((person) => person.tasks.flatMap((task) => Array.from({ length: task.duration }, (_, i) => task.start + i)))).size;
   return <main className="workspace-page team-page" style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
     <WorkspaceHead eyebrow={team.english} title={team.title} description={team.description} onHome={onHome} />
-    <nav className="team-switcher" aria-label="팀 전환"><button type="button" onClick={onAll}>전체</button>{teams.map((item) => <button type="button" className={item.id === team.id ? 'active' : ''} onClick={() => onTeam(item.id)} key={item.id}><i style={{ background: item.color }} />{item.short}</button>)}</nav>
-    <section className="team-summary"><div className="team-summary-main"><TeamBadge team={team} /><span><small>TEAM WORKLOAD</small><strong>{team.title}</strong></span></div><div><strong>{team.people.length}</strong><span>담당자</span></div><div><strong>{team.people.reduce((sum, p) => sum + p.tasks.length, 0)}</strong><span>주요 업무</span></div><div><strong>{busyWeeks}</strong><span>집중 주간</span></div><p><i /> 색상 막대를 누르면 업무 설명을 볼 수 있습니다.</p></section>
+    <nav className="team-switcher" aria-label="파트 전환"><button type="button" onClick={onAll}>전체</button>{teams.map((item) => <button type="button" className={item.id === team.id ? 'active' : ''} onClick={() => onTeam(item.id)} key={item.id}><i style={{ background: item.color }} />{item.short}</button>)}</nav>
+    <section className="team-summary"><div className="team-summary-main"><TeamBadge team={team} /><span><small>PART WORKLOAD</small><strong>{team.title}</strong></span></div><div><strong>{team.people.length}</strong><span>담당자</span></div><div><strong>{team.people.reduce((sum, p) => sum + p.tasks.length, 0)}</strong><span>주요 업무</span></div><div><strong>{busyWeeks}</strong><span>집중 주간</span></div><p><i /> 색상 막대를 누르면 업무 설명을 볼 수 있습니다.</p></section>
     <section className="calendar-card team-calendar"><CalendarBody><WeekHeader lead="담당자 / 역할" />{team.people.map((person) => <TaskRow key={person.id} person={person} team={team} onPerson={() => onPerson(person.id)} onTask={onTask} />)}</CalendarBody></section>
-    <section className="handover-note"><span>HANDOVER NOTE</span><p><b>팀 인수인계 포인트</b> 업무 막대가 겹치는 시기는 팀 전체의 업무가 집중되는 구간입니다. 해당 담당자를 눌러 세부 일정과 준비사항을 확인하세요.</p><button type="button">인수인계 메모 보기 <i>→</i></button></section>
+    <section className="handover-note"><span>HANDOVER NOTE</span><p><b>파트 인수인계 포인트</b> 업무 막대가 겹치는 시기는 파트 전체의 업무가 집중되는 구간입니다. 해당 담당자를 눌러 세부 일정과 준비사항을 확인하세요.</p><button type="button">인수인계 메모 보기 <i>→</i></button></section>
   </main>;
 }
 
@@ -446,7 +446,7 @@ function MemberAdminModal({ removedMemberIds, loading, loadError, onRemove, onRe
       await onRemove(confirmTarget.person.id, confirmTarget.team.id);
       setConfirmTarget(null);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : '팀원을 방출하지 못했습니다.');
+      setActionError(error instanceof Error ? error.message : '파트원을 방출하지 못했습니다.');
     } finally {
       setPendingId(null);
     }
@@ -458,7 +458,7 @@ function MemberAdminModal({ removedMemberIds, loading, loadError, onRemove, onRe
     try {
       await onRestore(personId);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : '팀원을 복구하지 못했습니다.');
+      setActionError(error instanceof Error ? error.message : '파트원을 복구하지 못했습니다.');
     } finally {
       setPendingId(null);
     }
@@ -466,18 +466,18 @@ function MemberAdminModal({ removedMemberIds, loading, loadError, onRemove, onRe
 
   return <div className="modal-backdrop member-admin-backdrop" role="presentation" onMouseDown={() => !pendingId && onClose()}>
     <section className="member-admin-modal" role="dialog" aria-modal="true" aria-labelledby="member-admin-title" onMouseDown={(event) => event.stopPropagation()}>
-      <header className="member-admin-head"><div><span className="modal-label">ADMINISTRATION</span><h2 id="member-admin-title">팀원 관리</h2><p>현재 워크스페이스에 참여 중인 구성원을 관리합니다.</p></div><button type="button" onClick={onClose} disabled={Boolean(pendingId)} aria-label="팀원 관리 닫기">×</button></header>
-      <div className="member-admin-summary"><div><strong>{totalMembers - removedMemberIds.length}</strong><span>활성 팀원</span></div><i /><div><strong>{removedMemberIds.length}</strong><span>방출된 팀원</span></div><p><span>관리자</span> 팀원 방출 권한이 있습니다.</p></div>
+      <header className="member-admin-head"><div><span className="modal-label">ADMINISTRATION</span><h2 id="member-admin-title">파트원 관리</h2><p>현재 워크스페이스에 참여 중인 구성원을 관리합니다.</p></div><button type="button" onClick={onClose} disabled={Boolean(pendingId)} aria-label="파트원 관리 닫기">×</button></header>
+      <div className="member-admin-summary"><div><strong>{totalMembers - removedMemberIds.length}</strong><span>활성 파트원</span></div><i /><div><strong>{removedMemberIds.length}</strong><span>방출된 파트원</span></div><p><span>관리자</span> 파트원 방출 권한이 있습니다.</p></div>
       {(loadError || actionError) && <div className="member-admin-error" role="alert">{actionError || loadError}</div>}
       <div className="member-admin-content">
-        {loading ? <div className="member-admin-loading">팀원 정보를 불러오고 있습니다.</div> : seedTeams.map((team) => {
+        {loading ? <div className="member-admin-loading">파트원 정보를 불러오고 있습니다.</div> : seedTeams.map((team) => {
           const activePeople = team.people.filter((person) => !removedSet.has(person.id));
-          return <section className="member-team-group" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}><div className="member-team-title"><span><i />{team.title}</span><small>{activePeople.length}명</small></div>{activePeople.length ? activePeople.map((person) => <div className="member-admin-row" key={person.id}><span className="person-avatar" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><button type="button" onClick={() => setConfirmTarget({ team, person })} disabled={Boolean(pendingId)}>팀에서 방출</button></div>) : <p className="member-team-empty">현재 소속된 팀원이 없습니다.</p>}</section>;
+          return <section className="member-team-group" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}><div className="member-team-title"><span><i />{team.title}</span><small>{activePeople.length}명</small></div>{activePeople.length ? activePeople.map((person) => <div className="member-admin-row" key={person.id}><span className="person-avatar" style={{ background: team.color }}>{person.initial}</span><span><b>{person.name}</b><small>{person.role}</small></span><button type="button" onClick={() => setConfirmTarget({ team, person })} disabled={Boolean(pendingId)}>파트에서 방출</button></div>) : <p className="member-team-empty">현재 소속된 파트원이 없습니다.</p>}</section>;
         })}
-        {removedPeople.length > 0 && <section className="removed-members"><div className="removed-members-title"><span>방출된 팀원</span><small>필요하면 다시 복구할 수 있습니다.</small></div>{removedPeople.map(({ team, person }) => <div className="member-admin-row removed" key={person.id}><span className="person-avatar" style={{ background: '#9aa1aa' }}>{person.initial}</span><span><b>{person.name}</b><small>{team.title} · {person.role}</small></span><button type="button" onClick={() => restore(person.id)} disabled={Boolean(pendingId)}>{pendingId === person.id ? '복구 중…' : '팀원 복구'}</button></div>)}</section>}
+        {removedPeople.length > 0 && <section className="removed-members"><div className="removed-members-title"><span>방출된 파트원</span><small>필요하면 다시 복구할 수 있습니다.</small></div>{removedPeople.map(({ team, person }) => <div className="member-admin-row removed" key={person.id}><span className="person-avatar" style={{ background: '#9aa1aa' }}>{person.initial}</span><span><b>{person.name}</b><small>{team.title} · {person.role}</small></span><button type="button" onClick={() => restore(person.id)} disabled={Boolean(pendingId)}>{pendingId === person.id ? '복구 중…' : '파트원 복구'}</button></div>)}</section>}
       </div>
-      <footer className="member-admin-footer"><span>방출된 팀원은 업무 화면과 검색 결과에서 즉시 제외됩니다.</span><button type="button" onClick={onClose} disabled={Boolean(pendingId)}>완료</button></footer>
-      {confirmTarget && <div className="member-confirm-layer"><div className="member-confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="member-confirm-title"><span className="member-confirm-icon">!</span><small>{confirmTarget.team.title}</small><h3 id="member-confirm-title">{confirmTarget.person.name} 님을 방출할까요?</h3><p>해당 팀원의 업무 일정과 담당자 페이지가 워크스페이스에서 숨겨집니다. 이후 팀원 관리에서 복구할 수 있습니다.</p><div>{actionError && <span role="alert">{actionError}</span>}<button type="button" onClick={() => { setConfirmTarget(null); setActionError(''); }} disabled={Boolean(pendingId)}>취소</button><button type="button" className="danger" onClick={removeConfirmed} disabled={Boolean(pendingId)}>{pendingId ? '방출 중…' : '팀에서 방출'}</button></div></div></div>}
+      <footer className="member-admin-footer"><span>방출된 파트원은 업무 화면과 검색 결과에서 즉시 제외됩니다.</span><button type="button" onClick={onClose} disabled={Boolean(pendingId)}>완료</button></footer>
+      {confirmTarget && <div className="member-confirm-layer"><div className="member-confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="member-confirm-title"><span className="member-confirm-icon">!</span><small>{confirmTarget.team.title}</small><h3 id="member-confirm-title">{confirmTarget.person.name} 님을 방출할까요?</h3><p>해당 파트원의 업무 일정과 담당자 페이지가 워크스페이스에서 숨겨집니다. 이후 파트원 관리에서 복구할 수 있습니다.</p><div>{actionError && <span role="alert">{actionError}</span>}<button type="button" onClick={() => { setConfirmTarget(null); setActionError(''); }} disabled={Boolean(pendingId)}>취소</button><button type="button" className="danger" onClick={removeConfirmed} disabled={Boolean(pendingId)}>{pendingId ? '방출 중…' : '파트에서 방출'}</button></div></div></div>}
     </section>
   </div>;
 }
@@ -520,7 +520,7 @@ export default function WorkspaceClient({ currentUser, signOutHref }: { currentU
     const controller = new AbortController();
     fetch('/api/members', { signal: controller.signal })
       .then(async (response) => {
-        if (!response.ok) throw new Error('팀원 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        if (!response.ok) throw new Error('파트원 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
         return response.json() as Promise<{ removedMemberIds: string[] }>;
       })
       .then((data) => setRemovedMemberIds(data.removedMemberIds))
@@ -543,7 +543,7 @@ export default function WorkspaceClient({ currentUser, signOutHref }: { currentU
 
   const removeMember = async (personId: string, teamId: string) => {
     const response = await fetch('/api/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
-    if (!response.ok) throw new Error('팀원을 방출하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    if (!response.ok) throw new Error('파트원을 방출하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     setRemovedMemberIds((current) => current.includes(personId) ? current : [personId, ...current]);
     if (view.type === 'person' && view.personId === personId) setView({ type: 'team', teamId });
     setTaskFocus((current) => current?.personId === personId ? null : current);
@@ -551,7 +551,7 @@ export default function WorkspaceClient({ currentUser, signOutHref }: { currentU
 
   const restoreMember = async (personId: string) => {
     const response = await fetch('/api/members', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
-    if (!response.ok) throw new Error('팀원을 복구하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    if (!response.ok) throw new Error('파트원을 복구하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     setRemovedMemberIds((current) => current.filter((id) => id !== personId));
   };
 

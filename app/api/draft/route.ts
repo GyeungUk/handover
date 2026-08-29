@@ -163,7 +163,7 @@ export async function POST(request: Request) {
 
   const facts = buildFacts(found.person.tasks, moves.results, today.week);
   const payload = {
-    담당자: { 이름: found.person.name, 역할: found.person.role, 소속팀: found.team.title },
+    담당자: { 이름: found.person.name, 역할: found.person.role, 소속파트: found.team.title },
     오늘: weekLabel(today.week),
     허용속성: allowedProperties((key) => inferableKeys.has(key)),
     업무목록: facts,

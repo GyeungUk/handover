@@ -4,7 +4,7 @@
  * with it. Shared by the client workspace and the alignment API route.
  */
 
-import { WEEKS_IN_YEAR, weekLabel } from './org-data';
+import { ACADEMIC_YEAR_START, WEEKS_IN_YEAR, weekLabel } from './org-data';
 
 /** Which part of the year an anchor belongs to. Only used to group the comparison table. */
 export type TermPhase = '1학기' | '하계' | '2학기' | '동계';
@@ -71,7 +71,8 @@ export const academicYears: AcademicYear[] = [
   { year: 2027, label: '2027학년도', events: events2027 },
 ];
 
-export const baseAcademicYear = 2026;
+/** Re-exported so the year is written down once, in `org-data.ts`. */
+export const baseAcademicYear = ACADEMIC_YEAR_START;
 
 export function findAcademicYear(year: number) {
   return academicYears.find((item) => item.year === year) ?? null;

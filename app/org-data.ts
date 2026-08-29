@@ -11,13 +11,23 @@ export type Task = {
 export type Person = { id: string; name: string; role: string; initial: string; tasks: Task[] };
 export type Team = { id: string; title: string; short: string; english: string; description: string; color: string; soft: string; mark: string; people: Person[] };
 
-/** the academic year runs 2026.03 — 2027.02 as 48 week slots, 4 per month */
+/** the academic year is 48 week slots, 4 per month, opening in `months[0]` of `ACADEMIC_YEAR_START` */
 export const WEEKS_IN_YEAR = 48;
 export const months = ['3월','4월','5월','6월','7월','8월','9월','10월','11월','12월','1월','2월'];
 
+/**
+ * The calendar year the academic year opens in. Every date boundary below is derived from this and
+ * from `months`, so rolling the workspace over to a new year is a one-line change here rather than a
+ * hunt for years buried in comparisons. `baseAcademicYear` in `academic-calendar.ts` re-exports it.
+ */
+export const ACADEMIC_YEAR_START = 2026;
+
+/** The calendar month the year opens on, read from the first month label ("3월" -> 3). */
+const START_MONTH = Number(months[0].replace(/[^0-9]/g, ''));
+
 export const seedTeams: Team[] = [
   {
-    id: 'management', title: '유학생관리팀', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#b8544c', soft: '#f7ebe9',
+    id: 'management', title: '유학생관리', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#b8544c', soft: '#f7ebe9',
     description: '유학생의 체류부터 학사·생활까지 안정적인 캠퍼스 생활을 지원합니다.',
     people: [
       { id: 'minseo', name: '박민서', role: '체류·비자 관리', initial: '박', tasks: [
@@ -41,7 +51,7 @@ export const seedTeams: Team[] = [
     ],
   },
   {
-    id: 'recruitment', title: '유학생유치팀', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#b07d34', soft: '#f8f0e2',
+    id: 'recruitment', title: '유학생유치', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#b07d34', soft: '#f8f0e2',
     description: '전 세계의 우수한 학생과 대학을 연결하고 입학 전 과정을 설계합니다.',
     people: [
       { id: 'seoyeon', name: '김서연', role: '입학전형 기획', initial: '김', tasks: [
@@ -65,7 +75,7 @@ export const seedTeams: Team[] = [
     ],
   },
   {
-    id: 'exchange', title: '교류팀', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#3d6a92', soft: '#e9eff5',
+    id: 'exchange', title: '교류', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#3d6a92', soft: '#e9eff5',
     description: '협정대학 네트워크를 바탕으로 파견·초청 교류의 전 과정을 운영합니다.',
     people: [
       { id: 'yujin', name: '강유진', role: '파견 교환학생', initial: '강', tasks: [
@@ -131,10 +141,13 @@ export const weekLabel = (week: number) => `${months[Math.floor(week / 4)]} ${(w
 export type Today = { week: number | null; month: number | null; day: number | null };
 export const noToday: Today = { week: null, month: null, day: null };
 
-/** Locate a real date inside the 2026.03 — 2027.02 academic year (48 weeks, 4 per month). */
+/** Locate a real date inside the academic year (48 weeks, 4 per month), or `noToday` outside it. */
 export function locateToday(now: Date): Today {
-  if (now < new Date(2026, 2, 1) || now >= new Date(2027, 2, 1)) return noToday;
-  const month = (now.getMonth() + 10) % 12;
+  /* Date months are 0-based, so the opening month is one less than its label. */
+  const opensOn = new Date(ACADEMIC_YEAR_START, START_MONTH - 1, 1);
+  const closesBefore = new Date(ACADEMIC_YEAR_START + 1, START_MONTH - 1, 1);
+  if (now < opensOn || now >= closesBefore) return noToday;
+  const month = (now.getMonth() - (START_MONTH - 1) + 12) % 12;
   const weekOfMonth = Math.min(3, Math.floor((now.getDate() - 1) / 7));
   return { week: month * 4 + weekOfMonth, month, day: now.getDate() };
 }
