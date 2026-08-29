@@ -28,6 +28,7 @@ yarn-error.log*
 
 # local environment
 .env*
+!.env.local.example
 
 # deployment and generated files
 .vercel
@@ -37,5 +38,21 @@ next-env.d.ts
 /outputs/
 /work/
 
-# local secrets
+# local secrets — the committed templates are .dev.vars.example / .env.local.example
 .dev.vars
+
+# TypeScript incremental build state
+tsconfig.tsbuildinfo
+
+# Gradle build output for the Spring backend (backend/.gitignore covers the rest)
+/backend/build/
+/backend/.gradle/
+
+# Local agent settings
+.claude/
+
+# Scratch space and generated deliverables (evidence decks, PDFs, QA output). Large binaries; the
+# scripts that produce them live under tmp/ and are regenerated rather than versioned.
+/tmp/
+/output/
+/qa/
