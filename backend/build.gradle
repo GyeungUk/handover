@@ -40,12 +40,13 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 
-    // Docker Engine 29 rejects the API version docker-java negotiates by default, which makes
-    // Testcontainers report "no valid Docker environment" on an otherwise healthy daemon. Export
-    // DOCKER_API_VERSION (e.g. 1.44) to pin one; leave it unset on older daemons.
-    if (System.getenv('DOCKER_API_VERSION')) {
-        systemProperty 'api.version', System.getenv('DOCKER_API_VERSION')
-    }
+    // Docker Engine 29 dropped every API version below 1.44, but the docker-java shipped with
+    // Testcontainers still negotiates 1.32. The daemon answers its probe with a 400 and
+    // Testcontainers reports "no valid Docker environment" on a perfectly healthy Docker, silently
+    // skipping every @EnabledIf("dockerAvailable") test. Pinning 1.44 — supported since Docker 25
+    // (2024) — makes the container tests run without each developer exporting anything.
+    // Set DOCKER_API_VERSION to override, e.g. for a daemon older than 25.
+    systemProperty 'api.version', System.getenv('DOCKER_API_VERSION') ?: '1.44'
     testLogging {
         events 'passed', 'skipped', 'failed'
     }
