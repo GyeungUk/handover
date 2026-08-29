@@ -1,8 +1,17 @@
 /** Shared plumbing for the model-backed handover routes: one call helper, one HTML builder. */
 
+import { env } from 'cloudflare:workers';
 import { handoverCategories, propertyFieldsByCategory, type HandoverCategory } from './handover-schema';
 
-export const MODEL = 'gpt-5.4-mini';
+/**
+ * Which model answers, and where it is called. Overridable from the environment under the same
+ * names the Spring backend uses (`OPENAI_MODEL`, `OPENAI_BASE_URL`), so switching models is a
+ * configuration change on either backend rather than an edit here.
+ */
+type ModelEnv = Cloudflare.Env & { OPENAI_MODEL?: string; OPENAI_BASE_URL?: string };
+
+const DEFAULT_MODEL = 'gpt-5.4-mini';
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1/chat/completions';
 
 export const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -46,11 +55,12 @@ export async function askModel<T>(options: {
   system: string;
   user: string;
 }): Promise<ModelResult<T>> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const config = env as ModelEnv;
+  const response = await fetch(config.OPENAI_BASE_URL?.trim() || DEFAULT_BASE_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
+      model: config.OPENAI_MODEL?.trim() || DEFAULT_MODEL,
       messages: [
         { role: 'system', content: options.system },
         { role: 'user', content: options.user },
