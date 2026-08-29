@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "taskTitle": { "type": "string", "description": "입력에 있는 업무명 그대로" },
+          "action": { "type": "string", "$enumFrom": "alignmentActions" },
+          "shiftWeeks": { "type": "integer", "description": "몇 주 옮길지. -4~4. keep과 review는 0." },
+          "anchorEvent": { "type": "string", "description": "근거가 된 학사일정 행사명. 없으면 빈 문자열." },
+          "reason": { "type": "string", "description": "판단 이유 한 문장." },
+          "note": { "type": "string", "description": "담당자가 확인할 점. 없으면 빈 문자열." }
+        },
+        "required": ["taskTitle", "action", "shiftWeeks", "anchorEvent", "reason", "note"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["items"],
+  "additionalProperties": false
+}

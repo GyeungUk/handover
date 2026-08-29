@@ -1,0 +1,30 @@
+# Copy to src/main/resources/application-local.yml and run with SPRING_PROFILES_ACTIVE=local.
+# That file is gitignored. Prefer the environment variables in .env.example for anything secret;
+# this file exists for the values that are awkward to export by hand while developing.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/handover
+    username: handover
+    password: handover
+
+handover:
+  auth:
+    admin-emails:
+      - gyeunguk2062@gmail.com
+      # The Next.js build let this address in as an admin outside production; keep it local-only.
+      - seedy@sites.test
+    member-emails:
+      - ruddnr2062@gmail.com
+      - seongwhan0712@gmail.com
+      - hyk@ssu.ac.kr
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+    allow-credentials: true
+  openai:
+    # Never commit a real key. Export OPENAI_API_KEY instead, or put it here in your untracked copy.
+    api-key: ""
+
+logging:
+  level:
+    com.globalaffairs.handover: DEBUG

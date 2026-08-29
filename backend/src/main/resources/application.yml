@@ -1,0 +1,61 @@
+# Defaults for every environment. Everything secret or deployment-specific arrives through the
+# environment variables referenced below; nothing sensitive belongs in this file.
+spring:
+  application:
+    name: handover-backend
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/handover}
+    username: ${DATABASE_USERNAME:handover}
+    password: ${DATABASE_PASSWORD:handover}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:10}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema; Hibernate only validates that the mapping still matches it.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  jackson:
+    # `properties: {}` and `questions: []` must survive serialisation; the frontend reads them.
+    default-property-inclusion: always
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+handover:
+  auth:
+    # Comma-separated lists, e.g. HANDOVER_ADMIN_EMAILS=a@example.com,b@example.com
+    admin-emails: ${HANDOVER_ADMIN_EMAILS:}
+    member-emails: ${HANDOVER_MEMBER_EMAILS:}
+    gateway:
+      # Optional shared secret proving the request came through the authenticating proxy.
+      # Leave empty to keep the Next.js behaviour of trusting the identity headers on their own.
+      secret: ${HANDOVER_GATEWAY_SECRET:}
+      secret-header: ${HANDOVER_GATEWAY_SECRET_HEADER:x-handover-gateway-secret}
+  cors:
+    # Exact origins allowed to call the API from a browser, e.g. http://localhost:3000
+    allowed-origins: ${HANDOVER_CORS_ALLOWED_ORIGINS:}
+    allow-credentials: ${HANDOVER_CORS_ALLOW_CREDENTIALS:true}
+  openai:
+    api-key: ${OPENAI_API_KEY:}
+    model: ${OPENAI_MODEL:gpt-5.4-mini}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/chat/completions}
+    timeout: ${OPENAI_TIMEOUT:120s}
+
+logging:
+  level:
+    com.globalaffairs.handover: ${LOG_LEVEL:INFO}

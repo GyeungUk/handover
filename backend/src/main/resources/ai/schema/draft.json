@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "drafts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "$enumFrom": "categories" },
+          "title": { "type": "string", "description": "문서 제목. 40자 이내." },
+          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "본문 문단. 1~3개." },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "key": { "type": "string" }, "value": { "type": "string" } },
+              "required": ["key", "value"],
+              "additionalProperties": false
+            }
+          },
+          "basis": { "type": "string", "enum": ["record", "inferred"] },
+          "questions": { "type": "array", "items": { "type": "string" }, "description": "작성자만 답할 수 있는 질문. 최대 3개." },
+          "sourceTask": { "type": "string" }
+        },
+        "required": ["category", "title", "paragraphs", "properties", "basis", "questions", "sourceTask"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["drafts"],
+  "additionalProperties": false
+}

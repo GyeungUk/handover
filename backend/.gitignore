@@ -1,0 +1,10 @@
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# local secrets and machine-specific config
+.env
+src/main/resources/application-local.yml
+
+# The root .gitignore excludes `.env*` everywhere; this template must stay in the repository.
+!.env.example

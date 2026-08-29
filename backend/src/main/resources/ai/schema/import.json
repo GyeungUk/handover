@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "$enumFrom": "categories" },
+          "title": { "type": "string", "description": "문서 제목. 40자 이내." },
+          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "본문 문단. 1~3개." },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "key": { "type": "string" }, "value": { "type": "string" } },
+              "required": ["key", "value"],
+              "additionalProperties": false
+            }
+          },
+          "questions": { "type": "array", "items": { "type": "string" }, "description": "원문에 없어 작성자가 채워야 할 질문. 최대 3개." },
+          "sourceQuote": { "type": "string", "description": "원문에 그대로 있는 근거 구절" },
+          "confidence": { "type": "string", "enum": ["high", "low"] }
+        },
+        "required": ["category", "title", "paragraphs", "properties", "questions", "sourceQuote", "confidence"],
+        "additionalProperties": false
+      }
+    },
+    "unmapped": { "type": "array", "items": { "type": "string" }, "description": "어느 섹션에도 넣지 못한 내용" }
+  },
+  "required": ["items", "unmapped"],
+  "additionalProperties": false
+}

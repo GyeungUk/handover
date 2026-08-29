@@ -1,0 +1,135 @@
+{
+  "categories": [
+    "responsibility",
+    "plan",
+    "issue",
+    "pending"
+  ],
+  "categoryLabels": {
+    "responsibility": "담당업무",
+    "plan": "주요업무계획 및 진행사항",
+    "issue": "현안사항 및 문제점",
+    "pending": "주요미결사항"
+  },
+  "propertyFieldsByCategory": {
+    "responsibility": [
+      {
+        "key": "cycle",
+        "label": "업무 주기",
+        "placeholder": "선택",
+        "options": [
+          "수시",
+          "매일",
+          "매주",
+          "매월",
+          "학기별",
+          "연 1회"
+        ]
+      },
+      {
+        "key": "department",
+        "label": "협업 부서",
+        "placeholder": "예: 학사지원팀"
+      },
+      {
+        "key": "importance",
+        "label": "중요도",
+        "placeholder": "선택",
+        "options": [
+          "일반",
+          "중요",
+          "핵심"
+        ]
+      }
+    ],
+    "plan": [
+      {
+        "key": "due",
+        "label": "목표 일정",
+        "placeholder": "예: 2026. 09. 06"
+      },
+      {
+        "key": "progress",
+        "label": "진행률",
+        "placeholder": "선택",
+        "options": [
+          "준비 전",
+          "25%",
+          "50%",
+          "75%",
+          "완료"
+        ]
+      },
+      {
+        "key": "next",
+        "label": "다음 담당",
+        "placeholder": "예: 박민서 주임"
+      }
+    ],
+    "issue": [
+      {
+        "key": "impact",
+        "label": "영향도",
+        "placeholder": "선택",
+        "options": [
+          "낮음",
+          "보통",
+          "높음",
+          "긴급"
+        ]
+      },
+      {
+        "key": "response",
+        "label": "대응 상태",
+        "placeholder": "선택",
+        "options": [
+          "확인 중",
+          "대응 중",
+          "협의 중",
+          "해결"
+        ]
+      },
+      {
+        "key": "department",
+        "label": "관련 부서",
+        "placeholder": "예: 출입국관리사무소"
+      }
+    ],
+    "pending": [
+      {
+        "key": "due",
+        "label": "완료 예정일",
+        "placeholder": "예: 2026. 09. 02"
+      },
+      {
+        "key": "priority",
+        "label": "우선순위",
+        "placeholder": "선택",
+        "options": [
+          "낮음",
+          "보통",
+          "높음",
+          "긴급"
+        ]
+      },
+      {
+        "key": "owner",
+        "label": "후속 담당",
+        "placeholder": "예: 김지현"
+      }
+    ]
+  },
+  "findingKinds": [
+    "지시대명사",
+    "연락처",
+    "일정",
+    "근거",
+    "범위"
+  ],
+  "annualActionLabels": {
+    "keep": "그대로 유지",
+    "revise": "내용 수정",
+    "new": "신규 추가",
+    "archive": "올해는 제외"
+  }
+}
