@@ -18,7 +18,7 @@ services:
       - key: HANDOVER_CORS_ALLOWED_ORIGINS
         value: ""
       - key: HANDOVER_GATEWAY_SECRET
-        generateValue: true
+        sync: false
       - key: HANDOVER_GATEWAY_SECRET_HEADER
         value: x-handover-gateway-secret
       - key: OPENAI_API_KEY

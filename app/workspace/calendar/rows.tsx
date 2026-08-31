@@ -54,7 +54,7 @@ export function PersonLoadRow({ person, color, onPerson }: { person: Person; col
   );
 }
 
-/* ========================================================================== 
+/* ==========================================================================
    Naming the work on a year track
    --------------------------------------------------------------------------
    A task is one visual unit: colour, title and period stay together inside the
