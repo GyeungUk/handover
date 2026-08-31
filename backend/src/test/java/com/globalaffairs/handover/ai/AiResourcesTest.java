@@ -72,9 +72,16 @@ class AiResourcesTest {
 
     @Test
     void loadsEveryPromptWithTheKoreanWordingTheRouteHandlersUse() {
-        assertThat(resources.prompt("draft")).startsWith("너는 한국 대학 국제처의 업무 인수인계서 작성을 돕는다.");
-        assertThat(resources.prompt("quality")).contains("지시대명사");
-        assertThat(resources.prompt("calendar-check")).contains("anchorEvent");
+        assertThat(resources.prompt("draft"))
+                .contains("기록 기반 편집자", "완료 업무가 plan이나 pending에 들어가지 않았는지");
+        assertThat(resources.prompt("import"))
+                .contains("업무 단위 식별", "sourceQuote가 원문에 글자 그대로 존재");
+        assertThat(resources.prompt("quality"))
+                .contains("실행 가능성", "한 누락을 여러 kind로 중복 보고하지 않았는지");
+        assertThat(resources.prompt("annual"))
+                .contains("지난 학년도", "새 날짜·수치·사람·기관·상태를 추정하지 않았는지");
+        assertThat(resources.prompt("calendar-check"))
+                .contains("직접적인 의존 관계", "단순한 기간 겹침", "anchorEvent");
         for (String route : List.of("draft", "import", "quality", "annual", "calendar-check")) {
             assertThat(resources.prompt(route)).as("prompt for %s", route).isNotBlank();
         }

@@ -34,7 +34,7 @@ cd backend
 
 # 1) 환경변수 파일 준비 — 실제 값은 커밋하지 마세요
 cp .env.example .env
-$EDITOR .env                       # 최소한 HANDOVER_ADMIN_EMAILS / MEMBER_EMAILS 를 채웁니다
+$EDITOR .env                       # 관리자 권한이 필요하면 HANDOVER_ADMIN_EMPLOYEE_IDS 를 채웁니다
 
 # 2) PostgreSQL 기동
 docker compose up -d
@@ -56,8 +56,9 @@ export OPENAI_API_KEY=$(sed -n 's/^OPENAI_API_KEY=//p' ../.dev.vars | head -1)
 JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew bootRun
 ```
 
-기본 포트는 8080입니다. 기동 로그에 Flyway가 `V1__removed_members.sql`, `V2__task_reschedules.sql`을
-적용했다는 줄이 보이면 정상입니다.
+기본 포트는 8080입니다. 기동 로그에 Flyway가 `V1__removed_members.sql`,
+`V2__task_reschedules.sql`, `V3__handover_documents.sql`, `V4__accounts.sql`을 적용했다는 줄이
+보이면 정상입니다.
 
 > **이 머신 주의:** 네이티브 PostgreSQL이 이미 `localhost:5432`를 점유하고 있습니다. 컨테이너를 5432로
 > 띄우면 Spring이 컨테이너가 아니라 그쪽에 붙어 `role "handover" does not exist`로 실패합니다.
@@ -75,13 +76,17 @@ SPRING_PROFILES_ACTIVE=local ./gradlew bootRun
 ### 동작 확인
 
 ```bash
-# 등록되지 않은(=헤더 없는) 요청은 401
+# 세션 없는 요청은 401
 curl -i localhost:8080/api/members
 
-# 등록된 계정으로 조회
-curl -s localhost:8080/api/members \
-  -H 'oai-authenticated-user-id: local-test' \
-  -H 'oai-authenticated-user-email: <HANDOVER_MEMBER_EMAILS에 넣은 주소>'
+# 숫자 직번으로 비밀번호를 만들고 세션 쿠키를 받습니다
+curl -s -c /tmp/handover.jar localhost:8080/api/auth/register \
+  -H 'content-type: application/json' \
+  -d '{"employeeId":"20190002","name":"김지현","email":"kim@example.ac.kr","password":"handover-2026"}'
+# → {"user":{"employeeId":"20190002","displayName":"김지현","email":"kim@example.ac.kr","role":"member"}}
+
+# 받은 쿠키로 조회
+curl -s -b /tmp/handover.jar localhost:8080/api/members
 # → {"removedMemberIds":[]}
 ```
 
@@ -94,12 +99,17 @@ curl -s localhost:8080/api/members \
 | 환경변수 | 용도 | 비고 |
 | --- | --- | --- |
 | `DATABASE_URL` / `DATABASE_USERNAME` / `DATABASE_PASSWORD` | DB 접속 | 비밀번호는 커밋 금지 |
-| `HANDOVER_ADMIN_EMAILS` | 관리자 이메일 (쉼표 구분) | `app/authz.ts` 하드코딩을 대체 |
-| `HANDOVER_MEMBER_EMAILS` | 파트원 이메일 (쉼표 구분) | 둘 다 비면 **아무도 접근 불가** |
-| `HANDOVER_GATEWAY_SECRET` | 프록시 공유 비밀 (선택) | 설정 시 이 헤더가 없으면 미인증 처리 |
+| `HANDOVER_ADMIN_EMPLOYEE_IDS` | 관리자 직번 (쉼표 구분) | 목록의 계정만 관리자 |
+| `HANDOVER_MEMBER_EMPLOYEE_IDS` | 파트원 직번 (쉼표 구분) | 이전 설정 호환용; 가입 제한에는 사용하지 않음 |
+| `HANDOVER_GATEWAY_SECRET` | 게이트웨이 공유 비밀 (선택) | 설정 시 이 헤더가 없으면 미인증 + `/api/auth/*` 거부 |
+| `HANDOVER_SESSION_TTL` | 세션 유효기간 | 기본 `14d` |
+| `HANDOVER_SESSION_COOKIE_SECURE` | HTTPS 전용 쿠키 | 로컬 http는 `false`, 운영은 반드시 `true` |
+| `SMTP_HOST` 등 · `HANDOVER_MAIL_FROM` | 비밀번호 재설정 메일 | 비우면 재설정 요청이 503 |
+| `HANDOVER_PASSWORD_RESET_LOG_CODE` | 인증번호를 로그로 출력 | **로컬 전용.** 메일 서버와 동시 설정 시 기동 후 거부 |
 | `HANDOVER_CORS_ALLOWED_ORIGINS` | 허용 오리진 (쉼표 구분) | 비우면 CORS 매핑 없음 |
 | `OPENAI_API_KEY` | 모델 호출 키 | `.env`는 비워 두고 `run-local.sh`가 `.dev.vars`에서 읽습니다. 없으면 AI 엔드포인트가 503 |
-| `OPENAI_MODEL` | 기본 `gpt-5.4-mini` | 기존과 동일 |
+| 모델 | 코드에서 `gpt-5.6-luna`로 고정 | 환경변수로 교체되지 않습니다 |
+| `OPENAI_REASONING_EFFORT` | 기본 `xhigh` | Luna Chat Completions 허용값 `none`·`low`·`medium`·`high`·`xhigh`; 비우면 필드 생략 |
 | `SERVER_PORT` | 기본 8080 | |
 | `HANDOVER_DRAFT_INFERABLE_PROPERTY_KEYS` | 초안이 자동으로 채워도 되는 속성 key | 기본 `importance,impact,response,priority` |
 
@@ -110,7 +120,7 @@ curl -s localhost:8080/api/members \
 ### 마이그레이션
 
 - 위치: `src/main/resources/db/migration`
-- `V1__removed_members.sql`, `V2__task_reschedules.sql`
+- `V1__removed_members.sql`, `V2__task_reschedules.sql`, `V3__handover_documents.sql`
 - 애플리케이션 기동 시 Flyway가 자동 적용합니다. 기존 구현이 요청마다 실행하던
   `CREATE TABLE IF NOT EXISTS`는 더 이상 필요하지 않습니다.
 - Hibernate는 `ddl-auto: validate`로 동작합니다. 스키마와 엔티티 매핑이 어긋나면 **기동이 실패**합니다.
@@ -131,6 +141,9 @@ docker compose up -d
 node backend/tools/import-d1.mjs \
   --removed-members  ./removed_members.json \
   --task-reschedules ./task_reschedules.json \
+  --handover-documents ./handover_documents.json \
+  --handover-entries ./handover_entries.json \
+  --handover-bundles ./handover_bundles.json \
   --out backend/tools/out/import.sql
 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/tools/out/import.sql
@@ -150,6 +163,8 @@ Cloudflare에 접속하지 않고 로컬 CSV/JSON만 읽습니다. 여러 번 �
 | DELETE | `/api/members` | **관리자** | 파트원 복구 |
 | GET | `/api/schedules` | 등록 계정 | 일정 변경 이력 전체 |
 | POST | `/api/schedules` | 등록 계정 | 일정 변경 기록 |
+| GET | `/api/task-checklists` | 등록 계정 | 업무별 인수인계 준비 상태 조회 |
+| POST | `/api/task-checklists` | 등록 계정 | 체크 항목 완료·해제 저장 |
 | POST | `/api/draft` | 등록 계정 | 담당자 일정 기반 인수인계 초안 |
 | POST | `/api/import` | 등록 계정 | 기존 문서 4개 섹션 자동 분류 |
 | POST | `/api/annual` | 등록 계정 | 다음 학년도 갱신 초안 |
@@ -256,17 +271,14 @@ DOCKER_API_VERSION=1.44 ./gradlew test
 
 ### 왜 base URL 방식이 아니라 프록시인가
 
-이 앱의 인증 헤더(`oai-authenticated-user-*`)는 **브라우저가 보내지 않습니다.** 앞단 서버가 주입합니다.
+로그인은 이제 이 앱의 것입니다. 브라우저는 `/api/auth/login`이 내려준 **세션 쿠키**로 자신을 증명하고,
+쿠키는 그것을 내려준 오리진에만 다시 실립니다.
 
-- 로컬: `@openai/sites-vite-plugin`의 Vite 미들웨어가 `__sites_local_auth` 쿠키를 보고 주입
-  (`node_modules/@openai/sites-vite-plugin/dist/index.js:93`). 인바운드 헤더는 오히려 **제거**합니다.
-- 운영: ChatGPT 인증 프록시가 주입
-
-따라서 프론트에서 `fetch('http://spring-host/api/...')`처럼 **다른 오리진으로 직접 호출하면 신원이 실려
+따라서 프론트에서 `fetch('http://spring-host/api/...')`처럼 **다른 오리진으로 직접 호출하면 쿠키가 실려
 가지 않아 전부 401**이 됩니다. base URL 교체 방식은 이 구조에서 성립하지 않습니다.
 
-대신 요청이 앞단을 통과한 **뒤에** Spring으로 전달되어야 합니다. 이는 운영의 리버스 프록시가 해야 할
-일과 정확히 같습니다.
+같은 오리진으로 프록시하면 나가는 요청에는 브라우저가 쿠키를 붙이고, 들어오는 `Set-Cookie`는 그대로
+저장됩니다. 이는 운영의 리버스 프록시가 해야 할 일과 정확히 같습니다.
 
 ### 적용된 방식
 
@@ -293,50 +305,57 @@ HANDOVER_API_TARGET=http://localhost:8080
 sed -i '' 's|^HANDOVER_API_TARGET=|#HANDOVER_API_TARGET=|' .env.local
 ```
 
-### 프론트 코드는 건드리지 않았습니다
+### 프론트가 바뀐 부분
 
-`WorkspaceClient.tsx`와 `HandoverWorkspace.tsx`의 fetch 호출 10곳은 **한 줄도 바꾸지 않았습니다.**
-모두 `/api/*` 상대 경로 그대로입니다.
+`WorkspaceClient.tsx`와 `HandoverWorkspace.tsx`의 fetch 호출은 모두 `/api/*` 상대 경로 그대로입니다.
+바뀐 것은 로그인 화면(`app/LoginClient.tsx`)과, 페이지 렌더가 세션 주인을 확인하는 경로입니다.
 
-`app/api-base.ts`는 그대로 두었지만 **현재 방식에서는 필요하지 않습니다.** 프론트와 API를 서로 다른
-오리진에 두면서 그 오리진 앞에도 인증 프록시를 세우는 배포를 하게 될 때만 쓰세요.
+서버 렌더는 브라우저 쿠키를 그대로 실어 `GET /api/auth/session`을 호출합니다(`app/session.ts`).
+그래서 **Worker 환경에도** 백엔드 주소가 필요합니다 — `.dev.vars`의 `HANDOVER_API_TARGET`이 그것이고,
+`.env.local`의 같은 이름은 그 앞단 dev 프록시용입니다. 둘은 같은 값이어야 합니다.
 
 ### 운영 배포
 
-같은 원리입니다. 인증 프록시 뒤에서 경로로 나눕니다.
+같은 원리입니다. 하나의 오리진 뒤에서 경로로 나눕니다.
 
 ```
-브라우저 → ChatGPT 인증 프록시 → ┬ /api/*  → Spring (8080)
-                                  └ 그 외    → Next.js
+브라우저 → 리버스 프록시 → ┬ /api/*  → Spring (8080)
+                            └ 그 외    → Next.js
 ```
 
-프록시는 반드시 인바운드 `oai-authenticated-user-*` 헤더를 제거한 뒤 자신이 검증한 값으로 다시
-설정해야 합니다. [`docs/SECURITY.md`](docs/SECURITY.md)를 보세요.
+세션 쿠키가 성립하려면 두 갈래가 **같은 오리진**이어야 합니다. HTTPS라면
+`HANDOVER_SESSION_COOKIE_SECURE=true`로 두세요. `HANDOVER_GATEWAY_SECRET`을 설정하면 프록시를 거치지
+않은 호출은 세션도 못 쓰고 `/api/auth/*`도 거부됩니다. [`docs/SECURITY.md`](docs/SECURITY.md)를 보세요.
 
-## 8. 로컬 개발에서 인증 흐름 흉내내기
+## 8. 로컬에서 계정 만들고 호출해 보기
 
-dev 서버(3000)를 거치면 sites 플러그인이 헤더를 넣어 주므로, 쿠키만 있으면 됩니다.
+dev 서버(5173)를 거치면 `/api/*`가 Spring으로 전달되고 쿠키도 그대로 오갑니다. Spring(8080)을 직접
+두드려도 동작합니다 — 아래는 후자입니다.
 
 ```bash
-curl -s localhost:3000/api/members -H 'Cookie: __sites_local_auth=1'
-# → {"removedMemberIds":[]}
-```
-
-Spring(8080)을 직접 두드릴 때는 앞단이 없으므로 헤더를 손으로 넣습니다.
-
-```bash
-curl -s -X POST localhost:8080/api/schedules \
+# 숫자 직번이면 비밀번호를 만들 수 있습니다.
+curl -s -c /tmp/handover.jar localhost:8080/api/auth/register \
   -H 'Content-Type: application/json' \
-  -H 'oai-authenticated-user-id: local-test' \
-  -H 'oai-authenticated-user-email: seedy@sites.test' \
-  -H "oai-authenticated-user-full-name: $(python3 -c 'import urllib.parse;print(urllib.parse.quote("박민서"))')" \
-  -H 'oai-authenticated-user-full-name-encoding: percent-encoded-utf-8' \
+  -d '{"employeeId":"20180001","name":"박민서","email":"minseo@example.ac.kr","password":"handover-2026"}'
+
+curl -s -b /tmp/handover.jar -X POST localhost:8080/api/schedules \
+  -H 'Content-Type: application/json' \
   -d '{"personId":"minseo","taskTitle":"비자 연장 집중기간","toStart":23,"reason":"로컬 테스트"}'
 ```
 
-`seedy@sites.test`를 쓰려면 `application-local.yml`의 관리자 목록에 넣어야 합니다.
-(기존 구현은 `NODE_ENV !== 'production'`일 때 이 계정을 자동 허용했지만, 이 백엔드에는 그런 코드
-경로가 없습니다. 운영 설정에는 절대 넣지 마세요.)
+두 번째 실행부터는 `/api/auth/login`으로 같은 쿠키를 다시 받으면 됩니다.
+
+```bash
+curl -s -c /tmp/handover.jar localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"employeeId":"20180001","password":"handover-2026"}'
+```
+
+비밀번호를 잊었을 때의 인증번호는 메일로 갑니다. SMTP 없이 확인하려면
+`HANDOVER_PASSWORD_RESET_LOG_CODE=true`로 두면 로그에 찍힙니다 — **로컬 전용입니다.**
+
+모든 숫자 직번은 일반 사용자로 가입할 수 있습니다. 운영 설정에는 관리자에게 부여할 실제 직번만
+`HANDOVER_ADMIN_EMPLOYEE_IDS`에 넣으세요.
 
 ---
 
@@ -354,11 +373,12 @@ backend/
 │   ├── export-prompts.mjs           TS 프롬프트 → 텍스트 리소스
 │   └── import-d1.mjs                D1 CSV/JSON → 검토 가능한 PostgreSQL SQL
 └── src/main/java/com/globalaffairs/handover/
-    ├── auth/                        ChatGPT 헤더 필터, 권한 판정, 접근 검사
+    ├── account/                     직번 계정, 로그인·로그아웃, 비밀번호 생성·재설정
+    ├── auth/                        세션 쿠키 필터, 권한 판정, 접근 검사
     ├── config/                      CORS, 인자 리졸버, Clock
     ├── domain/                      조직도 · 학사일정 · 인수인계 스키마 포팅
     ├── member/                      /api/members
-    ├── schedule/                    /api/schedules
+    ├── schedule/                    /api/schedules, /api/task-checklists
     ├── ai/                          OpenAI 클라이언트와 5개 모델 기반 서비스
     └── web/                         오류 응답 계약, 타임스탬프 포맷
 ```
@@ -371,7 +391,7 @@ backend/
 
 **영속 API**
 - Flyway 마이그레이션 적용 (실제 PostgreSQL 16)
-- `/api/members`, `/api/schedules` 전 경로: 조회 · 방출 · 복구 · 일정 변경 · 중복 거부 · 이력 조회
+- `/api/members`, `/api/schedules`, `/api/task-checklists` 전 경로: 조회 · 방출 · 복구 · 일정 변경 · 체크 저장 · 중복 거부 · 이력 조회
 - 인증 헤더가 dev 프록시를 통해 Spring까지 전달됨 (`changedBy`에 실제 사용자명 기록)
 - 미인증 401, 비관리자 403, 잘못된 본문 400
 - `.env.local` 한 줄로 기존 D1 백엔드 왕복 전환
@@ -406,7 +426,7 @@ backend/
 
 1. **브라우저 UI 조작.** API는 curl로 검증했고 페이지는 200으로 렌더되지만, 실제 브라우저에서
    버튼을 눌러가며 확인하지는 않았습니다.
-2. **실제 ChatGPT 인증 프록시 뒤에서의 동작.** 로컬은 sites 플러그인이 프록시를 흉내낸 것입니다.
+2. **실제 SMTP 서버로 나가는 비밀번호 재설정 메일.** 테스트는 메일러를 스텁으로 두고 인증번호만 확인합니다.
 3. **운영 D1 데이터.** 이전 도구는 로컬 D1 실제 데이터(4건)로 검증했지만 운영 데이터 규모는 다릅니다.
 4. **부하 / 동시성.** `POST /api/schedules`의 "최근값 조회 → 삽입"은 트랜잭션 안이지만 직렬화 수준은
    아닙니다. 같은 업무를 동시에 옮기면 두 행이 같은 `from_start`를 가질 수 있습니다. 기존 D1 구현도

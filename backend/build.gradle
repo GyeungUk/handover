@@ -21,6 +21,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // Sends the "비밀번호 찾기" code. Without `spring.mail.host` no sender is created and the
+    // password-reset endpoint answers 503 rather than dropping the message; see PasswordResetMailer.
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
 

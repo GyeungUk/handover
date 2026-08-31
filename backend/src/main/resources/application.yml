@@ -5,7 +5,9 @@ spring:
     name: handover-backend
 
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/handover}
+    # Local development supplies DATABASE_URL. Render supplies these same parts individually
+    # from its managed Postgres service, and the fallback assembles JDBC's required URL scheme.
+    url: ${DATABASE_URL:jdbc:postgresql://${DATABASE_HOST:localhost}:${DATABASE_PORT:5432}/${DATABASE_NAME:handover}}
     username: ${DATABASE_USERNAME:handover}
     password: ${DATABASE_PASSWORD:handover}
     hikari:
@@ -26,34 +28,64 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: false
 
+  # No host means Boot creates no mail sender at all, and password reset answers 503.
+  mail:
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+
   jackson:
     # `properties: {}` and `questions: []` must survive serialisation; the frontend reads them.
     default-property-inclusion: always
 
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8080}}
   error:
     include-message: never
     include-stacktrace: never
 
 handover:
   auth:
-    # Comma-separated lists, e.g. HANDOVER_ADMIN_EMAILS=a@example.com,b@example.com
-    admin-emails: ${HANDOVER_ADMIN_EMAILS:}
-    member-emails: ${HANDOVER_MEMBER_EMAILS:}
+    # Comma-separated employee numbers, e.g. HANDOVER_ADMIN_EMPLOYEE_IDS=20180101,20190202
+    # A number on neither list can neither create a password nor sign in. Empty denies everyone.
+    admin-employee-ids: ${HANDOVER_ADMIN_EMPLOYEE_IDS:}
+    member-employee-ids: ${HANDOVER_MEMBER_EMPLOYEE_IDS:}
+    session:
+      ttl: ${HANDOVER_SESSION_TTL:14d}
+      # Must stay false for plain-http local development, and must be true anywhere real.
+      secure: ${HANDOVER_SESSION_COOKIE_SECURE:false}
+      same-site: ${HANDOVER_SESSION_COOKIE_SAME_SITE:Lax}
+    password-reset:
+      ttl: ${HANDOVER_PASSWORD_RESET_TTL:10m}
+      max-attempts: ${HANDOVER_PASSWORD_RESET_MAX_ATTEMPTS:5}
+      max-per-hour: ${HANDOVER_PASSWORD_RESET_MAX_PER_HOUR:5}
+      # Local development only: writes the code to the log instead of sending mail.
+      log-code: ${HANDOVER_PASSWORD_RESET_LOG_CODE:false}
     gateway:
-      # Optional shared secret proving the request came through the authenticating proxy.
-      # Leave empty to keep the Next.js behaviour of trusting the identity headers on their own.
+      # Optional shared secret proving the request came through the authenticating proxy. When set,
+      # a caller that bypasses the proxy can neither use a session nor reach /api/auth/*.
       secret: ${HANDOVER_GATEWAY_SECRET:}
       secret-header: ${HANDOVER_GATEWAY_SECRET_HEADER:x-handover-gateway-secret}
+  mail:
+    # The envelope on the password-reset mail; the server itself is `spring.mail.*` above.
+    from: ${HANDOVER_MAIL_FROM:}
+    from-name: ${HANDOVER_MAIL_FROM_NAME:국제처 업무 인수인계}
   cors:
     # Exact origins allowed to call the API from a browser, e.g. http://localhost:3000
     allowed-origins: ${HANDOVER_CORS_ALLOWED_ORIGINS:}
     allow-credentials: ${HANDOVER_CORS_ALLOW_CREDENTIALS:true}
   openai:
     api-key: ${OPENAI_API_KEY:}
-    model: ${OPENAI_MODEL:gpt-5.4-mini}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/chat/completions}
+    # none | low | medium | high | xhigh. Highest value accepted by Luna Chat Completions.
+    reasoning-effort: ${OPENAI_REASONING_EFFORT:xhigh}
     timeout: ${OPENAI_TIMEOUT:120s}
 
 logging:

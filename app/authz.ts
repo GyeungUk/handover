@@ -18,9 +18,6 @@ type AuthEnv = Cloudflare.Env & {
   HANDOVER_MEMBER_EMAILS?: string;
 };
 
-/** The sites plugin signs local requests in as this account; never accepted in production. */
-const DEV_SEED_EMAIL = 'seedy@sites.test';
-
 const allowList = (value: string | undefined) =>
   new Set((value ?? '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean));
 
@@ -30,6 +27,5 @@ export function getAppRole(user: ChatGPTUser): AppRole | null {
 
   if (allowList(config.HANDOVER_ADMIN_EMAILS).has(email)) return 'admin';
   if (allowList(config.HANDOVER_MEMBER_EMAILS).has(email)) return 'member';
-  if (process.env.NODE_ENV !== 'production' && email === DEV_SEED_EMAIL) return 'admin';
   return null;
 }

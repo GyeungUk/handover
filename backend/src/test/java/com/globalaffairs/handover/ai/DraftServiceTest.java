@@ -204,6 +204,8 @@ class DraftServiceTest {
 
     @Test
     void keepsOnlyTheJudgementPropertyThatBelongsToTheItemsOwnSection() {
+        when(repository.findByPersonIdOrderByIdAsc("minseo")).thenReturn(List.of(
+                reschedule("비자 연장 집중기간", 21, 22, "접수 일정 조정")));
         modelAnswers("""
                 {"drafts":[{
                   "category":"issue","title":"현안","paragraphs":["본문"],
@@ -228,30 +230,30 @@ class DraftServiceTest {
     }
 
     @Test
-    void fallsBackToTheSectionLabelWhenTheModelNamedNoSourceTask() {
+    void normalizesTheResponsibilitySourceToTheAnnualWorkScope() {
         modelAnswers("""
                 {"drafts":[{"category":"responsibility","title":"담당","paragraphs":["본문"],
                   "properties":[],"basis":"record","questions":[],"sourceTask":"  "}]}""");
 
-        assertThat(service.draft("minseo").drafts().get(0).sourceTask()).isEqualTo("담당업무");
+        assertThat(service.draft("minseo").drafts().get(0).sourceTask()).isEqualTo("연간 업무 전체");
     }
 
     @Test
     void treatsAnyBasisOtherThanRecordAsInferred() {
         modelAnswers("""
                 {"drafts":[{"category":"plan","title":"제목","paragraphs":["본문"],
-                  "properties":[],"basis":"guessed","questions":[],"sourceTask":"x"}]}""");
+                  "properties":[],"basis":"guessed","questions":[],"sourceTask":"비자 연장 집중기간"}]}""");
 
         assertThat(service.draft("minseo").drafts().get(0).basis()).isEqualTo("inferred");
     }
 
     @Test
-    void keepsAtMostEightDrafts() {
+    void dropsDuplicateDraftsForTheSameSectionAndSourceTask() {
         String one = "{\"category\":\"plan\",\"title\":\"제목\",\"paragraphs\":[\"본문\"],"
-                + "\"properties\":[],\"basis\":\"record\",\"questions\":[],\"sourceTask\":\"x\"}";
-        modelAnswers("{\"drafts\":[" + String.join(",", java.util.Collections.nCopies(12, one)) + "]}");
+                + "\"properties\":[],\"basis\":\"record\",\"questions\":[],\"sourceTask\":\"비자 연장 집중기간\"}";
+        modelAnswers("{\"drafts\":[" + String.join(",", java.util.Collections.nCopies(20, one)) + "]}");
 
-        assertThat(service.draft("minseo").drafts()).hasSize(8);
+        assertThat(service.draft("minseo").drafts()).hasSize(1);
     }
 
     private static TaskReschedule reschedule(String title, int from, int to, String reason) {

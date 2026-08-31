@@ -11,9 +11,10 @@
           "shiftWeeks": { "type": "integer", "description": "몇 주 옮길지. -4~4. keep과 review는 0." },
           "anchorEvent": { "type": "string", "description": "근거가 된 학사일정 행사명. 없으면 빈 문자열." },
           "reason": { "type": "string", "description": "판단 이유 한 문장." },
-          "note": { "type": "string", "description": "담당자가 확인할 점. 없으면 빈 문자열." }
+          "note": { "type": "string", "description": "담당자가 확인할 점. 없으면 빈 문자열." },
+          "evidenceQuote": { "type": "string", "description": "업무 제목 또는 내용에 그대로 있는 연계 근거. keep은 빈 문자열." }
         },
-        "required": ["taskTitle", "action", "shiftWeeks", "anchorEvent", "reason", "note"],
+        "required": ["taskTitle", "action", "shiftWeeks", "anchorEvent", "reason", "note", "evidenceQuote"],
         "additionalProperties": false
       }
     }

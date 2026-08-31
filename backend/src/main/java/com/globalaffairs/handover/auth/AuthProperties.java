@@ -4,29 +4,32 @@ import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Who may use the workspace, and who administers it.
+ * Which employee numbers may use the workspace, and which of them administer it.
  *
- * <p>The Next.js build hardcoded these addresses in {@code app/authz.ts}; here they come from
- * configuration so an account can be added without a redeploy of application code. Emails are
- * compared lowercase.
+ * <p>An account is created by the person themselves — they type their employee number, set a
+ * password, and are in. Any numeric employee number may create an account. The administrator list
+ * controls elevated privileges; the member list remains accepted for configuration compatibility.
  *
- * @param adminEmails accounts that may remove and restore members
- * @param memberEmails accounts that may read the workspace and record reschedules
+ * <p>They live in the environment rather than in code, so adding a colleague is a configuration
+ * change and no personal detail ends up in the repository.
+ *
+ * @param adminEmployeeIds accounts that may remove and restore members, and review submissions
+ * @param memberEmployeeIds accounts that may read the workspace and write their own handover
  */
 @ConfigurationProperties(prefix = "handover.auth")
-public record AuthProperties(List<String> adminEmails, List<String> memberEmails) {
+public record AuthProperties(List<String> adminEmployeeIds, List<String> memberEmployeeIds) {
 
     public AuthProperties {
-        adminEmails = normalize(adminEmails);
-        memberEmails = normalize(memberEmails);
+        adminEmployeeIds = normalize(adminEmployeeIds);
+        memberEmployeeIds = normalize(memberEmployeeIds);
     }
 
-    private static List<String> normalize(List<String> emails) {
-        return emails == null
+    private static List<String> normalize(List<String> employeeIds) {
+        return employeeIds == null
                 ? List.of()
-                : emails.stream()
-                        .filter(email -> email != null && !email.isBlank())
-                        .map(email -> email.trim().toLowerCase())
+                : employeeIds.stream()
+                        .filter(id -> id != null && !id.isBlank())
+                        .map(String::trim)
                         .distinct()
                         .toList();
     }

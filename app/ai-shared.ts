@@ -4,14 +4,23 @@ import { env } from 'cloudflare:workers';
 import { handoverCategories, propertyFieldsByCategory, type HandoverCategory } from './handover-schema';
 
 /**
- * Which model answers, and where it is called. Overridable from the environment under the same
- * names the Spring backend uses (`OPENAI_MODEL`, `OPENAI_BASE_URL`), so switching models is a
- * configuration change on either backend rather than an edit here.
+ * GPT-5.6 Luna answers every handover workflow. The endpoint and reasoning effort remain
+ * configurable for local proxies and latency/cost experiments, but the model itself is deliberately
+ * fixed so deployments cannot silently produce different results.
  */
-type ModelEnv = Cloudflare.Env & { OPENAI_MODEL?: string; OPENAI_BASE_URL?: string };
+type ModelEnv = Cloudflare.Env & {
+  OPENAI_BASE_URL?: string;
+  OPENAI_REASONING_EFFORT?: string;
+};
 
-const DEFAULT_MODEL = 'gpt-5.4-mini';
+const OPENAI_MODEL = 'gpt-5.6-luna';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1/chat/completions';
+/**
+ * Left unset, a GPT-5 class model answers these routes with no reasoning at all, and the section it
+ * files a paragraph under becomes close to a guess — 담당업무 collects everything with a date on it.
+ * Blank turns the field off, for a model that does not accept it.
+ */
+const DEFAULT_REASONING_EFFORT = 'xhigh';
 
 export const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -19,9 +28,21 @@ export const escapeHtml = (value: string) =>
 /** Collapses whitespace so a model quote can be matched against the text it was drawn from. */
 export const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
 
+/** Reject concrete numbers the model introduced even when the surrounding prose sounds plausible. */
+export function usesOnlyRecordedNumbers(candidate: string, source: string, allowed: string[] = []) {
+  const recorded = new Set([...(source.match(/\d+(?:[.,:/-]\d+)*/g) ?? []), ...allowed]);
+  return (candidate.match(/\d+(?:[.,:/-]\d+)*/g) ?? []).every((token) => recorded.has(token));
+}
+
 /** Models return plain text only; the HTML the editor renders is built here, fully escaped. */
 export function detailHtml(paragraphs: string[], questions: string[]) {
-  const body = paragraphs.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
+  const body = paragraphs.map((line) => {
+    const labeled = line.match(/^\[([^\]\r\n]{1,30})\]\s*(.*)$/u);
+    if (!labeled) return `<p>${escapeHtml(line)}</p>`;
+    const heading = escapeHtml(labeled[1].trim());
+    const detail = labeled[2].trim();
+    return `<p><strong>${heading}</strong>${detail ? `<br>${escapeHtml(detail)}` : ''}</p>`;
+  }).join('');
   if (!questions.length) return body;
   return `${body}<p><strong>확인이 필요한 내용</strong></p><ul>${questions.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`;
 }
@@ -56,11 +77,13 @@ export async function askModel<T>(options: {
   user: string;
 }): Promise<ModelResult<T>> {
   const config = env as ModelEnv;
+  const reasoningEffort = (config.OPENAI_REASONING_EFFORT ?? DEFAULT_REASONING_EFFORT).trim();
   const response = await fetch(config.OPENAI_BASE_URL?.trim() || DEFAULT_BASE_URL, {
     method: 'POST',
     headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: config.OPENAI_MODEL?.trim() || DEFAULT_MODEL,
+      model: OPENAI_MODEL,
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
       messages: [
         { role: 'system', content: options.system },
         { role: 'user', content: options.user },

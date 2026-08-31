@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,6 +14,7 @@ import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.HandoverSchema;
 import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.web.ApiException;
+import java.util.stream.IntStream;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,6 +65,28 @@ class QualityServiceTest {
     }
 
     @Test
+    void checksMoreThanTwentyEntriesInBatchesInsteadOfDroppingTheTail() {
+        modelAnswers("{\"findings\":[]}");
+        List<QualityService.IncomingEntry> entries = IntStream.range(0, 21)
+                .mapToObj(index -> entry("e" + index, "검토할 본문입니다."))
+                .toList();
+
+        assertThat(service.check(entries).checked()).isEqualTo(21);
+        verify(openAiClient, times(2)).ask(anyString(), anyString(), any(), anyString(), anyString());
+    }
+
+    @Test
+    void sendsTheWholeSavedEntryBodyInsteadOfOnlyItsFirstFifteenHundredCharacters() {
+        modelAnswers("{\"findings\":[]}");
+        String tail = "마지막의 중요한 후속 조치";
+        service.check(List.of(entry("e1", "가".repeat(1600) + tail)));
+
+        org.mockito.ArgumentCaptor<String> user = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(openAiClient).ask(anyString(), anyString(), any(), anyString(), user.capture());
+        assertThat(user.getValue()).contains(tail);
+    }
+
+    @Test
     void refusesARequestWhoseEntriesAreAllUnusable() {
         assertThatThrownBy(() -> service.check(List.of(
                         new QualityService.IncomingEntry(null, "plan", "제목", "본문"),
@@ -95,11 +120,11 @@ class QualityServiceTest {
     }
 
     @Test
-    void allowsAtMostThreeFindingsPerEntry() {
+    void dropsDuplicateFindingsForTheSameQuotedGap() {
         String one = "{\"entryId\":\"e1\",\"kind\":\"근거\",\"severity\":\"low\",\"quote\":\"그 파일\",\"message\":\"m\",\"suggestion\":\"s\"}";
         modelAnswers("{\"findings\":[" + String.join(",", java.util.Collections.nCopies(5, one)) + "]}");
 
-        assertThat(service.check(List.of(entry("e1", "그 파일을 참고하세요."))).findings()).hasSize(3);
+        assertThat(service.check(List.of(entry("e1", "그 파일을 참고하세요."))).findings()).hasSize(1);
     }
 
     @Test

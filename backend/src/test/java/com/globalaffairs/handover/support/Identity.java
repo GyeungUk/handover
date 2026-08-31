@@ -1,23 +1,18 @@
 package com.globalaffairs.handover.support;
 
-import java.nio.charset.StandardCharsets;
-import java.net.URLEncoder;
+import jakarta.servlet.http.Cookie;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
-/** Adds the identity headers the ChatGPT proxy would have set. */
+/**
+ * Signs a request in as one of {@link WebSliceConfig}'s accounts, by attaching the session cookie
+ * the login endpoints would have set. The fake authenticator in {@code WebSliceConfig} is what turns
+ * the token back into an account.
+ */
 public final class Identity {
 
     private Identity() {}
 
-    public static MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, String email) {
-        return request
-                .header("oai-authenticated-user-id", "user-" + email)
-                .header("oai-authenticated-user-email", email);
-    }
-
-    public static MockHttpServletRequestBuilder withFullName(MockHttpServletRequestBuilder request, String fullName) {
-        return request
-                .header("oai-authenticated-user-full-name", URLEncoder.encode(fullName, StandardCharsets.UTF_8))
-                .header("oai-authenticated-user-full-name-encoding", "percent-encoded-utf-8");
+    public static MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request, String employeeId) {
+        return request.cookie(new Cookie(WebSliceConfig.SESSION_COOKIE, WebSliceConfig.sessionTokenFor(employeeId)));
     }
 }

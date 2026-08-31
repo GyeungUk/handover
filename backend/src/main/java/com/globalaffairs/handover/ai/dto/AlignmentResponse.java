@@ -11,7 +11,8 @@ public record AlignmentResponse(
         int toYear,
         List<CalendarShift> shifts,
         List<AlignmentItem> items,
-        Map<String, String> actionLabels) {
+        Map<String, String> actionLabels,
+        String notice) {
 
     /** One task's proposed placement in the target year. Week values are validated server-side. */
     public record AlignmentItem(

@@ -23,12 +23,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class AnnualService {
 
-    private static final int MAX_ENTRIES = 40;
-    private static final int TEXT_MAX = 1200;
-    private static final int MAX_ITEMS = 24;
+    private static final int MAX_ENTRIES = 80;
+    private static final int TEXT_MAX = 20000;
+    private static final int TOTAL_TEXT_MAX = 600000;
+    private static final int MAX_ITEMS = MAX_ENTRIES * 2;
     private static final int MAX_QUESTIONS = 3;
     private static final int TITLE_MAX = 80;
-    private static final int INCOMING_TITLE_MAX = 120;
+    private static final int INCOMING_TITLE_MAX = 200;
 
     private static final String NOT_CONFIGURED = "연간 갱신 기능이 설정되지 않았습니다. 관리자에게 문의해 주세요.";
 
@@ -79,30 +80,45 @@ public class AnnualService {
         int fromYear = year == null || year == 0 ? LocalDate.now(clock).getYear() : year;
         int toYear = fromYear + 1;
 
-        List<Document> documents = (entries == null ? List.<IncomingEntry>of() : entries).stream()
+        List<IncomingEntry> candidates = (entries == null ? List.<IncomingEntry>of() : entries).stream()
                 .filter(entry -> entry != null
                         && entry.id() != null && !entry.id().isEmpty()
                         && entry.title() != null && !entry.title().isEmpty()
                         && !AiSupport.normalize(entry.text()).isEmpty())
-                .limit(MAX_ENTRIES)
+                .filter(entry -> schema.isCategory(entry.category()))
+                .toList();
+
+        if (candidates.size() > MAX_ENTRIES) {
+            throw new ApiException(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE,
+                    "정확한 갱신을 위해 한 번에 80개 이하의 항목만 검토할 수 있습니다.");
+        }
+        if (candidates.stream().anyMatch(entry -> AiSupport.normalize(entry.text()).length() > TEXT_MAX)) {
+            throw new ApiException(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE,
+                    "정확한 갱신을 위해 항목 본문은 20,000자 이하여야 합니다.");
+        }
+
+        List<Document> documents = candidates.stream()
                 .map(entry -> new Document(
                         entry.id(),
                         entry.category(),
                         AiSupport.truncate(entry.title(), INCOMING_TITLE_MAX),
-                        AiSupport.truncate(AiSupport.normalize(entry.text()), TEXT_MAX),
+                        AiSupport.normalize(entry.text()),
                         entry.properties() == null ? Map.of() : entry.properties()))
-                .filter(entry -> schema.isCategory(entry.category()))
                 .toList();
 
         if (documents.isEmpty()) {
             throw ApiException.badRequest("갱신할 항목이 없습니다. 먼저 인수인계 항목을 작성해 주세요.");
+        }
+        if (documents.stream().mapToInt(entry -> entry.body().length()).sum() > TOTAL_TEXT_MAX) {
+            throw new ApiException(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE,
+                    "정확한 갱신을 위해 전체 본문을 나누어 검토해 주세요.");
         }
 
         String user = buildUserContent(documents, fromYear, toYear);
         JsonNode answer = openAiClient.ask(
                 "annual", "handover_annual", resources.schema("annual"), resources.prompt("annual"), user);
 
-        return new AnnualResponse(fromYear, toYear, documents.size(), readItems(answer, documents));
+        return new AnnualResponse(fromYear, toYear, documents.size(), readItems(answer, documents, toYear));
     }
 
     private String buildUserContent(List<Document> documents, int fromYear, int toYear) {
@@ -119,7 +135,7 @@ public class AnnualService {
         return String.join("\n", lines);
     }
 
-    private List<AnnualResponse.AnnualItem> readItems(JsonNode answer, List<Document> documents) {
+    private List<AnnualResponse.AnnualItem> readItems(JsonNode answer, List<Document> documents, int toYear) {
         Map<String, Document> byId = documents.stream()
                 .collect(Collectors.toMap(Document::id, doc -> doc, (first, second) -> first, LinkedHashMap::new));
         Set<String> used = new HashSet<>();
@@ -134,22 +150,47 @@ public class AnnualService {
             String entryId = item.path("entryId").asText("");
             Document source = byId.get(entryId);
             /* a proposal about an entry we did not send, or a second one about the same entry, is dropped */
+            if ("new".equals(action) && !entryId.isBlank()) {
+                continue;
+            }
             if (!"new".equals(action) && (source == null || used.contains(entryId))) {
                 continue;
             }
-            if (source != null) {
-                used.add(source.id());
+
+            String evidenceEntryId = item.path("evidenceEntryId").asText("").trim();
+            Document evidenceSource = byId.get(evidenceEntryId);
+            String evidenceQuote = AiSupport.normalize(item.path("evidenceQuote").asText(""));
+            if (evidenceSource == null || (!"new".equals(action) && !evidenceSource.id().equals(source.id()))) {
+                continue;
+            }
+            if (evidenceQuote.isEmpty()
+                    || !AiSupport.normalize(evidenceSource.title() + " " + evidenceSource.body()).contains(evidenceQuote)) {
+                continue;
             }
 
             String rawCategory = item.path("category").asText("");
-            String category = schema.isCategory(rawCategory)
-                    ? rawCategory
-                    : (source != null ? source.category() : "plan");
+            String category = "new".equals(action)
+                    ? (schema.isCategory(rawCategory) ? rawCategory : "plan")
+                    : source.category();
             List<String> questions = AiSupport.trimmedLines(ModelJson.strings(item.path("questions")), MAX_QUESTIONS);
             List<String> paragraphs = AiSupport.trimmedLines(ModelJson.strings(item.path("paragraphs")), Integer.MAX_VALUE);
-            String title = item.path("title").asText("").trim();
+            String proposedTitle = item.path("title").asText("").trim();
+            String title = ("keep".equals(action) || "archive".equals(action)) ? source.title() : proposedTitle;
             if (title.isEmpty() || paragraphs.isEmpty()) {
                 continue;
+            }
+
+            String proposedFacts = String.join(" ", title, String.join(" ", paragraphs),
+                    item.path("reason").asText(""), "archive".equals(action) ? "" : String.join(" ", questions),
+                    ModelJson.propertyPairs(item.path("properties")).stream()
+                            .map(pair -> pair.value() == null ? "" : pair.value())
+                            .collect(Collectors.joining(" ")));
+            String sourceFacts = evidenceSource.title() + " " + evidenceSource.body() + " " + evidenceSource.properties();
+            if (!AiSupport.usesOnlyRecordedNumbers(proposedFacts, sourceFacts, Set.of(Integer.toString(toYear)))) {
+                continue;
+            }
+            if (!"new".equals(action)) {
+                used.add(source.id());
             }
 
             boolean archived = "archive".equals(action);

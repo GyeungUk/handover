@@ -6,15 +6,20 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
-    "start": "vinext start",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "lint": "eslint ."
   },
   "dependencies": {
+    "@mdgate/docx": "0.6.25",
+    "@mdgate/hwp": "0.6.25",
+    "@mdgate/pdf": "0.6.25",
+    "@mdgate/xlsx": "0.6.25",
     "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

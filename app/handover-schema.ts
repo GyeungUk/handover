@@ -134,3 +134,87 @@ export type AnnualResponse = {
   reviewed: number;
   items: AnnualItem[];
 };
+
+/* ------------------------------------------------------------------ *
+ * The saved document
+ *
+ * Everything above describes what the AI *proposes*. What follows is what the workspace actually
+ * keeps: the entries the author adopted, the units they grouped them into, and where the document
+ * stands in the review workflow. Both backends store exactly these fields.
+ * ------------------------------------------------------------------ */
+
+export type WorkflowStatus = 'draft' | 'pending' | 'rejected' | 'approved';
+export type ReviewDecision = 'approved' | 'rejected';
+
+export const workflowStatuses: WorkflowStatus[] = ['draft', 'pending', 'rejected', 'approved'];
+
+/** A document is editable only before it is submitted, or after it comes back rejected. */
+export const isEditableStatus = (status: WorkflowStatus) => status === 'draft' || status === 'rejected';
+
+/**
+ * One attached file.
+ *
+ * `url` is a browser object URL and lives only as long as the tab — it is deliberately not stored.
+ * An attachment loaded back from the database therefore arrives with an empty `url`, which the
+ * workspace shows as "다시 첨부 필요" rather than as a broken download link.
+ */
+export type EntryAttachment = { id: string; name: string; size: number; type: string; url: string };
+
+export type EntryFormatting = { fontFamily: string; fontSize: string };
+
+export type HandoverEntry = {
+  id: string;
+  category: HandoverCategory;
+  title: string;
+  detail: string;
+  properties: Record<string, string>;
+  attachments: EntryAttachment[];
+  formatting: EntryFormatting;
+};
+
+/** A group of entries reviewed and approved as one unit. */
+export type WorkBundle = {
+  id: string;
+  title: string;
+  entryIds: string[];
+  decision: ReviewDecision | null;
+  comment: string;
+};
+
+export type HandoverDocument = {
+  ownerName: string;
+  status: WorkflowStatus;
+  entries: HandoverEntry[];
+  bundles: WorkBundle[];
+  updatedAt: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+};
+
+export type HandoverDocumentSummary = {
+  ownerEmail: string;
+  ownerName: string;
+  status: WorkflowStatus;
+  updatedAt: string;
+};
+
+/** `null` means this account has never saved a document; the workspace then starts empty. */
+export type HandoverDocumentResponse = { document: HandoverDocument | null };
+
+/** One reviewer verdict, sent together for the whole document so a review lands atomically. */
+export type BundleDecisionInput = { bundleId: string; decision: ReviewDecision; comment: string };
+
+/** Size limits both backends enforce identically, so a document that saves on one saves on the other. */
+export const documentLimits = {
+  entries: 200,
+  bundles: 50,
+  entryTitle: 200,
+  entryDetail: 20000,
+  bundleTitle: 120,
+  propertyValue: 200,
+  comment: 1000,
+  attachmentsPerEntry: 10,
+  attachmentName: 260,
+  attachmentBytes: 20 * 1024 * 1024,
+} as const;

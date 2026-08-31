@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -100,13 +101,39 @@ class AnnualServiceTest {
     }
 
     @Test
+    void sendsTheWholeSavedBodyInsteadOfSilentlyCuttingItAtTwelveHundredCharacters() {
+        modelAnswers("{\"items\":[]}");
+        String tail = "본문 끝의 이월 근거";
+        AnnualService.IncomingEntry longEntry = new AnnualService.IncomingEntry(
+                "e1", "plan", "제목", "가".repeat(1300) + tail, Map.of());
+
+        service.renew(List.of(longEntry), 2026);
+
+        org.mockito.ArgumentCaptor<String> user = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(openAiClient).ask(anyString(), anyString(), any(), anyString(), user.capture());
+        assertThat(user.getValue()).contains(tail);
+    }
+
+    @Test
+    void fallsBackToKeepWhenARevisionInventsANumberNotPresentInTheSource() {
+        modelAnswers("""
+                {"items":[{"action":"revise","entryId":"e1","category":"plan","title":"수정 제안",
+                  "paragraphs":["99명을 처리합니다."],"properties":[],"reason":"갱신","questions":[],
+                  "evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."}]}""");
+
+        AnnualResponse.AnnualItem item = service.renew(List.of(entry("e1", "원제목")), 2026).items().get(0);
+        assertThat(item.action()).isEqualTo("keep");
+        assertThat(item.title()).isEqualTo("원제목");
+    }
+
+    @Test
     void dropsASecondProposalAboutTheSameEntry() {
         modelAnswers("""
                 {"items":[
                   {"action":"revise","entryId":"e1","category":"plan","title":"첫 제안","paragraphs":["본문"],
-                   "properties":[],"reason":"이유","questions":["질문"]},
+                   "properties":[],"reason":"이유","questions":["질문"],"evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."},
                   {"action":"archive","entryId":"e1","category":"plan","title":"두 번째 제안","paragraphs":["본문"],
-                   "properties":[],"reason":"이유","questions":[]}
+                   "properties":[],"reason":"이유","questions":[],"evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."}
                 ]}""");
 
         assertThat(service.renew(List.of(entry("e1", "제목")), 2026).items())
@@ -130,9 +157,11 @@ class AnnualServiceTest {
     void acceptsANewItemWithNoEntryToActOn() {
         modelAnswers("""
                 {"items":[{"action":"new","entryId":"","category":"pending","title":"이월된 미결","paragraphs":["본문"],
-                  "properties":[],"reason":"이월","questions":["질문"]}]}""");
+                  "properties":[],"reason":"이월","questions":["질문"],"evidenceEntryId":"e1","evidenceQuote":"다음 학년도에는 미결 업무를 별도로 이월합니다."}]}""");
 
-        AnnualResponse.AnnualItem created = service.renew(List.of(entry("e1", "제목")), 2026).items().stream()
+        AnnualService.IncomingEntry source = new AnnualService.IncomingEntry(
+                "e1", "plan", "제목", "다음 학년도에는 미결 업무를 별도로 이월합니다.", Map.of());
+        AnnualResponse.AnnualItem created = service.renew(List.of(source), 2026).items().stream()
                 .filter(item -> item.action().equals("new"))
                 .findFirst()
                 .orElseThrow();
@@ -144,7 +173,7 @@ class AnnualServiceTest {
     void stripsTheQuestionsFromAnItemProposedForRemoval() {
         modelAnswers("""
                 {"items":[{"action":"archive","entryId":"e1","category":"plan","title":"올해는 제외","paragraphs":["본문"],
-                  "properties":[],"reason":"일회성 업무입니다","questions":["질문1"]}]}""");
+                  "properties":[],"reason":"일회성 업무입니다","questions":["질문1"],"evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."}]}""");
 
         AnnualResponse.AnnualItem item = service.renew(List.of(entry("e1", "제목")), 2026).items().get(0);
         assertThat(item.questions()).isEmpty();
@@ -155,10 +184,10 @@ class AnnualServiceTest {
     void ordersTheReviewSoTheChangesNeedingAttentionComeFirst() {
         modelAnswers("""
                 {"items":[
-                  {"action":"keep","entryId":"e1","category":"plan","title":"유지","paragraphs":["본문"],"properties":[],"reason":"r","questions":[]},
-                  {"action":"archive","entryId":"e2","category":"plan","title":"제외","paragraphs":["본문"],"properties":[],"reason":"r","questions":[]},
-                  {"action":"new","entryId":"","category":"plan","title":"신규","paragraphs":["본문"],"properties":[],"reason":"r","questions":["q"]},
-                  {"action":"revise","entryId":"e3","category":"plan","title":"수정","paragraphs":["본문"],"properties":[],"reason":"r","questions":["q"]}
+                  {"action":"keep","entryId":"e1","category":"plan","title":"유지","paragraphs":["본문"],"properties":[],"reason":"r","questions":[],"evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."},
+                  {"action":"archive","entryId":"e2","category":"plan","title":"제외","paragraphs":["본문"],"properties":[],"reason":"r","questions":[],"evidenceEntryId":"e2","evidenceQuote":"지난해 본문입니다."},
+                  {"action":"new","entryId":"","category":"plan","title":"신규","paragraphs":["본문"],"properties":[],"reason":"r","questions":["q"],"evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."},
+                  {"action":"revise","entryId":"e3","category":"plan","title":"수정","paragraphs":["본문"],"properties":[],"reason":"r","questions":["q"],"evidenceEntryId":"e3","evidenceQuote":"지난해 본문입니다."}
                 ]}""");
 
         assertThat(service.renew(List.of(entry("e1", "a"), entry("e2", "b"), entry("e3", "c")), 2026).items())
@@ -170,12 +199,13 @@ class AnnualServiceTest {
     void keepsTheOriginalTitleAlongsideTheProposedOne() {
         modelAnswers("""
                 {"items":[{"action":"revise","entryId":"e1","category":"plan","title":"2027학년도 체류기간 연장 접수",
-                  "paragraphs":["본문"],"properties":[{"key":"due","value":"2027. 09. 06"}],"reason":"연도 갱신","questions":["확정 일정을 알려주세요"]}]}""");
+                  "paragraphs":["본문"],"properties":[],"reason":"연도 갱신","questions":["확정 일정을 알려주세요"],
+                  "evidenceEntryId":"e1","evidenceQuote":"2026학년도 체류기간 연장 접수"}]}""");
 
         AnnualResponse.AnnualItem item = service.renew(List.of(entry("e1", "2026학년도 체류기간 연장 접수")), 2026).items().get(0);
         assertThat(item.previousTitle()).isEqualTo("2026학년도 체류기간 연장 접수");
         assertThat(item.title()).isEqualTo("2027학년도 체류기간 연장 접수");
-        assertThat(item.properties()).containsEntry("due", "2027. 09. 06");
+        assertThat(item.properties()).doesNotContainKey("due");
         assertThat(item.detail()).contains("확인이 필요한 내용");
     }
 }

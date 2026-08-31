@@ -1,0 +1,231 @@
+/* ==========================================================================
+   Foundation tokens
+   --------------------------------------------------------------------------
+   Measured off the reference: a near-white cool page, pastel washes instead of
+   borders, big radii, type that starts at 15px rather than trailing off into
+   10px micro-copy, and shadows you have to look for.
+
+   `globals.css` imports this first, so anything here is the floor every screen
+   builds on. The last block deliberately re-points a handful of the older
+   variable names at the new ramp — the screens that have not been rewritten yet
+   inherit the calmer palette for free.
+   ========================================================================== */
+
+:root {
+  /* ---- neutrals ---------------------------------------------------------
+     Cool greys. 100 is the workhorse fill: it replaces most 1px borders, which
+     is what stops a dense page from turning into a wireframe. */
+  --grey-0:   #ffffff;
+  --grey-50:  #f7f9fb;
+  --grey-100: #eef2f6;
+  --grey-200: #dde4eb;
+  --grey-300: #c8d1dc;
+  --grey-400: #9eabb9;
+  --grey-500: #748292;
+  --grey-600: #5d6b7b;
+  --grey-700: #445263;
+  --grey-800: #2b3949;
+  --grey-900: #172536;
+
+  /* ---- brand ------------------------------------------------------------
+     The main sky blue is sampled from the supplied u-SAINT reference image.
+     Lighter steps keep interactive states airy; 800–900 are reserved for
+     text, deep gradients and places that need stronger contrast. */
+  --blue-50:  #f1f6fa;
+  --blue-100: #e2edf6;
+  --blue-200: #c3d9ea;
+  --blue-300: #93b9d7;
+  --blue-400: #5f95bf;
+  --blue-500: #3578aa;   /* interactive */
+  --blue-600: #286a9d;
+  --blue-700: #1d5b8c;
+  --blue-800: #164a73;
+  --blue-900: #0e3658;
+
+  /* ---- pastel washes ----------------------------------------------------
+     Section and card grounds. Saturation stays under ~12% so text sits on them
+     at full contrast and two of them can meet without arguing. */
+  --tint-blue:  #edf4f9;
+  --tint-sky:   #f2f6fa;
+  --tint-mist:  #eef2f6;
+  --tint-lemon: #f8f5e9;
+  --tint-lilac: #f1f0f7;
+  --tint-mint:  #edf5f2;
+
+  /* the hero wash: soft blobs over near-white, the way the reference lets
+     colour bleed through the top of the page rather than banding it */
+  --mesh:
+    radial-gradient(54% 58% at 96% 4%, rgba(195, 217, 234, 0.58), transparent 70%),
+    radial-gradient(48% 46% at 4% 14%, rgba(226, 237, 246, 0.72), transparent 72%),
+    linear-gradient(180deg, #f5f8fb 0%, #f9fbfc 62%, var(--grey-50) 100%);
+
+  /* ---- ink --------------------------------------------------------------
+     Four steps, and 500 is the floor. Anything paler than 500 on white fails
+     AA at the sizes this product actually uses. */
+  --ink:      var(--grey-900);
+  --ink-2:    var(--grey-700);
+  --ink-3:    var(--grey-600);
+  --ink-4:    var(--grey-500);
+  --ink-on:   #ffffff;
+
+  /* ---- surfaces ---------------------------------------------------------- */
+  --bg:        var(--grey-50);
+  --surface:   var(--grey-0);
+  --surface-2: var(--grey-100);
+  --surface-3: var(--grey-200);
+
+  /* ---- structure --------------------------------------------------------
+     Borders are the exception now, not the rule. Reach for `--surface-2` as a
+     fill before reaching for a hairline. */
+  --line:        var(--grey-200);
+  --line-soft:   var(--grey-100);
+  --line-strong: var(--grey-300);
+
+  /* ---- elevation --------------------------------------------------------
+     Barely there on purpose. A card earns separation from its fill and its
+     radius; the shadow is only there to keep it from floating. */
+  --sh-1: 0 1px 3px rgba(25, 31, 40, 0.04);
+  --sh-2: 0 4px 16px rgba(25, 31, 40, 0.06);
+  --sh-3: 0 12px 40px rgba(25, 31, 40, 0.10);
+  --sh-4: 0 24px 68px rgba(25, 31, 40, 0.16);
+  --sh-brand: 0 8px 24px rgba(29, 91, 140, 0.22);
+
+  /* ---- radius -----------------------------------------------------------
+     Generous. `--r-md` is the default card; `--r-lg`/`--r-xl` are for the
+     panels that hold other cards. */
+  --r-xs:   8px;
+  --r-sm:  12px;
+  --r-md:  16px;
+  --r-lg:  20px;
+  --r-xl:  28px;
+  --r-2xl: 36px;
+  --r-pill: 999px;
+
+  /* ---- spacing — 4pt --------------------------------------------------- */
+  --s-1:   4px;
+  --s-2:   8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  20px;
+  --s-6:  24px;
+  --s-7:  28px;
+  --s-8:  32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-14: 56px;
+  --s-16: 64px;
+  --s-20: 80px;
+  --s-24: 96px;
+  --s-32: 128px;
+
+  /* the air between two sections of a page, and the page's own side padding —
+     both shrink at the breakpoints below rather than at every call site */
+  --section-gap: var(--s-32);
+  --page-pad:    var(--s-8);
+  --page-max:   1200px;
+
+  /* ---- type -------------------------------------------------------------
+     Nine steps, and the smallest is 13px. The old scale spent most of its
+     range under 14px, which is the single biggest reason the product read as a
+     dense admin tool rather than something built for people. */
+  --t-display: 40px;
+  --t-h1:      32px;
+  --t-h2:      24px;
+  --t-h3:      19px;
+  --t-lg:      17px;
+  --t-body:    15px;
+  --t-sm:      14px;
+  --t-caption: 13px;
+
+  --lh-tight: 1.28;
+  --lh-head:  1.38;
+  --lh-body:  1.62;
+
+  /* Korean display type needs the tighter tracking; latin numerals do not, so
+     `.figure` puts it back. */
+  --tr-display: -0.032em;
+  --tr-head:    -0.024em;
+  --tr-body:    -0.008em;
+
+  --fw-regular: 400;
+  --fw-medium:  500;
+  --fw-semi:    600;
+  --fw-bold:    700;
+
+  --sans: "Pretendard Variable", Pretendard, var(--font-geist-sans),
+    "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+
+  /* ---- controls ---------------------------------------------------------
+     Every interactive height in one place. `--h-md` is the floor for anything
+     a finger has to hit. */
+  --h-lg: 56px;
+  --h-md: 48px;
+  --h-sm: 40px;
+  --h-xs: 32px;
+
+  /* ---- motion -----------------------------------------------------------
+     One curve for entrances, one for the rest, and a single press scale so
+     every tappable thing in the product answers the same way. */
+  --ease:     cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 0.14s;
+  --dur:      0.22s;
+  --dur-slow: 0.42s;
+  --press:    0.97;
+
+  --z-sticky: 30;
+  --z-modal:  60;
+  --z-toast:  80;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive scale
+   --------------------------------------------------------------------------
+   The type ramp and the page rhythm are the two things that have to move with
+   the viewport; everything else is composed out of them. Five steps rather
+   than the two the product used to have, so a tablet stops being served a
+   sideways-scrolling desktop.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1280px) {
+  :root {
+    --section-gap: var(--s-24);
+    --page-pad: var(--s-7);
+  }
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --t-display: 34px;
+    --t-h1: 28px;
+    --t-h2: 22px;
+    --section-gap: var(--s-20);
+    --page-pad: var(--s-6);
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --t-display: 30px;
+    --t-h1: 25px;
+    --t-h2: 20px;
+    --t-h3: 17px;
+    --section-gap: var(--s-16);
+    --page-pad: var(--s-5);
+    /* thumbs, not cursors */
+    --h-lg: 56px;
+    --h-md: 48px;
+    --h-sm: 44px;
+    --r-xl: 24px;
+    --r-2xl: 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --t-display: 27px;
+    --t-h1: 23px;
+    --section-gap: var(--s-14);
+    --page-pad: var(--s-4);
+  }
+}

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,8 +59,6 @@ public class CalendarCheckService {
 
     @Transactional(readOnly = true)
     public AlignmentResponse check(String personId, Integer year) {
-        openAiClient.requireConfigured(NOT_CONFIGURED);
-
         OrgData.PersonRef found = orgData.findPerson(personId)
                 .orElseThrow(() -> ApiException.badRequest("담당자를 찾을 수 없습니다."));
 
@@ -75,20 +74,31 @@ public class CalendarCheckService {
 
         List<Task> tasks = currentTasks(found.person().tasks(), repository.findByPersonIdOrderByIdAsc(personId));
 
-        JsonNode answer = openAiClient.ask(
-                "calendar-check",
-                "calendar_alignment",
-                resources.schema("calendar-check"),
-                resources.prompt("calendar-check"),
-                buildUserContent(found, toYear, shifts, tasks));
+        JsonNode answer = null;
+        String notice = "";
+        try {
+            openAiClient.requireConfigured(NOT_CONFIGURED);
+            answer = openAiClient.ask(
+                    "calendar-check",
+                    "calendar_alignment",
+                    resources.schema("calendar-check"),
+                    resources.prompt("calendar-check"),
+                    buildUserContent(found, toYear, shifts, tasks));
+        } catch (ApiException failure) {
+            if (failure.status() != HttpStatus.BAD_GATEWAY && failure.status() != HttpStatus.SERVICE_UNAVAILABLE) {
+                throw failure;
+            }
+            notice = "외부 분석 연결 없이 공개된 학사일정 변동만 기준으로 점검했습니다. 업무별 일정은 현재 상태로 유지됩니다.";
+        }
 
         return new AlignmentResponse(
                 new PersonSummary(found.person().id(), found.person().name(), found.person().role(), found.team().title()),
                 calendar.baseYear(),
                 toYear,
                 shifts,
-                readItems(answer, tasks, anchorNames, shiftByName),
-                calendar.alignmentActionLabels());
+                answer == null ? defaultItems(tasks) : readItems(answer, tasks, anchorNames, shiftByName),
+                calendar.alignmentActionLabels(),
+                notice);
     }
 
     /** Latest recorded move wins, exactly like the calendar view resolves a task's real start. */
@@ -153,11 +163,21 @@ public class CalendarCheckService {
             boolean grounded = anchor != null && bounded == anchor.shift();
             boolean usable = grounded && bounded != 0 && AcademicCalendar.fitsInYear(suggestedStart, task.duration());
             String proposedAction = item.path("action").asText("");
-            String action = calendar.alignmentActions().contains(proposedAction)
-                    ? ("shift".equals(proposedAction) && !usable ? "review" : proposedAction)
-                    : "keep";
+            String evidenceQuote = AiSupport.normalize(item.path("evidenceQuote").asText(""));
+            boolean evidenceGrounded = !evidenceQuote.isEmpty()
+                    && AiSupport.normalize(task.title() + " " + task.note()).contains(evidenceQuote);
+            String action = calendar.alignmentActions().contains(proposedAction) ? proposedAction : "keep";
+            if (("shift".equals(action) || "review".equals(action)) && !evidenceGrounded) {
+                action = "keep";
+            } else if ("shift".equals(action) && !usable) {
+                action = "review";
+            }
             boolean shifting = "shift".equals(action);
             int finalStart = shifting ? suggestedStart : task.start();
+            if ("keep".equals(action)) {
+                anchorEvent = "";
+                anchor = null;
+            }
 
             decided.put(task.title(), new AlignmentResponse.AlignmentItem(
                     "align-" + decided.size(),
@@ -171,7 +191,7 @@ public class CalendarCheckService {
                     anchor == null ? "" : "%s → %s".formatted(anchor.fromLabel(), anchor.toLabel()),
                     anchor == null ? 0 : anchor.shift(),
                     AiSupport.clip(item.path("reason").asText(""), REASON_MAX),
-                    AiSupport.clip(item.path("note").asText(""), NOTE_MAX)));
+                    "review".equals(action) ? AiSupport.clip(item.path("note").asText(""), NOTE_MAX) : ""));
         }
 
         /* a task the model skipped keeps its current slot rather than disappearing from the review */
@@ -200,5 +220,26 @@ public class CalendarCheckService {
                                 AnnualService.rank(REVIEW_ORDER, item.action()))
                         .thenComparingInt(AlignmentResponse.AlignmentItem::currentStart))
                 .toList();
+    }
+
+    /** A network-independent, conservative result: the published calendar still compares normally. */
+    private List<AlignmentResponse.AlignmentItem> defaultItems(List<Task> tasks) {
+        List<AlignmentResponse.AlignmentItem> items = new ArrayList<>();
+        for (Task task : tasks) {
+            items.add(new AlignmentResponse.AlignmentItem(
+                    "align-" + items.size(),
+                    task.title(),
+                    "keep",
+                    task.start(),
+                    task.start(),
+                    orgData.weekLabel(task.start()),
+                    orgData.weekLabel(task.start()),
+                    "",
+                    "",
+                    0,
+                    "외부 분석 없이 확인 가능한 학사일정 변동만 비교하여 현재 일정을 유지합니다.",
+                    ""));
+        }
+        return List.copyOf(items);
     }
 }

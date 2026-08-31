@@ -144,6 +144,8 @@ export type AlignmentResponse = {
   toYear: number;
   shifts: CalendarShift[];
   items: AlignmentItem[];
+  /** Present when the server completed the comparison without the external analysis service. */
+  notice?: string;
 };
 
 /** A task may only be placed where it still finishes inside the academic year. */

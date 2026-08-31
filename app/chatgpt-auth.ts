@@ -1,5 +1,14 @@
 import { headers } from 'next/headers';
 
+/**
+ * Identity as the ChatGPT authentication proxy described it.
+ *
+ * **Legacy.** The workspace signs people in itself now — employee number and password, held by the
+ * Spring backend; see `app/session.ts`. Only the Cloudflare D1 route handlers under `app/api/**`
+ * still read these headers, and they no longer match the login screen. Keep them in step, or drop
+ * them, before serving `/api/*` from the Worker again.
+ */
+
 export type ChatGPTUser = {
   userId: string;
   displayName: string;
@@ -25,26 +34,6 @@ export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
     : null;
 
   return { userId, email: email.toLowerCase(), displayName: fullName ?? email, fullName };
-}
-
-export function chatGPTSignInPath(returnTo = '/') {
-  return `/signin-with-chatgpt?return_to=${encodeURIComponent(safeRelativeReturnPath(returnTo))}`;
-}
-
-export function chatGPTSignOutPath(returnTo = '/') {
-  return `/signout-with-chatgpt?return_to=${encodeURIComponent(safeRelativeReturnPath(returnTo))}`;
-}
-
-function safeRelativeReturnPath(value: string) {
-  if (!value.startsWith('/') || value.startsWith('//')) return '/';
-  try {
-    const url = new URL(value, 'https://app.local');
-    if (url.origin !== 'https://app.local') return '/';
-    if (['/signin-with-chatgpt', '/signout-with-chatgpt', '/callback'].includes(url.pathname)) return '/';
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return '/';
-  }
 }
 
 function safeDecodeURIComponent(value: string) {

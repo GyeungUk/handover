@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -31,6 +32,14 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> handleUnreadableBody(HttpMessageNotReadableException failure) {
         log.debug("unreadable request body", failure);
         return ResponseEntity.badRequest().body(Map.of("error", "요청 형식을 읽지 못했습니다."));
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<Map<String, String>> handleConcurrentSave(
+            ObjectOptimisticLockingFailureException failure) {
+        log.info("handover document was changed concurrently", failure);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "다른 화면에서 문서가 먼저 변경되었습니다. 새로고침 후 다시 저장해 주세요."));
     }
 
     @ExceptionHandler(Exception.class)

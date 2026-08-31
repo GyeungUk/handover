@@ -31,11 +31,22 @@ class MemberServiceTest {
     @Mock
     private RemovedMemberRepository repository;
 
+    @Mock
+    private CustomMemberRepository customMembers;
+
+    @Mock
+    private CustomTeamRepository customTeams;
+
     private MemberService service;
 
     @BeforeEach
     void setUp() {
-        service = new MemberService(repository, new OrgData(new ObjectMapper()), Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new MemberService(
+                repository,
+                customMembers,
+                customTeams,
+                new OrgData(new ObjectMapper()),
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -83,5 +94,37 @@ class MemberServiceTest {
     void restoringDeletesTheRow() {
         service.restore("minseo");
         verify(repository).deleteById("minseo");
+    }
+
+    @Test
+    void createsATeamWithAServerOwnedPaletteAndMark() {
+        when(customTeams.findAll()).thenReturn(List.of());
+        when(customTeams.save(any(CustomTeam.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MemberService.TeamView team = service.createTeam(" 국제협력 ", "GLOBAL PARTNERSHIP", "해외 협정을 관리합니다.");
+
+        assertThat(team.title()).isEqualTo("국제협력");
+        assertThat(team.mark()).isEqualTo("05");
+        assertThat(team.color()).matches("#[0-9a-f]{6}");
+        assertThat(team.people()).isEmpty();
+    }
+
+    @Test
+    void createsAMemberInsideASeedTeam() {
+        when(customMembers.save(any(CustomMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MemberService.MemberView member = service.createMember("management", " 홍길동 ", " 국제협력 ");
+
+        assertThat(member.teamId()).isEqualTo("management");
+        assertThat(member.name()).isEqualTo("홍길동");
+        assertThat(member.initial()).isEqualTo("홍");
+        assertThat(member.tasks()).isEmpty();
+    }
+
+    @Test
+    void refusesToCreateAMemberInAnUnknownTeam() {
+        assertThatThrownBy(() -> service.createMember("missing", "홍길동", "국제협력"))
+                .hasMessage("담당자가 소속될 파트를 선택해 주세요.");
+        verify(customMembers, never()).save(any());
     }
 }

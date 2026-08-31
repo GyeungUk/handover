@@ -24,6 +24,8 @@ public class HandoverSchema {
     private final Map<String, List<PropertyField>> propertyFieldsByCategory;
     private final List<String> findingKinds;
     private final Map<String, String> annualActionLabels;
+    private final List<String> workflowStatuses;
+    private final DocumentLimits documentLimits;
 
     public HandoverSchema(ObjectMapper objectMapper) {
         try (InputStream stream = new ClassPathResource("domain/handover-schema.json").getInputStream()) {
@@ -35,6 +37,8 @@ public class HandoverSchema {
             this.propertyFieldsByCategory = Collections.unmodifiableMap(fields);
             this.findingKinds = List.copyOf(export.findingKinds());
             this.annualActionLabels = ordered(export.annualActionLabels());
+            this.workflowStatuses = List.copyOf(export.workflowStatuses());
+            this.documentLimits = export.documentLimits();
         } catch (IOException failure) {
             throw new IllegalStateException("could not load domain/handover-schema.json", failure);
         }
@@ -50,7 +54,28 @@ public class HandoverSchema {
             Map<String, String> categoryLabels,
             Map<String, List<PropertyField>> propertyFieldsByCategory,
             List<String> findingKinds,
-            Map<String, String> annualActionLabels) {}
+            Map<String, String> annualActionLabels,
+            List<String> workflowStatuses,
+            DocumentLimits documentLimits) {}
+
+    /**
+     * The size limits both backends enforce, exported from {@code documentLimits} in the TS schema.
+     *
+     * <p>Reading them rather than restating them is what keeps a limit raised on one backend from
+     * silently staying put on the other — a document that saves through the Worker has to save
+     * through Spring too.
+     */
+    public record DocumentLimits(
+            int entries,
+            int bundles,
+            int entryTitle,
+            int entryDetail,
+            int bundleTitle,
+            int propertyValue,
+            int comment,
+            int attachmentsPerEntry,
+            int attachmentName,
+            long attachmentBytes) {}
 
     /** Section keys in the order the workspace renders them. */
     public List<String> categories() {
@@ -89,6 +114,15 @@ public class HandoverSchema {
 
     public boolean isAnnualAction(String value) {
         return value != null && annualActionLabels.containsKey(value);
+    }
+
+    /** The four workflow states a saved document may be in, in the order the TS schema declares. */
+    public List<String> workflowStatuses() {
+        return workflowStatuses;
+    }
+
+    public DocumentLimits documentLimits() {
+        return documentLimits;
     }
 
     /** The section index used to sort proposed entries back into document order. */

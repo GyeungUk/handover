@@ -28,6 +28,13 @@ class OpenAiClientTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AtomicReference<String> lastRequestBody = new AtomicReference<>();
     private HttpServer server;
+    private String chatUrl;
+
+    @Test
+    void defaultsToHighestReasoningAcceptedByLunaChatCompletions() {
+        OpenAiProperties properties = new OpenAiProperties("key", null, null, null);
+        assertThat(properties.reasoningEffort()).isEqualTo("xhigh");
+    }
 
     @AfterEach
     void tearDown() {
@@ -58,11 +65,9 @@ class OpenAiClientTest {
         });
         server.start();
 
-        OpenAiProperties properties = new OpenAiProperties(
-                "test-key",
-                "gpt-5.4-mini",
-                "http://127.0.0.1:%d/chat".formatted(server.getAddress().getPort()),
-                Duration.ofSeconds(5));
+        chatUrl = "http://127.0.0.1:%d/chat".formatted(server.getAddress().getPort());
+        OpenAiProperties properties =
+                new OpenAiProperties("test-key", chatUrl, "medium", Duration.ofSeconds(5));
         return new OpenAiClient(properties, objectMapper, HttpClient.newHttpClient());
     }
 
@@ -93,13 +98,27 @@ class OpenAiClientTest {
 
         assertThat(answer.path("drafts")).isEmpty();
         JsonNode sent = objectMapper.readTree(lastRequestBody.get());
-        assertThat(sent.path("model").asText()).isEqualTo("gpt-5.4-mini");
+        assertThat(sent.path("model").asText()).isEqualTo("gpt-5.6-luna");
         assertThat(sent.path("messages").get(0).path("role").asText()).isEqualTo("system");
         assertThat(sent.path("messages").get(0).path("content").asText()).isEqualTo("시스템");
         assertThat(sent.path("messages").get(1).path("content").asText()).isEqualTo("사용자");
         assertThat(sent.path("response_format").path("type").asText()).isEqualTo("json_schema");
         assertThat(sent.path("response_format").path("json_schema").path("name").asText()).isEqualTo("handover_draft");
         assertThat(sent.path("response_format").path("json_schema").path("strict").asBoolean()).isTrue();
+        assertThat(sent.path("reasoning_effort").asText()).isEqualTo("medium");
+    }
+
+    @Test
+    void omitsTheReasoningFieldEntirelyWhenItIsConfiguredBlank() throws Exception {
+        clientAnswering(200, "{\"choices\":[{\"message\":{\"content\":\"{}\"}}]}");
+        OpenAiClient client = new OpenAiClient(
+                new OpenAiProperties("test-key", chatUrl, "", Duration.ofSeconds(5)),
+                objectMapper,
+                HttpClient.newHttpClient());
+
+        client.ask("draft", "handover_draft", objectMapper.readTree("{}"), "시스템", "사용자");
+
+        assertThat(objectMapper.readTree(lastRequestBody.get()).has("reasoning_effort")).isFalse();
     }
 
     @Test

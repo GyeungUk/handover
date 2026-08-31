@@ -88,7 +88,7 @@ class CalendarCheckServiceTest {
     void acceptsAMoveThatMatchesTheAnchorItCites() {
         modelAnswers("""
                 {"items":[{"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":1,
-                  "anchorEvent":"입학식·1학기 개강","reason":"개강이 한 주 늦어졌습니다.","note":""}]}""");
+                  "anchorEvent":"입학식·1학기 개강","reason":"개강이 한 주 늦어졌습니다.","note":"","evidenceQuote":"신입생 체류자격 변경"}]}""");
 
         AlignmentResponse response = service.check("minseo", 2027);
 
@@ -108,10 +108,34 @@ class CalendarCheckServiceTest {
     }
 
     @Test
+    void keepsTheTaskWhenAShiftHasNoVerbatimTaskEvidence() {
+        modelAnswers("""
+                {"items":[{"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":1,
+                  "anchorEvent":"입학식·1학기 개강","reason":"개강에 맞춥니다.","note":"","evidenceQuote":"원문에 없는 근거"}]}""");
+
+        assertThat(itemFor(service.check("minseo", 2027), "신입생 체류자격 변경").action()).isEqualTo("keep");
+    }
+
+    @Test
+    void fallsBackToACompleteLocalComparisonWhenTheExternalCallFails() {
+        when(openAiClient.ask(anyString(), anyString(), any(), anyString(), anyString()))
+                .thenThrow(ApiException.badGateway("upstream failed"));
+
+        AlignmentResponse response = service.check("minseo", 2027);
+
+        assertThat(response.notice()).contains("외부 분석 연결 없이");
+        assertThat(response.shifts()).isNotEmpty();
+        assertThat(response.items()).hasSize(4).allSatisfy(item -> {
+            assertThat(item.action()).isEqualTo("keep");
+            assertThat(item.suggestedStart()).isEqualTo(item.currentStart());
+        });
+    }
+
+    @Test
     void downgradesAMoveThatOutrunsItsAnchor() {
         modelAnswers("""
                 {"items":[{"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":3,
-                  "anchorEvent":"입학식·1학기 개강","reason":"더 옮기겠습니다.","note":"확인 필요"}]}""");
+                  "anchorEvent":"입학식·1학기 개강","reason":"더 옮기겠습니다.","note":"확인 필요","evidenceQuote":"신입생 체류자격 변경"}]}""");
 
         AlignmentResponse.AlignmentItem item = itemFor(service.check("minseo", 2027), "신입생 체류자격 변경");
         assertThat(item.action()).isEqualTo("review");
@@ -125,7 +149,7 @@ class CalendarCheckServiceTest {
     void downgradesAMoveWithNoAnchorAtAll() {
         modelAnswers("""
                 {"items":[{"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":1,
-                  "anchorEvent":"","reason":"그냥 옮기겠습니다.","note":""}]}""");
+                  "anchorEvent":"","reason":"그냥 옮기겠습니다.","note":"","evidenceQuote":"신입생 체류자격 변경"}]}""");
 
         assertThat(itemFor(service.check("minseo", 2027), "신입생 체류자격 변경").action()).isEqualTo("review");
     }
@@ -134,7 +158,7 @@ class CalendarCheckServiceTest {
     void ignoresAnAnchorTheTargetCalendarDoesNotPublish() {
         modelAnswers("""
                 {"items":[{"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":1,
-                  "anchorEvent":"지어낸 학사일정","reason":"이유입니다.","note":""}]}""");
+                  "anchorEvent":"지어낸 학사일정","reason":"이유입니다.","note":"","evidenceQuote":"신입생 체류자격 변경"}]}""");
 
         AlignmentResponse.AlignmentItem item = itemFor(service.check("minseo", 2027), "신입생 체류자격 변경");
         assertThat(item.action()).isEqualTo("review");
@@ -172,9 +196,9 @@ class CalendarCheckServiceTest {
     void listsProposalsFirstThenReviewsThenUntouchedTasks() {
         modelAnswers("""
                 {"items":[
-                  {"taskTitle":"동계 체류 현황 점검","action":"keep","shiftWeeks":0,"anchorEvent":"","reason":"r","note":""},
-                  {"taskTitle":"외국인등록 단체접수","action":"review","shiftWeeks":0,"anchorEvent":"","reason":"r","note":""},
-                  {"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":1,"anchorEvent":"입학식·1학기 개강","reason":"r","note":""}
+                  {"taskTitle":"동계 체류 현황 점검","action":"keep","shiftWeeks":0,"anchorEvent":"","reason":"r","note":"","evidenceQuote":""},
+                  {"taskTitle":"외국인등록 단체접수","action":"review","shiftWeeks":0,"anchorEvent":"","reason":"r","note":"","evidenceQuote":"외국인등록 단체접수"},
+                  {"taskTitle":"신입생 체류자격 변경","action":"shift","shiftWeeks":1,"anchorEvent":"입학식·1학기 개강","reason":"r","note":"","evidenceQuote":"신입생 체류자격 변경"}
                 ]}""");
 
         assertThat(service.check("minseo", 2027).items())

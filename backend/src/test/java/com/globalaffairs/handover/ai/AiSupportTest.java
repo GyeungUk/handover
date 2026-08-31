@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.globalaffairs.handover.domain.HandoverSchema;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** The helpers that decide what survives from a model answer into the document. */
@@ -26,11 +27,29 @@ class AiSupportTest {
     }
 
     @Test
+    void rejectsNumbersTheModelCouldNotHaveReadFromTheSource() {
+        String source = "84명 중 71명을 검토했고 목표일은 2026.09.06입니다.";
+
+        assertThat(AiSupport.usesOnlyRecordedNumbers("71명을 검토했습니다.", source, Set.of())).isTrue();
+        assertThat(AiSupport.usesOnlyRecordedNumbers("72명을 검토했습니다.", source, Set.of())).isFalse();
+        assertThat(AiSupport.usesOnlyRecordedNumbers("2027학도로 갱신합니다.", source, Set.of("2027"))).isTrue();
+    }
+
+    @Test
     void buildsTheEntryBodyWithTheQuestionListOnlyWhenThereAreQuestions() {
         assertThat(AiSupport.detailHtml(List.of("첫 문단", "둘째 문단"), List.of()))
                 .isEqualTo("<p>첫 문단</p><p>둘째 문단</p>");
         assertThat(AiSupport.detailHtml(List.of("본문"), List.of("담당자는 누구입니까?")))
                 .isEqualTo("<p>본문</p><p><strong>확인이 필요한 내용</strong></p><ul><li>담당자는 누구입니까?</li></ul>");
+    }
+
+    @Test
+    void rendersStructuredParagraphLabelsAsSafeHeadings() {
+        assertThat(AiSupport.detailHtml(
+                        List.of("[업무 개요] 체류 연장 접수를 진행합니다.", "[인계 포인트]"),
+                        List.of()))
+                .isEqualTo("<p><strong>업무 개요</strong><br>체류 연장 접수를 진행합니다.</p>"
+                        + "<p><strong>인계 포인트</strong></p>");
     }
 
     @Test

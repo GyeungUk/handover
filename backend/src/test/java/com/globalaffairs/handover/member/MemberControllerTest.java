@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -38,29 +39,31 @@ class MemberControllerTest {
     void listsRemovedMembersForAnyRegisteredAccount() throws Exception {
         when(service.removedMemberIds()).thenReturn(List.of("minseo", "jiwoo"));
 
-        mockMvc.perform(as(get("/api/members"), WebSliceConfig.MEMBER_EMAIL))
+        mockMvc.perform(as(get("/api/members"), WebSliceConfig.MEMBER_ID))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.removedMemberIds").value(org.hamcrest.Matchers.contains("minseo", "jiwoo")));
     }
 
     @Test
-    void answersFourOhOneWhenNoIdentityHeadersArePresent() throws Exception {
+    void answersFourOhOneWhenNoSessionCookieIsPresent() throws Exception {
         mockMvc.perform(get("/api/members"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("로그인이 필요합니다."));
     }
 
     @Test
-    void answersFourOhOneForASignedInAccountThatIsNotRegistered() throws Exception {
-        mockMvc.perform(as(get("/api/members"), WebSliceConfig.OUTSIDER_EMAIL))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error").value("로그인이 필요합니다."));
+    void listsRemovedMembersForAnAccountOutsideTheAdministratorList() throws Exception {
+        when(service.removedMemberIds()).thenReturn(List.of());
+
+        mockMvc.perform(as(get("/api/members"), WebSliceConfig.OUTSIDER_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.removedMemberIds").isEmpty());
     }
 
     @Test
     void removesAMemberForAnAdministrator() throws Exception {
-        mockMvc.perform(as(post("/api/members"), WebSliceConfig.ADMIN_EMAIL)
+        mockMvc.perform(as(post("/api/members"), WebSliceConfig.ADMIN_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"minseo\"}"))
                 .andExpect(status().isOk())
@@ -70,8 +73,25 @@ class MemberControllerTest {
     }
 
     @Test
+    void addsAMemberForAnAdministrator() throws Exception {
+        when(service.createMember("management", "홍길동", "국제협력"))
+                .thenReturn(new MemberService.MemberView(
+                        "person-new", "management", "홍길동", "국제협력", "홍", List.of()));
+
+        mockMvc.perform(as(put("/api/members"), WebSliceConfig.ADMIN_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"teamId":"management","name":"홍길동","role":"국제협력"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.member.id").value("person-new"))
+                .andExpect(jsonPath("$.member.teamId").value("management"))
+                .andExpect(jsonPath("$.member.tasks").isEmpty());
+    }
+
+    @Test
     void restoresAMemberForAnAdministrator() throws Exception {
-        mockMvc.perform(as(delete("/api/members"), WebSliceConfig.ADMIN_EMAIL)
+        mockMvc.perform(as(delete("/api/members"), WebSliceConfig.ADMIN_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"minseo\"}"))
                 .andExpect(status().isOk())
@@ -82,7 +102,7 @@ class MemberControllerTest {
 
     @Test
     void answersFourOhThreeForANonAdministrator() throws Exception {
-        mockMvc.perform(as(post("/api/members"), WebSliceConfig.MEMBER_EMAIL)
+        mockMvc.perform(as(post("/api/members"), WebSliceConfig.MEMBER_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"minseo\"}"))
                 .andExpect(status().isForbidden())
@@ -106,7 +126,7 @@ class MemberControllerTest {
         org.mockito.Mockito.doThrow(ApiException.badRequest("유효한 파트원 정보가 필요합니다."))
                 .when(service).remove("nobody");
 
-        mockMvc.perform(as(post("/api/members"), WebSliceConfig.ADMIN_EMAIL)
+        mockMvc.perform(as(post("/api/members"), WebSliceConfig.ADMIN_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"nobody\"}"))
                 .andExpect(status().isBadRequest())

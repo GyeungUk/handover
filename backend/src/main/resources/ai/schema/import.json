@@ -8,7 +8,7 @@
         "properties": {
           "category": { "type": "string", "$enumFrom": "categories" },
           "title": { "type": "string", "description": "문서 제목. 40자 이내." },
-          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "본문 문단. 1~3개." },
+          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "원문에 근거한 상세 본문. 구조화된 2~6개 문단." },
           "properties": {
             "type": "array",
             "items": {

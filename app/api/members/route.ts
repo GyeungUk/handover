@@ -1,56 +1,10 @@
-import { env } from 'cloudflare:workers';
-import { createRemovedMembersTable } from '../../../db/schema';
-import { findPerson } from '../../org-data';
-import { getAppRole } from '../../authz';
-import { getChatGPTUser } from '../../chatgpt-auth';
+import { proxyBackendRequest } from "../../backend-proxy";
 
-type AppEnv = Cloudflare.Env & { DB: D1Database };
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-/** The org chart is the only list of valid ids; a second copy here would drift the moment it changes. */
-const isKnownMember = (personId: string | undefined): personId is string =>
-  Boolean(personId && findPerson(personId));
-
-function database() {
-  return (env as AppEnv).DB;
-}
-
-async function ensureSchema(db: D1Database) {
-  await db.prepare(createRemovedMembersTable).run();
-}
-
-async function authorizedRole() {
-  const user = await getChatGPTUser();
-  return user ? getAppRole(user) : null;
-}
-
-export async function GET() {
-  if (!await authorizedRole()) return Response.json({ error: '로그인이 필요합니다.' }, { status: 401 });
-  const db = database();
-  await ensureSchema(db);
-  const result = await db.prepare('SELECT person_id FROM removed_members ORDER BY removed_at DESC').all<{ person_id: string }>();
-  return Response.json({ removedMemberIds: result.results.map((row) => row.person_id) });
-}
-
-export async function POST(request: Request) {
-  if (await authorizedRole() !== 'admin') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
-  const { personId } = await request.json<{ personId?: string }>();
-  if (!isKnownMember(personId)) return Response.json({ error: '유효한 파트원 정보가 필요합니다.' }, { status: 400 });
-
-  const db = database();
-  await ensureSchema(db);
-  await db.prepare('INSERT OR REPLACE INTO removed_members (person_id, removed_at) VALUES (?, ?)')
-    .bind(personId, new Date().toISOString())
-    .run();
-  return Response.json({ ok: true });
-}
-
-export async function DELETE(request: Request) {
-  if (await authorizedRole() !== 'admin') return Response.json({ error: '관리자 권한이 필요합니다.' }, { status: 403 });
-  const { personId } = await request.json<{ personId?: string }>();
-  if (!isKnownMember(personId)) return Response.json({ error: '유효한 파트원 정보가 필요합니다.' }, { status: 400 });
-
-  const db = database();
-  await ensureSchema(db);
-  await db.prepare('DELETE FROM removed_members WHERE person_id = ?').bind(personId).run();
-  return Response.json({ ok: true });
-}
+export const GET = proxyBackendRequest;
+export const POST = proxyBackendRequest;
+export const PUT = proxyBackendRequest;
+export const PATCH = proxyBackendRequest;
+export const DELETE = proxyBackendRequest;

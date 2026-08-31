@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 import org.springframework.stereotype.Component;
 
@@ -32,11 +33,39 @@ public class AiSupport {
         return value == null ? "" : value.replaceAll("\\s+", " ").trim();
     }
 
+    /** Reject concrete numbers the model introduced even when the prose around them is fluent. */
+    public static boolean usesOnlyRecordedNumbers(String candidate, String source, Set<String> allowed) {
+        java.util.regex.Pattern number = java.util.regex.Pattern.compile("\\d+(?:[.,:/-]\\d+)*");
+        Set<String> recorded = new java.util.HashSet<>(allowed == null ? Set.of() : allowed);
+        java.util.regex.Matcher sourceMatcher = number.matcher(source == null ? "" : source);
+        while (sourceMatcher.find()) {
+            recorded.add(sourceMatcher.group());
+        }
+        java.util.regex.Matcher candidateMatcher = number.matcher(candidate == null ? "" : candidate);
+        while (candidateMatcher.find()) {
+            if (!recorded.contains(candidateMatcher.group())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** The entry body: escaped paragraphs, then the open questions as a list when there are any. */
     public static String detailHtml(List<String> paragraphs, List<String> questions) {
         StringBuilder body = new StringBuilder();
+        java.util.regex.Pattern labeledParagraph = java.util.regex.Pattern.compile("^\\[([^\\]\\r\\n]{1,30})\\]\\s*(.*)$");
         for (String line : paragraphs) {
-            body.append("<p>").append(escapeHtml(line)).append("</p>");
+            java.util.regex.Matcher labeled = labeledParagraph.matcher(line);
+            if (!labeled.matches()) {
+                body.append("<p>").append(escapeHtml(line)).append("</p>");
+                continue;
+            }
+            String detail = labeled.group(2).trim();
+            body.append("<p><strong>").append(escapeHtml(labeled.group(1).trim())).append("</strong>");
+            if (!detail.isEmpty()) {
+                body.append("<br>").append(escapeHtml(detail));
+            }
+            body.append("</p>");
         }
         if (questions.isEmpty()) {
             return body.toString();

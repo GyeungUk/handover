@@ -1,55 +1,38 @@
 # 보안 주의사항
 
-## 1. 인증 헤더는 "신뢰"됩니다 — 가장 중요한 배포 조건
+## 1. 로그인은 이 서비스가 직접 처리합니다
 
-이 백엔드는 요청에 실린 다음 헤더를 **그대로 믿고** 사용자를 식별합니다.
+직번과 비밀번호로 로그인하고, 성공하면 서버가 세션 쿠키를 내려 줍니다. 사용자 식별은 그 쿠키뿐이며,
+요청에 실린 다른 어떤 헤더도 신원으로 쓰이지 않습니다.
 
-```
-oai-authenticated-user-id
-oai-authenticated-user-email
-oai-authenticated-user-full-name
-oai-authenticated-user-full-name-encoding
-```
-
-기존 Next.js 구현(`app/chatgpt-auth.ts`)도 정확히 같은 방식이었습니다. 즉 **이 서비스에 직접 접근할 수
-있는 사람은 누구나 헤더를 넣어 관리자가 될 수 있습니다.**
-
-```bash
-# 서비스가 인터넷에 그대로 노출되면 이 한 줄로 관리자 권한이 뚫립니다.
-curl -X POST https://api.example.com/api/members \
-  -H 'oai-authenticated-user-id: whatever' \
-  -H 'oai-authenticated-user-email: gyeunguk2062@gmail.com' \
-  -H 'Content-Type: application/json' -d '{"personId":"minseo"}'
-```
+- 비밀번호는 **PBKDF2-HMAC-SHA256**(계정마다 다른 salt, 210,000회)으로 저장합니다. 반복 횟수는 해시
+  문자열 안에 들어 있어, 나중에 올려도 로그인할 때 자동으로 재해시됩니다(`PasswordHasher`).
+- 세션 토큰은 256비트 난수이고 DB에는 **SHA-256 다이제스트만** 남습니다. `account_sessions` 테이블을
+  통째로 읽어도 로그인에 쓸 수 없습니다.
+- 쿠키는 `HttpOnly`, `SameSite=Lax`, `Path=/`입니다. HTTPS 배포에서는
+  `HANDOVER_SESSION_COOKIE_SECURE=true`를 반드시 켜세요.
+- 비밀번호가 바뀌면(재설정 포함) 그 계정의 **모든 세션이 폐기**됩니다.
+- 로그인 실패는 직번당 15분에 10회로 제한합니다(`LoginThrottle`). 인스턴스 메모리에만 있으므로 여러 대를
+  띄운다면 앞단에서 한 번 더 막으세요.
 
 ### 반드시 지켜야 할 배포 구조
 
 ```
-브라우저 → ChatGPT 인증 프록시 → (신뢰 네트워크) → Spring 백엔드
+브라우저 → 리버스 프록시 → ┬ /api/*  → Spring (8080)
+                            └ 그 외    → Next.js
 ```
 
 1. **백엔드를 공개 인터넷에 직접 노출하지 마세요.** 사설 네트워크, VPC, 또는 프록시만 접근 가능한
    방화벽 뒤에 두세요.
-2. **프록시가 들어오는 `oai-authenticated-user-*` 헤더를 반드시 제거(strip)한 뒤** 자신이 검증한 값으로
-   다시 설정해야 합니다. 이 단계를 빠뜨리면 클라이언트가 보낸 헤더가 그대로 통과합니다.
+2. 프론트와 API가 **같은 오리진**이어야 세션 쿠키가 성립합니다.
 3. 백엔드 포트를 로드밸런서/인그레스에서 프록시 외의 출발지로부터 차단하세요.
 
 Nginx 예시:
 
 ```nginx
 location /api/ {
-    # 클라이언트가 보낸 신원 헤더를 먼저 지운다.
-    proxy_set_header oai-authenticated-user-id            "";
-    proxy_set_header oai-authenticated-user-email         "";
-    proxy_set_header oai-authenticated-user-full-name     "";
-    proxy_set_header oai-authenticated-user-full-name-encoding "";
-
-    # 프록시가 검증한 값으로 다시 채운다.
-    proxy_set_header oai-authenticated-user-id    $verified_user_id;
-    proxy_set_header oai-authenticated-user-email $verified_user_email;
-
     # 아래 2번의 공유 비밀을 쓰는 경우.
-    proxy_set_header x-handover-gateway-secret    $gateway_secret;
+    proxy_set_header x-handover-gateway-secret $gateway_secret;
 
     proxy_pass http://handover-backend:8080;
 }
@@ -57,33 +40,50 @@ location /api/ {
 
 ## 2. 2차 방어선: 게이트웨이 공유 비밀 (선택, 권장)
 
-프록시만 아는 비밀 헤더를 요구하면, 백엔드에 직접 도달한 요청의 위조 헤더는 무력화됩니다.
+프록시만 아는 비밀 헤더를 요구하면, 백엔드에 우연히 직접 도달한 요청은 아무것도 하지 못합니다.
 
 ```bash
 HANDOVER_GATEWAY_SECRET=$(openssl rand -hex 32)
 HANDOVER_GATEWAY_SECRET_HEADER=x-handover-gateway-secret
 ```
 
-- 값이 비어 있으면(기본값) 기존 Next.js와 동일하게 헤더만 믿습니다.
-- 값이 설정되면 해당 헤더가 일치하지 않는 요청은 **미인증**으로 처리됩니다(401/403).
+- 값이 비어 있으면(기본값) 도달 가능한 누구나 API를 호출할 수 있습니다. 세션이 없으면 읽지도 쓰지도
+  못하지만, `/api/auth/*`는 열려 있습니다.
+- 값이 설정되면 해당 헤더가 없는 요청은 **미인증**으로 처리되고, `/api/auth/*`는 403으로 거부됩니다.
+  즉 계정 생성과 비밀번호 추측 시도 자체가 프록시 밖에서는 불가능해집니다.
 - 비교는 `MessageDigest.isEqual`로 수행합니다.
+- 프록시 역할을 하는 곳이 셋입니다: dev 서버(`.env.local`), Worker의 페이지 렌더(`.dev.vars`),
+  그리고 운영 리버스 프록시. 셋 다 같은 값을 보내야 합니다.
 - 이것은 네트워크 격리의 **대체재가 아니라 보완재**입니다. 1번을 먼저 지키세요.
 
-## 3. 권한 이메일은 설정으로 관리합니다
+## 3. 관리자 권한은 설정으로 관리합니다
 
-기존에는 `app/authz.ts`에 이메일이 하드코딩되어 있었습니다. 이제는 환경변수입니다.
+로그인 화면에서 숫자 직번을 넣으면 누구나 비밀번호를 스스로 만들 수 있습니다. 관리자 권한만
+환경변수 목록으로 부여합니다.
 
 ```bash
-HANDOVER_ADMIN_EMAILS=gyeunguk2062@gmail.com
-HANDOVER_MEMBER_EMAILS=ruddnr2062@gmail.com,seongwhan0712@gmail.com,hyk@ssu.ac.kr
+HANDOVER_ADMIN_EMPLOYEE_IDS=20180001
+HANDOVER_MEMBER_EMPLOYEE_IDS=20190002,20190003
 ```
 
-- 비교는 소문자로 정규화한 뒤 수행합니다.
-- 관리자 목록이 회원 목록보다 우선합니다.
-- 두 목록 모두 비어 있으면 **아무도 접근할 수 없습니다**(모든 요청 401). 배포 시 반드시 설정하세요.
-- 기존 구현에는 `NODE_ENV !== 'production'`일 때 `seedy@sites.test`를 관리자로 인정하는 우회로가
-  있었습니다. 이 백엔드에는 그런 코드 경로가 없습니다. 로컬에서 필요하면
-  `application-local.yml`의 관리자 목록에 넣으세요. **운영 설정에는 절대 넣지 마세요.**
+- 모든 숫자 직번은 조회·생성·로그인을 할 수 있고 일반 사용자 권한을 받습니다.
+- 관리자 목록에 든 직번만 관리자입니다.
+- `HANDOVER_MEMBER_EMPLOYEE_IDS`는 기존 설정 파일과의 호환을 위해 남아 있지만 가입 제한에는 쓰지
+  않습니다.
+- 공개 배포 시에는 가입을 원하는 모든 사람이 할 수 있으므로, 게이트웨이 비밀과 네트워크 접근 제어를
+  반드시 유지하세요.
+
+## 3-1. 비밀번호 찾기
+
+등록된 이메일로 6자리 인증번호를 보냅니다.
+
+- 인증번호는 DB에 다이제스트로만 남고, 유효기간은 기본 10분입니다.
+- 코드 하나당 오입력 5회까지이며, 틀린 시도는 남아 있는 코드의 시도 횟수를 소모시킵니다.
+- 계정당 시간당 5회까지만 요청할 수 있습니다(메일 폭탄 방지).
+- 사용된 코드는 재사용되지 않고, 새 요청은 이전 코드를 무효화합니다.
+- **SMTP가 설정되지 않으면 요청은 503으로 실패합니다.** 조용히 버리지 않습니다.
+- `HANDOVER_PASSWORD_RESET_LOG_CODE=true`는 인증번호를 로그에 씁니다. **로컬 전용이며**, 메일 서버가
+  함께 설정되어 있으면 기동 후 해당 요청이 실패하도록 되어 있습니다.
 
 ## 4. 비밀값 관리
 
@@ -92,6 +92,7 @@ HANDOVER_MEMBER_EMAILS=ruddnr2062@gmail.com,seongwhan0712@gmail.com,hyk@ssu.ac.k
 | `OPENAI_API_KEY` | 환경변수 / 시크릿 매니저 | 금지 |
 | `DATABASE_PASSWORD` | 환경변수 / 시크릿 매니저 | 금지 |
 | `HANDOVER_GATEWAY_SECRET` | 환경변수 / 시크릿 매니저 | 금지 |
+| `SMTP_PASSWORD` | 환경변수 / 시크릿 매니저 | 금지 |
 
 - `backend/.gitignore`가 `.env`와 `src/main/resources/application-local.yml`을 제외합니다.
 - 저장소에는 `.env.example`, `application-local.yml.example`만 있고 실제 값은 비어 있습니다.

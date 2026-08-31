@@ -1,0 +1,663 @@
+/* ==========================================================================
+   Primitives
+   --------------------------------------------------------------------------
+   The styles behind `app/ui/*.tsx`. Everything here is composed from
+   `tokens.css` — no raw hex, no raw pixel spacing — so a change to the ramp
+   moves the whole product at once.
+   ========================================================================== */
+
+/* ==========================================================================
+   Text
+   ========================================================================== */
+
+.ui-display, .ui-h1, .ui-h2, .ui-h3 {
+  margin: 0;
+  color: var(--ink);
+  font-weight: var(--fw-bold);
+  word-break: keep-all;
+}
+.ui-display { font-size: var(--t-display); line-height: var(--lh-tight); letter-spacing: var(--tr-display); }
+.ui-h1      { font-size: var(--t-h1);      line-height: var(--lh-tight); letter-spacing: var(--tr-display); }
+.ui-h2      { font-size: var(--t-h2);      line-height: var(--lh-head);  letter-spacing: var(--tr-head); }
+.ui-h3      { font-size: var(--t-h3);      line-height: var(--lh-head);  letter-spacing: var(--tr-head); }
+
+.ui-text {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  line-height: var(--lh-body);
+  letter-spacing: var(--tr-body);
+  word-break: keep-all;
+}
+.ui-text.lg      { font-size: var(--t-lg); }
+.ui-text.sm      { font-size: var(--t-sm); }
+.ui-text.caption { font-size: var(--t-caption); color: var(--ink-3); }
+.ui-text.strong  { color: var(--ink); font-weight: var(--fw-medium); }
+.ui-text.muted   { color: var(--ink-3); }
+
+/* Tabular numerals. Every count, week number and date in the product goes
+   through this so columns of figures line up. */
+.ui-figure {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+  font-weight: var(--fw-bold);
+}
+
+/* ==========================================================================
+   Section heading
+   --------------------------------------------------------------------------
+   Title over a grey sub-line, centred by default. This replaces the 11px
+   uppercase eyebrow that used to sit above every section: the eyebrow is now
+   opt-in and set in sentence-scale type rather than tracked-out caps.
+   ========================================================================== */
+
+.ui-section-heading { display: grid; gap: var(--s-3); }
+.ui-section-heading.center { justify-items: center; text-align: center; }
+.ui-section-heading .eyebrow {
+  color: var(--blue-500);
+  font-size: var(--t-caption);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0;
+}
+.ui-section-heading .sub {
+  max-width: 34em;
+  color: var(--ink-3);
+  font-size: var(--t-lg);
+  line-height: var(--lh-body);
+}
+@media (max-width: 768px) {
+  .ui-section-heading .sub { font-size: var(--t-body); }
+}
+
+/* ==========================================================================
+   Button
+   --------------------------------------------------------------------------
+   One press response for the whole product: the surface dips, it never slides.
+   ========================================================================== */
+
+.ui-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  height: var(--h-md);
+  padding: 0 var(--s-6);
+  border: 0;
+  border-radius: var(--r-sm);
+  font-family: inherit;
+  font-size: var(--t-body);
+  font-weight: var(--fw-semi);
+  letter-spacing: var(--tr-body);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.ui-btn:active:not(:disabled) { transform: scale(var(--press)); }
+.ui-btn:disabled { cursor: not-allowed; opacity: 0.45; }
+
+.ui-btn.lg { height: var(--h-lg); padding: 0 var(--s-7); font-size: var(--t-lg); border-radius: var(--r-md); }
+.ui-btn.sm { height: var(--h-sm); padding: 0 var(--s-4); font-size: var(--t-sm); }
+.ui-btn.xs { height: var(--h-xs); padding: 0 var(--s-3); font-size: var(--t-caption); border-radius: var(--r-xs); }
+.ui-btn.block { display: flex; width: 100%; }
+
+.ui-btn.primary   { background: var(--blue-500); color: var(--ink-on); }
+.ui-btn.primary:hover:not(:disabled)   { background: var(--blue-600); }
+
+.ui-btn.secondary { background: var(--surface-2); color: var(--ink); }
+.ui-btn.secondary:hover:not(:disabled) { background: var(--surface-3); }
+
+.ui-btn.tonal     { background: var(--blue-100); color: var(--blue-600); }
+.ui-btn.tonal:hover:not(:disabled)     { background: var(--blue-200); }
+
+.ui-btn.outline   { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+.ui-btn.outline:hover:not(:disabled)   { background: var(--grey-50); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+.ui-btn.ghost     { background: transparent; color: var(--ink-2); }
+.ui-btn.ghost:hover:not(:disabled)     { background: var(--surface-2); color: var(--ink); }
+
+.ui-btn.danger    { background: #e5484d; color: var(--ink-on); }
+.ui-btn.danger:hover:not(:disabled)    { background: #cf3a3f; }
+
+/* Trailing glyph — the arrow on a call to action. It leans in on hover, which
+   is the whole animation budget for a button. */
+.ui-btn .ui-btn-glyph {
+  font-size: 1.05em;
+  transition: transform var(--dur) var(--ease-out);
+}
+.ui-btn:hover:not(:disabled) .ui-btn-glyph { transform: translateX(2px); }
+
+/* Busy state. The label is swapped by the component rather than overlaid, so
+   the button keeps its width and the page does not jump. */
+.ui-btn.busy { pointer-events: none; }
+.ui-spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.7;
+  animation: ui-spin 0.6s linear infinite;
+}
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* ==========================================================================
+   Card
+   --------------------------------------------------------------------------
+   No border by default. Separation comes from the fill and the radius; the
+   `bordered` tone exists only for cards that sit directly on white.
+   ========================================================================== */
+
+.ui-card {
+  position: relative;
+  display: block;
+  padding: var(--s-6);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+}
+.ui-card.pad-sm { padding: var(--s-4); }
+.ui-card.pad-lg { padding: var(--s-8); }
+.ui-card.pad-none { padding: 0; }
+
+.ui-card.raised   { box-shadow: var(--sh-2); }
+.ui-card.bordered { box-shadow: inset 0 0 0 1px var(--line); }
+.ui-card.flat     { background: var(--surface-2); }
+.ui-card.tint     { background: var(--tint, var(--tint-sky)); }
+.ui-card.brand    { background: linear-gradient(150deg, var(--blue-600), var(--blue-800)); color: var(--ink-on); }
+.ui-card.brand .ui-text, .ui-card.brand .ui-h2, .ui-card.brand .ui-h3 { color: inherit; }
+
+.ui-card.xl { border-radius: var(--r-xl); }
+
+/* An interactive card is a button. It lifts a little and dips on press — the
+   same gesture as `.ui-btn`, so a whole page answers the finger identically. */
+.ui-card.interactive {
+  width: 100%;
+  border: 0;
+  cursor: pointer;
+  transition:
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out),
+    background var(--dur) var(--ease-out);
+}
+.ui-card.interactive:hover  { transform: translateY(-3px); box-shadow: var(--sh-3); }
+.ui-card.interactive:active { transform: translateY(0) scale(0.995); box-shadow: var(--sh-1); }
+
+/* ==========================================================================
+   Row — the reference's dominant affordance
+   --------------------------------------------------------------------------
+   A white pill with a label and a chevron. Search results, agenda items,
+   member lists, draft suggestions and navigation all collapse onto this, which
+   is what stops the product from inventing a new row shape per screen.
+   ========================================================================== */
+
+.ui-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--h-md);
+  padding: var(--s-3) var(--s-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.ui-row:hover  { background: var(--grey-50); }
+.ui-row:active { transform: scale(0.99); }
+.ui-row.static { cursor: default; }
+.ui-row.static:hover { background: var(--surface); }
+.ui-row.on-tint { background: var(--surface); }
+.ui-row.plain   { background: transparent; }
+.ui-row.plain:hover { background: var(--surface-2); }
+
+.ui-row-body { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.ui-row-body > b {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: var(--fw-semi);
+  letter-spacing: var(--tr-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-row-body > span {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--t-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-row-chevron {
+  flex: 0 0 auto;
+  color: var(--grey-400);
+  font-size: var(--t-lg);
+  transition: transform var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+.ui-row:hover .ui-row-chevron { transform: translateX(2px); color: var(--ink-3); }
+
+/* A stack of rows inside one card, hairlines between rather than around. */
+.ui-row-group { display: grid; gap: var(--s-2); }
+.ui-row-group.divided { gap: 0; }
+.ui-row-group.divided > .ui-row { border-radius: 0; }
+.ui-row-group.divided > .ui-row + .ui-row { box-shadow: inset 0 1px 0 var(--line-soft); }
+.ui-row-group.divided > .ui-row:first-child { border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.ui-row-group.divided > .ui-row:last-child  { border-radius: 0 0 var(--r-sm) var(--r-sm); }
+
+/* ==========================================================================
+   Badge / Chip / Avatar
+   ========================================================================== */
+
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 26px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-caption);
+  font-weight: var(--fw-semi);
+  white-space: nowrap;
+}
+.ui-badge.blue    { background: var(--blue-100); color: var(--blue-600); }
+.ui-badge.grey    { background: var(--grey-100); color: var(--ink-3); }
+.ui-badge.green   { background: #e4f5ec; color: #17803d; }
+.ui-badge.amber   { background: #fdf3d7; color: #a1650a; }
+.ui-badge.red     { background: #fdecec; color: #cf3a3f; }
+.ui-badge.solid   { background: var(--ink); color: var(--ink-on); }
+
+/* Chips are the filter row from the reference: pill, quiet, active goes solid. */
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--h-sm);
+  padding: 0 var(--s-4);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: var(--fw-semi);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.ui-chip:hover { background: var(--surface-3); }
+.ui-chip:active { transform: scale(var(--press)); }
+/* Selected goes to the brand, not to black: pure ink is the one tone this
+   product never uses as a surface, and a black pill in a navy screen reads as
+   a control borrowed from somewhere else. */
+.ui-chip.active { background: var(--blue-700); color: var(--ink-on); box-shadow: 0 2px 8px rgba(29, 91, 140, 0.24); }
+.ui-chip.active:hover { background: var(--blue-800); }
+.ui-chip > i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+/* A horizontally scrolling chip rail — the mobile answer to a wrapped filter
+   row. The padding is bled out so the first and last chip touch the page edge
+   the way a native scroller does. */
+.ui-chip-rail {
+  display: flex;
+  gap: var(--s-2);
+  overflow-x: auto;
+  margin: 0 calc(var(--page-pad) * -1);
+  padding: var(--s-1) var(--page-pad);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.ui-chip-rail::-webkit-scrollbar { display: none; }
+.ui-chip-rail > * { flex: 0 0 auto; }
+
+.ui-avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--blue-700);
+  color: var(--ink-on);
+  font-size: var(--t-body);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0;
+}
+.ui-avatar.sm { width: 32px; height: 32px; border-radius: var(--r-xs); font-size: var(--t-caption); }
+.ui-avatar.lg { width: 52px; height: 52px; border-radius: var(--r-md); font-size: var(--t-h3); }
+.ui-avatar.xl { width: 68px; height: 68px; border-radius: var(--r-lg); font-size: var(--t-h2); }
+.ui-avatar.round { border-radius: 50%; }
+
+/* ==========================================================================
+   Stat
+   --------------------------------------------------------------------------
+   Label above, figure below. The old layout put a 10px label under a number,
+   which read as a footnote; putting it on top lets the figure carry the row.
+   ========================================================================== */
+
+.ui-stat { display: grid; gap: var(--s-1); }
+.ui-stat > .label { color: var(--ink-3); font-size: var(--t-caption); font-weight: var(--fw-medium); }
+.ui-stat > .value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-1);
+  color: var(--ink);
+  font-size: var(--t-h2);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-head);
+  font-variant-numeric: tabular-nums;
+}
+.ui-stat > .value > small { color: var(--ink-3); font-size: var(--t-sm); font-weight: var(--fw-medium); }
+.ui-stat > .hint { color: var(--ink-4); font-size: var(--t-caption); }
+
+.ui-stat-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--s-5);
+}
+
+/* ==========================================================================
+   Field
+   ========================================================================== */
+
+.ui-field { display: grid; gap: var(--s-2); }
+.ui-field > .label {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: var(--fw-semi);
+  letter-spacing: var(--tr-body);
+}
+.ui-field > .label > em { margin-left: var(--s-1); color: var(--blue-500); font-style: normal; }
+.ui-field > .hint  { color: var(--ink-4); font-size: var(--t-caption); line-height: 1.5; }
+.ui-field > .error { color: #cf3a3f; font-size: var(--t-caption); line-height: 1.5; }
+
+.ui-input,
+.ui-select,
+.ui-textarea {
+  width: 100%;
+  min-height: var(--h-md);
+  padding: 0 var(--s-4);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--t-body);
+  letter-spacing: var(--tr-body);
+  transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.ui-textarea { padding: var(--s-3) var(--s-4); line-height: var(--lh-body); resize: vertical; }
+.ui-input::placeholder, .ui-textarea::placeholder { color: var(--grey-400); }
+.ui-input:hover, .ui-select:hover, .ui-textarea:hover { background: var(--surface-3); }
+.ui-input:focus, .ui-select:focus, .ui-textarea:focus {
+  outline: none;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--blue-500);
+}
+.ui-field.invalid .ui-input,
+.ui-field.invalid .ui-textarea { box-shadow: inset 0 0 0 2px #e5484d; }
+
+/* The native arrow is replaced so a select matches an input at every width. */
+.ui-select {
+  appearance: none;
+  padding-right: var(--s-10);
+  background-image: linear-gradient(45deg, transparent 50%, var(--grey-500) 50%), linear-gradient(135deg, var(--grey-500) 50%, transparent 50%);
+  background-position: right var(--s-5) center, right calc(var(--s-5) - 5px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Modal
+   --------------------------------------------------------------------------
+   One implementation. Escape, the scroll lock, the focus trap and the click
+   target on the backdrop all live in `Modal.tsx` — the six dialogs in this
+   product used to get three of those four right between them.
+
+   Under 768px it becomes a sheet: pinned to the bottom, rounded on top only,
+   dragged up rather than dropped in.
+   ========================================================================== */
+
+.ui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-6);
+  background: rgba(25, 31, 40, 0.44);
+  backdrop-filter: blur(3px);
+  animation: ui-fade var(--dur) var(--ease-out);
+  overscroll-behavior: contain;
+}
+
+.ui-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--modal-w, 560px), 100%);
+  max-height: min(88vh, 900px);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--sh-4);
+  animation: ui-modal-in var(--dur-slow) var(--ease);
+}
+.ui-modal.w-sm { --modal-w: 440px; }
+.ui-modal.w-md { --modal-w: 560px; }
+.ui-modal.w-lg { --modal-w: 760px; }
+.ui-modal.w-xl { --modal-w: 1000px; }
+
+.ui-modal-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  padding: var(--s-7) var(--s-7) var(--s-5);
+}
+/* Scoped to the default head's own column. It used to be `.ui-modal-head > div`,
+   which at specificity (0,1,1) beat any class a custom head put on its children
+   — a 44px icon block came out 240px wide. */
+.ui-modal-title { flex: 1 1 auto; min-width: 0; display: grid; gap: var(--s-2); }
+.ui-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--s-7) var(--s-6);
+  overscroll-behavior: contain;
+}
+.ui-modal-foot {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-5) var(--s-7);
+  box-shadow: inset 0 1px 0 var(--line-soft);
+  background: var(--surface);
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
+}
+.ui-modal-foot > .spacer { flex: 1 1 auto; }
+/* The body scrolls under the foot, and the fade says so. A row cut in half at
+   the fold with a hard rule beneath it reads as a broken layout; the same row
+   fading into the bar reads as "there is more". */
+.ui-modal-foot::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 26px;
+  background: linear-gradient(to top, var(--surface), color-mix(in srgb, var(--surface) 0%, transparent));
+  pointer-events: none;
+}
+
+.ui-modal-close {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--h-sm);
+  height: var(--h-sm);
+  margin: -6px -6px 0 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.ui-modal-close:hover { background: var(--surface-2); color: var(--ink); }
+
+/* The grab handle only exists in sheet mode, so it is hidden until then. */
+.ui-sheet-handle { display: none; }
+
+@keyframes ui-fade { from { opacity: 0; } }
+@keyframes ui-modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+}
+@keyframes ui-sheet-in {
+  from { transform: translateY(100%); }
+}
+
+@media (max-width: 768px) {
+  .ui-modal-backdrop { padding: 0; align-items: flex-end; }
+
+  .ui-modal {
+    width: 100%;
+    max-height: 92svh;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    /* the home indicator on a phone sits under the footer otherwise */
+    padding-bottom: env(safe-area-inset-bottom);
+    animation: ui-sheet-in var(--dur-slow) var(--ease);
+  }
+  .ui-modal.w-sm, .ui-modal.w-md, .ui-modal.w-lg, .ui-modal.w-xl { --modal-w: 100%; }
+
+  .ui-sheet-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: var(--s-3) auto 0;
+    border-radius: var(--r-pill);
+    background: var(--grey-300);
+  }
+
+  .ui-modal-head { padding: var(--s-5) var(--s-5) var(--s-4); }
+  .ui-modal-body { padding: 0 var(--s-5) var(--s-5); }
+  .ui-modal-foot { padding: var(--s-4) var(--s-5); border-radius: 0; }
+  /* a sheet's footer is a commit bar: the primary action goes full width */
+  .ui-modal-foot.stack { flex-direction: column-reverse; align-items: stretch; }
+  .ui-modal-foot.stack > .spacer { display: none; }
+
+  /* Rows grow with Korean names and descriptions on narrow screens. The old
+     single-line ellipsis made ordinary copy look like missing data. */
+  .ui-row-body > b,
+  .ui-row-body > span {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ==========================================================================
+   Layout helpers
+   ========================================================================== */
+
+.ui-stack  { display: grid; gap: var(--s-4); }
+.ui-stack.sm  { gap: var(--s-2); }
+.ui-stack.lg  { gap: var(--s-6); }
+.ui-stack.xl  { gap: var(--s-8); }
+
+.ui-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
+.ui-cluster.sm { gap: var(--s-2); }
+.ui-cluster.between { justify-content: space-between; }
+
+.ui-section { padding-block: var(--section-gap); }
+.ui-container { width: 100%; max-width: var(--page-max); margin-inline: auto; padding-inline: var(--page-pad); }
+
+.ui-divider { height: 1px; border: 0; margin: 0; background: var(--line-soft); }
+
+/* Anything wide — a 48-week ruler, a table — scrolls inside its own box rather
+   than making the page scroll sideways. */
+.ui-scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ==========================================================================
+   Skeleton / empty
+   ========================================================================== */
+
+.ui-skeleton {
+  border-radius: var(--r-xs);
+  background: linear-gradient(90deg, var(--grey-100) 25%, var(--grey-200) 37%, var(--grey-100) 63%);
+  background-size: 400% 100%;
+  animation: ui-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes ui-shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+
+.ui-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-3);
+  padding: var(--s-16) var(--s-6);
+  text-align: center;
+}
+.ui-empty > .glyph {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--grey-400);
+  font-size: 24px;
+}
+
+/* ==========================================================================
+   Focus
+   --------------------------------------------------------------------------
+   One ring, drawn outside the element so it never gets clipped by a card's
+   overflow, and only for keyboard users.
+   ========================================================================== */
+
+.ui-btn:focus-visible,
+.ui-row:focus-visible,
+.ui-chip:focus-visible,
+.ui-card.interactive:focus-visible,
+.ui-modal-close:focus-visible {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-modal, .ui-modal-backdrop, .ui-skeleton { animation: none; }
+  .ui-btn:active:not(:disabled),
+  .ui-chip:active,
+  .ui-row:active,
+  .ui-card.interactive:active { transform: none; }
+  /* Anything that moves rather than changes colour. The list above named the
+     press response; these are the lifts and slides the rest of the product
+     added afterwards. */
+  .ui-card.interactive:hover,
+  .ui-btn:hover:not(:disabled) .ui-btn-glyph,
+  .ui-row:hover .ui-row-chevron { transform: none; }
+  .ui-spinner { animation-duration: 1.6s; }
+}

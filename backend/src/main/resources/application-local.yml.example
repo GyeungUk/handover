@@ -9,14 +9,18 @@ spring:
 
 handover:
   auth:
-    admin-emails:
-      - gyeunguk2062@gmail.com
-      # The Next.js build let this address in as an admin outside production; keep it local-only.
-      - seedy@sites.test
-    member-emails:
-      - ruddnr2062@gmail.com
-      - seongwhan0712@gmail.com
-      - hyk@ssu.ac.kr
+    # 로그인에 쓰는 직번. 목록에 없는 직번은 비밀번호 생성도, 로그인도 할 수 없습니다.
+    admin-employee-ids:
+      - "20180001"
+    member-employee-ids:
+      - "20190002"
+      - "20190003"
+    session:
+      # 로컬은 http라 secure 쿠키를 쓸 수 없습니다.
+      secure: false
+    password-reset:
+      # SMTP 없이 개발할 때만. 인증번호를 메일 대신 로그에 씁니다.
+      log-code: true
   cors:
     allowed-origins:
       - http://localhost:3000

@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DraftService {
 
-    private static final int MAX_DRAFTS = 8;
+    private static final int MAX_DRAFTS = 16;
     private static final int MAX_QUESTIONS = 3;
     private static final int TITLE_MAX = 80;
 
@@ -95,6 +95,11 @@ public class DraftService {
                 "소속파트", found.team().title()));
         payload.put("오늘", orgData.weekLabel(today.week()));
         payload.put("허용속성", support.allowedProperties(inferableKeys::contains));
+        payload.put("필수출력개수", Map.of(
+                "responsibility", 1,
+                "plan", facts.stream().filter(item -> !"완료".equals(item.get("진행상태"))).count(),
+                "issue", facts.stream().filter(item -> item.containsKey("일정변경")).count(),
+                "pending", facts.stream().filter(item -> Boolean.TRUE.equals(item.get("인계시점이후종료"))).count()));
         payload.put("업무목록", facts);
 
         JsonNode answer = openAiClient.ask(
@@ -104,10 +109,12 @@ public class DraftService {
                 resources.prompt("draft"),
                 json.pretty(payload));
 
+        Set<String> taskNames = found.person().tasks().stream().map(Task::title).collect(java.util.stream.Collectors.toSet());
+
         return new DraftResponse(
                 new PersonSummary(found.person().id(), found.person().name(), found.person().role(), found.team().title()),
                 orgData.weekLabel(today.week()),
-                readDrafts(answer));
+                readDrafts(answer, taskNames, eligiblePairs(facts)));
     }
 
     /** Latest recorded move wins, exactly like the calendar view resolves a task's real start. */
@@ -162,22 +169,50 @@ public class DraftService {
         return facts;
     }
 
-    private List<DraftResponse.DraftItem> readDrafts(JsonNode answer) {
+    private static Set<String> eligiblePairs(List<Map<String, Object>> facts) {
+        Set<String> pairs = new java.util.HashSet<>();
+        pairs.add("responsibility:연간 업무 전체");
+        for (Map<String, Object> fact : facts) {
+            String task = String.valueOf(fact.get("업무"));
+            if (!"완료".equals(fact.get("진행상태"))) {
+                pairs.add("plan:" + task);
+            }
+            if (fact.containsKey("일정변경")) {
+                pairs.add("issue:" + task);
+            }
+            if (Boolean.TRUE.equals(fact.get("인계시점이후종료"))) {
+                pairs.add("pending:" + task);
+            }
+        }
+        return pairs;
+    }
+
+    private List<DraftResponse.DraftItem> readDrafts(
+            JsonNode answer, Set<String> taskNames, Set<String> eligiblePairs) {
         List<DraftResponse.DraftItem> drafts = new ArrayList<>();
+        Set<String> acceptedPairs = new java.util.HashSet<>();
         for (JsonNode item : answer.path("drafts")) {
             if (drafts.size() >= MAX_DRAFTS) {
                 break;
             }
             String category = item.path("category").asText("");
             String title = item.path("title").asText("").trim();
+            String proposedSourceTask = item.path("sourceTask").asText("").trim();
             List<String> paragraphs = AiSupport.trimmedLines(ModelJson.strings(item.path("paragraphs")), Integer.MAX_VALUE);
             if (!schema.isCategory(category) || title.isEmpty() || !item.path("paragraphs").isArray()
                     || item.path("paragraphs").isEmpty()) {
                 continue;
             }
+            if (!"responsibility".equals(category) && !taskNames.contains(proposedSourceTask)) {
+                continue;
+            }
+            String sourceTask = "responsibility".equals(category) ? "연간 업무 전체" : proposedSourceTask;
+            String pair = category + ":" + sourceTask;
+            if (!eligiblePairs.contains(pair) || !acceptedPairs.add(pair)) {
+                continue;
+            }
 
             List<String> questions = AiSupport.trimmedLines(ModelJson.strings(item.path("questions")), MAX_QUESTIONS);
-            String sourceTask = item.path("sourceTask").asText("").trim();
             drafts.add(new DraftResponse.DraftItem(
                     "draft-" + drafts.size(),
                     category,
@@ -186,7 +221,7 @@ public class DraftService {
                     support.cleanProperties(category, ModelJson.propertyPairs(item.path("properties")), inferableKeys::contains),
                     "record".equals(item.path("basis").asText("")) ? "record" : "inferred",
                     questions,
-                    sourceTask.isEmpty() ? schema.categoryLabel(category) : sourceTask));
+                    sourceTask));
         }
         return drafts;
     }

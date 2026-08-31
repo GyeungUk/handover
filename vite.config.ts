@@ -42,14 +42,20 @@ const localBindingConfig = {
  * server to use it; comment the line out and the existing Next.js route handlers serve the app
  * exactly as before. Both backends stay in the tree, so flipping back is a one-line edit.
  *
- * This has to be a proxy rather than a base URL on the client. The `oai-authenticated-user-*`
- * headers the app authenticates with are never sent by the browser: in dev the sites plugin injects
- * them into the request, and in production the ChatGPT proxy does. A `fetch()` straight from the
- * browser to another origin would therefore arrive with no identity at all. Forwarding here — after
- * the sites plugin's middleware has run — keeps the request same-origin and carries the injected
- * headers through, which is also how the reverse proxy in front of production has to behave.
+ * This has to be a proxy rather than a base URL on the client. The app authenticates with a session
+ * cookie the backend sets, and a cookie is only sent back to the origin that set it. Proxying keeps
+ * every `/api/*` call same-origin, so the browser attaches the cookie on the way out and stores the
+ * one `/api/auth/login` sets on the way back — which is also how the reverse proxy in front of
+ * production has to behave.
+ *
+ * It also plays the gateway's other part. When the backend is configured with
+ * `handover.auth.gateway-secret`, it only trusts identity headers on a request carrying that shared
+ * secret — proof the request came through the proxy rather than straight at the service. This dev
+ * proxy is that gateway, so it attaches the secret here; without it every call would arrive
+ * unauthenticated. Set `HANDOVER_GATEWAY_SECRET` in `.env.local` to the same value as
+ * `backend/.env`.
  */
-function springApiProxy(target: string): Plugin {
+function springApiProxy(target: string, gatewaySecret: string, gatewaySecretHeader: string): Plugin {
   return {
     name: 'handover-spring-api-proxy',
     // The returned function defers registration until Vite's own middlewares and the sites plugin's
@@ -72,6 +78,8 @@ function springApiProxy(target: string): Plugin {
             if (!value || name === 'host' || name === 'connection' || name === 'content-length') continue;
             headers.set(name, Array.isArray(value) ? value.join(', ') : value);
           }
+          // Set last, so a copy arriving from the browser cannot forge or override it.
+          if (gatewaySecret) headers.set(gatewaySecretHeader, gatewaySecret);
 
           try {
             const upstream = await fetch(new URL(path, target), {
@@ -85,8 +93,14 @@ function springApiProxy(target: string): Plugin {
             upstream.headers.forEach((value, name) => {
               // The body is already decoded and re-measured; the upstream framing does not apply.
               if (name === 'content-encoding' || name === 'content-length' || name === 'transfer-encoding') return;
+              // `forEach` folds repeated Set-Cookie headers into one comma-joined string, which no
+              // browser will parse back into cookies. They are re-attached in full below.
+              if (name === 'set-cookie') return;
               response.setHeader(name, value);
             });
+            // The login endpoints answer with the session cookie; without this the sign-in is lost.
+            const cookies = upstream.headers.getSetCookie();
+            if (cookies.length) response.setHeader('set-cookie', cookies);
             response.setHeader('content-length', String(payload.byteLength));
             response.end(payload);
           } catch (failure) {
@@ -112,7 +126,11 @@ function collect(stream: NodeJS.ReadableStream) {
 
 export default defineConfig(async ({ mode }) => {
   // `.env.local` decides which backend serves `/api/*`; it is not bundled into the client.
-  const { HANDOVER_API_TARGET } = loadEnv(mode, process.cwd(), 'HANDOVER_');
+  const {
+    HANDOVER_API_TARGET,
+    HANDOVER_GATEWAY_SECRET = '',
+    HANDOVER_GATEWAY_SECRET_HEADER = 'x-handover-gateway-secret',
+  } = loadEnv(mode, process.cwd(), 'HANDOVER_');
 
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
@@ -130,7 +148,9 @@ export default defineConfig(async ({ mode }) => {
       : undefined,
     plugins: [
       // Listed first so its deferred middleware is registered ahead of the app handler.
-      ...(HANDOVER_API_TARGET ? [springApiProxy(HANDOVER_API_TARGET)] : []),
+      ...(HANDOVER_API_TARGET
+        ? [springApiProxy(HANDOVER_API_TARGET, HANDOVER_GATEWAY_SECRET, HANDOVER_GATEWAY_SECRET_HEADER)]
+        : []),
       vinext(),
       sites(),
       cloudflare({

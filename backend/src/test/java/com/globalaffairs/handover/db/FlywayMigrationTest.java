@@ -72,19 +72,134 @@ class FlywayMigrationTest {
         List<String> applied = jdbc.queryForList(
                 "SELECT script FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class);
 
-        assertThat(applied).containsExactly("V1__removed_members.sql", "V2__task_reschedules.sql");
+        assertThat(applied).containsExactly(
+                "V1__removed_members.sql", "V2__task_reschedules.sql", "V3__handover_documents.sql",
+                "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql");
     }
 
     @Test
-    void createsBothTablesWithTheIndexesTheQueriesRelyOn() {
+    void createsEveryTableWithTheIndexesTheQueriesRelyOn() {
         JdbcTemplate jdbc = new JdbcTemplate(dataSource);
 
         assertThat(jdbc.queryForList(
                         "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", String.class))
-                .contains("removed_members", "task_reschedules");
+                .contains(
+                        "removed_members",
+                        "task_reschedules",
+                        "handover_documents",
+                        "handover_entries",
+                        "handover_bundles",
+                        "accounts",
+                        "account_sessions",
+                        "password_reset_tokens",
+                        "custom_teams",
+                        "custom_members",
+                        "task_checklist_items");
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'task_reschedules'", String.class))
                 .contains("task_reschedules_pkey", "task_reschedules_task_key_idx", "task_reschedules_person_id_idx");
+        assertThat(jdbc.queryForList(
+                        "SELECT indexname FROM pg_indexes WHERE tablename = 'handover_entries'", String.class))
+                .contains("handover_entries_owner_idx", "handover_entries_owner_entry_key");
+        assertThat(jdbc.queryForList(
+                        "SELECT indexname FROM pg_indexes WHERE tablename = 'task_checklist_items'", String.class))
+                .contains(
+                        "task_checklist_items_pkey",
+                        "task_checklist_items_task_item_key");
+    }
+
+    @Test
+    void keepsEntryIdsUniqueWithinOneDocument() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.update("""
+                INSERT INTO handover_documents (owner_email, owner_name, status, updated_at)
+                VALUES ('unique@example.com', '김지현', 'draft', now())
+                """);
+        jdbc.update("""
+                INSERT INTO handover_entries
+                  (owner_email, entry_id, position, category, title, detail, properties, attachments,
+                   font_family, font_size)
+                VALUES ('unique@example.com', 'r1', 0, 'responsibility', '체류 관리', '<p>본문</p>', '{}', '[]',
+                        'Pretendard', '16')
+                """);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                        INSERT INTO handover_entries
+                          (owner_email, entry_id, position, category, title, detail, properties, attachments,
+                           font_family, font_size)
+                        VALUES ('unique@example.com', 'r1', 1, 'plan', '중복', '<p>본문</p>', '{}', '[]',
+                                'Pretendard', '16')
+                        """))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void deletesAnAccountsEntriesAndUnitsWithItsDocument() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.update("""
+                INSERT INTO handover_documents (owner_email, owner_name, status, updated_at)
+                VALUES ('cascade@example.com', '김지현', 'draft', now())
+                """);
+        jdbc.update("""
+                INSERT INTO handover_bundles
+                  (owner_email, bundle_id, position, title, entry_ids, decision, comment)
+                VALUES ('cascade@example.com', 'b1', 0, '체류·비자', '[]', NULL, '')
+                """);
+
+        jdbc.update("DELETE FROM handover_documents WHERE owner_email = 'cascade@example.com'");
+
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM handover_bundles WHERE owner_email = 'cascade@example.com'",
+                        Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void refusesAnEmployeeNumberThatIsNotAllDigits() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                        INSERT INTO accounts (employee_id, name, email, password_hash, created_at, updated_at)
+                        VALUES ('a20190002', '김지현', 'letters@example.com', 'x', now(), now())
+                        """))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void deletesAnAccountsSessionsAndResetCodesWithIt() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.update("""
+                INSERT INTO accounts (employee_id, name, email, password_hash, created_at, updated_at)
+                VALUES ('20190009', '김지현', 'cascade-account@example.com', 'x', now(), now())
+                """);
+        jdbc.update("""
+                INSERT INTO account_sessions (token_hash, employee_id, created_at, expires_at)
+                VALUES ('deadbeef', '20190009', now(), now() + interval '1 day')
+                """);
+        jdbc.update("""
+                INSERT INTO password_reset_tokens (token_hash, employee_id, created_at, expires_at)
+                VALUES ('cafebabe', '20190009', now(), now() + interval '10 minutes')
+                """);
+
+        jdbc.update("DELETE FROM accounts WHERE employee_id = '20190009'");
+
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM account_sessions WHERE employee_id = '20190009'", Integer.class))
+                .isZero();
+        assertThat(jdbc.queryForObject(
+                        "SELECT count(*) FROM password_reset_tokens WHERE employee_id = '20190009'", Integer.class))
+                .isZero();
+    }
+
+    @Test
+    void refusesAStatusThatIsNotOneOfTheFourWorkflowStates() {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+
+        assertThatThrownBy(() -> jdbc.update("""
+                        INSERT INTO handover_documents (owner_email, owner_name, status, updated_at)
+                        VALUES ('bogus@example.com', '김지현', 'archived', now())
+                        """))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

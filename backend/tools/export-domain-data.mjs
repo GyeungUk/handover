@@ -54,6 +54,8 @@ try {
     propertyFieldsByCategory: schema.propertyFieldsByCategory,
     findingKinds: schema.findingKinds,
     annualActionLabels: schema.annualActionLabels,
+    workflowStatuses: schema.workflowStatuses,
+    documentLimits: schema.documentLimits,
   });
 } finally {
   rmSync(build, { recursive: true, force: true });

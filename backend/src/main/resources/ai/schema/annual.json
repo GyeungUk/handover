@@ -10,7 +10,7 @@
           "entryId": { "type": "string", "description": "기존 항목 id. 신규 항목은 빈 문자열." },
           "category": { "type": "string", "$enumFrom": "categories" },
           "title": { "type": "string", "description": "다음 학년도 문서에 들어갈 제목. 40자 이내." },
-          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "본문 문단. 1~3개." },
+          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "기존 실행 정보를 보존한 다음 학년도 상세 본문. 2~6개 문단." },
           "properties": {
             "type": "array",
             "items": {
@@ -21,9 +21,11 @@
             }
           },
           "reason": { "type": "string", "description": "이 action을 고른 이유 한 문장." },
-          "questions": { "type": "array", "items": { "type": "string" }, "description": "작성자가 확인해야 할 질문. 최대 3개." }
+          "questions": { "type": "array", "items": { "type": "string" }, "description": "작성자가 확인해야 할 질문. 최대 3개." },
+          "evidenceEntryId": { "type": "string", "description": "판정 근거가 있는 기존 항목 id." },
+          "evidenceQuote": { "type": "string", "description": "기존 제목 또는 본문에 그대로 있는 판정 근거." }
         },
-        "required": ["action", "entryId", "category", "title", "paragraphs", "properties", "reason", "questions"],
+        "required": ["action", "entryId", "category", "title", "paragraphs", "properties", "reason", "questions", "evidenceEntryId", "evidenceQuote"],
         "additionalProperties": false
       }
     }

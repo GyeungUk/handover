@@ -1,7 +1,6 @@
 package com.globalaffairs.handover.schedule;
 
 import static com.globalaffairs.handover.support.Identity.as;
-import static com.globalaffairs.handover.support.Identity.withFullName;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -37,7 +36,7 @@ class ScheduleControllerTest {
                 "minseo::비자 연장 집중기간", "minseo", "비자 연장 집중기간",
                 21, 23, "출입국 일정 변경", "박민서", "2026-08-29T01:02:03.456Z")));
 
-        mockMvc.perform(as(get("/api/schedules"), WebSliceConfig.MEMBER_EMAIL))
+        mockMvc.perform(as(get("/api/schedules"), WebSliceConfig.MEMBER_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.changes[0].taskKey").value("minseo::비자 연장 집중기간"))
                 .andExpect(jsonPath("$.changes[0].personId").value("minseo"))
@@ -50,39 +49,39 @@ class ScheduleControllerTest {
     }
 
     @Test
-    void answersFourOhOneWithoutIdentityHeaders() throws Exception {
+    void answersFourOhOneWithoutASession() throws Exception {
         mockMvc.perform(get("/api/schedules"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("로그인이 필요합니다."));
     }
 
     @Test
-    void attributesTheChangeToTheProxySuppliedDisplayName() throws Exception {
-        when(service.record(eq("minseo"), eq("비자 연장 집중기간"), eq(23), eq("사유입니다"), eq("박민서")))
+    void attributesTheChangeToTheNameOnTheAccount() throws Exception {
+        when(service.record(eq("minseo"), eq("비자 연장 집중기간"), eq(23), eq("사유입니다"), eq(WebSliceConfig.MEMBER_NAME)))
                 .thenReturn(new ScheduleChangeResponse(
                         "minseo::비자 연장 집중기간", "minseo", "비자 연장 집중기간",
-                        21, 23, "사유입니다", "박민서", "2026-08-29T01:02:03.456Z"));
+                        21, 23, "사유입니다", WebSliceConfig.MEMBER_NAME, "2026-08-29T01:02:03.456Z"));
 
-        mockMvc.perform(withFullName(as(post("/api/schedules"), WebSliceConfig.MEMBER_EMAIL), "박민서")
+        mockMvc.perform(as(post("/api/schedules"), WebSliceConfig.MEMBER_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"minseo\",\"taskTitle\":\"비자 연장 집중기간\",\"toStart\":23,\"reason\":\"사유입니다\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.change.fromStart").value(21))
-                .andExpect(jsonPath("$.change.changedBy").value("박민서"));
+                .andExpect(jsonPath("$.change.changedBy").value(WebSliceConfig.MEMBER_NAME));
     }
 
     @Test
-    void fallsBackToTheEmailWhenTheProxySentNoDecodableName() throws Exception {
-        when(service.record(eq("minseo"), eq("비자 연장 집중기간"), eq(23), eq("사유입니다"), eq(WebSliceConfig.MEMBER_EMAIL)))
+    void fallsBackToTheEmailWhenTheAccountCarriesNoName() throws Exception {
+        when(service.record(eq("minseo"), eq("비자 연장 집중기간"), eq(23), eq("사유입니다"), eq(WebSliceConfig.NAMELESS_EMAIL)))
                 .thenReturn(new ScheduleChangeResponse(
                         "minseo::비자 연장 집중기간", "minseo", "비자 연장 집중기간",
-                        21, 23, "사유입니다", WebSliceConfig.MEMBER_EMAIL, "2026-08-29T01:02:03.456Z"));
+                        21, 23, "사유입니다", WebSliceConfig.NAMELESS_EMAIL, "2026-08-29T01:02:03.456Z"));
 
-        mockMvc.perform(as(post("/api/schedules"), WebSliceConfig.MEMBER_EMAIL)
+        mockMvc.perform(as(post("/api/schedules"), WebSliceConfig.NAMELESS_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"minseo\",\"taskTitle\":\"비자 연장 집중기간\",\"toStart\":23,\"reason\":\"사유입니다\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.change.changedBy").value(WebSliceConfig.MEMBER_EMAIL));
+                .andExpect(jsonPath("$.change.changedBy").value(WebSliceConfig.NAMELESS_EMAIL));
     }
 
     @Test
@@ -92,7 +91,7 @@ class ScheduleControllerTest {
                         org.mockito.ArgumentMatchers.any()))
                 .thenThrow(ApiException.badRequest("현재와 동일한 일정입니다."));
 
-        mockMvc.perform(as(post("/api/schedules"), WebSliceConfig.MEMBER_EMAIL)
+        mockMvc.perform(as(post("/api/schedules"), WebSliceConfig.MEMBER_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"personId\":\"minseo\",\"taskTitle\":\"비자 연장 집중기간\",\"toStart\":21,\"reason\":\"사유입니다\"}"))
                 .andExpect(status().isBadRequest())

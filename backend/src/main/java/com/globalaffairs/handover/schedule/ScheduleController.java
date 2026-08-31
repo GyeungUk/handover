@@ -1,7 +1,7 @@
 package com.globalaffairs.handover.schedule;
 
 import com.globalaffairs.handover.auth.Access;
-import com.globalaffairs.handover.auth.ChatGptUser;
+import com.globalaffairs.handover.auth.AuthenticatedUser;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -26,15 +26,15 @@ public class ScheduleController {
     public record RescheduleRequest(String personId, String taskTitle, Integer toStart, String reason) {}
 
     @GetMapping
-    public ResponseEntity<Map<String, List<ScheduleChangeResponse>>> list(ChatGptUser user) {
+    public ResponseEntity<Map<String, List<ScheduleChangeResponse>>> list(AuthenticatedUser user) {
         Access.requireRegistered(user);
         return ResponseEntity.ok(Map.of("changes", service.changes()));
     }
 
     @PostMapping
     public ResponseEntity<Map<String, ScheduleChangeResponse>> record(
-            ChatGptUser user, @RequestBody(required = false) RescheduleRequest request) {
-        ChatGptUser current = Access.requireRegistered(user);
+            AuthenticatedUser user, @RequestBody(required = false) RescheduleRequest request) {
+        AuthenticatedUser current = Access.requireRegistered(user);
         RescheduleRequest body = request == null ? new RescheduleRequest(null, null, null, null) : request;
         ScheduleChangeResponse change = service.record(
                 body.personId(), body.taskTitle(), body.toStart(), body.reason(), current.displayName());

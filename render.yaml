@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: handover-api
+    runtime: docker
+    dockerContext: backend
+    dockerfilePath: backend/Dockerfile
+    plan: free
+    region: singapore
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: SERVER_PORT
+        value: 10000
+      - key: HANDOVER_SESSION_COOKIE_SECURE
+        value: "true"
+      - key: HANDOVER_SESSION_COOKIE_SAME_SITE
+        value: Lax
+      - key: HANDOVER_CORS_ALLOWED_ORIGINS
+        value: ""
+      - key: HANDOVER_GATEWAY_SECRET
+        generateValue: true
+      - key: HANDOVER_GATEWAY_SECRET_HEADER
+        value: x-handover-gateway-secret
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: HANDOVER_ADMIN_EMPLOYEE_IDS
+        sync: false
+      - key: DATABASE_HOST
+        fromDatabase:
+          name: handover-postgres
+          property: host
+      - key: DATABASE_PORT
+        fromDatabase:
+          name: handover-postgres
+          property: port
+      - key: DATABASE_NAME
+        fromDatabase:
+          name: handover-postgres
+          property: database
+      - key: DATABASE_USERNAME
+        fromDatabase:
+          name: handover-postgres
+          property: user
+      - key: DATABASE_PASSWORD
+        fromDatabase:
+          name: handover-postgres
+          property: password
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: HANDOVER_MAIL_FROM
+        sync: false
+
+databases:
+  - name: handover-postgres
+    databaseName: handover
+    user: handover
+    plan: free
+    region: singapore

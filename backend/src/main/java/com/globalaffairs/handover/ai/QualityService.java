@@ -20,11 +20,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class QualityService {
 
-    private static final int MAX_ENTRIES = 40;
-    private static final int TEXT_MAX = 1500;
+    private static final int MAX_ENTRIES = 200;
+    private static final int TEXT_MAX = 20000;
+    private static final int BATCH_MAX_ENTRIES = 20;
+    private static final int BATCH_TEXT_MAX = 250000;
     private static final int TITLE_MAX = 120;
-    private static final int MAX_FINDINGS = 20;
     private static final int MAX_PER_ENTRY = 3;
+    private static final int MAX_FINDINGS = MAX_ENTRIES * MAX_PER_ENTRY;
 
     private static final String NOT_CONFIGURED = "점검 기능이 설정되지 않았습니다. 관리자에게 문의해 주세요.";
 
@@ -67,13 +69,16 @@ public class QualityService {
             throw ApiException.badRequest("점검할 내용이 없습니다.");
         }
 
-        String user = documents.stream()
-                .map(doc -> "<문서 id=\"%s\" 섹션=\"%s\">\n제목: %s\n본문: %s\n</문서>"
-                        .formatted(doc.id(), doc.section(), doc.title(), doc.body()))
-                .collect(Collectors.joining("\n\n"));
-
-        JsonNode answer = openAiClient.ask(
-                "quality", "handover_quality", resources.schema("quality"), resources.prompt("quality"), user);
+        List<JsonNode> proposed = new ArrayList<>();
+        for (List<Document> batch : documentBatches(documents)) {
+            String user = batch.stream()
+                    .map(doc -> "<문서 id=\"%s\" 섹션=\"%s\">\n제목: %s\n본문: %s\n</문서>"
+                            .formatted(doc.id(), doc.section(), doc.title(), doc.body()))
+                    .collect(Collectors.joining("\n\n"));
+            JsonNode answer = openAiClient.ask(
+                    "quality", "handover_quality", resources.schema("quality"), resources.prompt("quality"), user);
+            answer.path("findings").forEach(proposed::add);
+        }
 
         Map<String, Document> byId = new LinkedHashMap<>();
         Map<String, Integer> entryOrder = new HashMap<>();
@@ -83,9 +88,10 @@ public class QualityService {
         });
 
         Map<String, Integer> perEntry = new HashMap<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
         List<QualityResponse.QualityFinding> findings = new ArrayList<>();
 
-        for (JsonNode item : answer.path("findings")) {
+        for (JsonNode item : proposed) {
             String entryId = item.path("entryId").asText("");
             Document document = byId.get(entryId);
             String quote = AiSupport.normalize(item.path("quote").asText(""));
@@ -95,6 +101,10 @@ public class QualityService {
             }
             String kind = item.path("kind").asText("");
             if (!schema.findingKinds().contains(kind)) {
+                continue;
+            }
+            String fingerprint = entryId + "\u0000" + kind + "\u0000" + quote;
+            if (!seen.add(fingerprint)) {
                 continue;
             }
             int used = perEntry.getOrDefault(entryId, 0);
@@ -117,5 +127,25 @@ public class QualityService {
                 .thenComparingInt(finding -> entryOrder.getOrDefault(finding.entryId(), Integer.MAX_VALUE)));
 
         return new QualityResponse(documents.size(), findings);
+    }
+
+    private static List<List<Document>> documentBatches(List<Document> documents) {
+        List<List<Document>> batches = new ArrayList<>();
+        List<Document> current = new ArrayList<>();
+        int currentText = 0;
+        for (Document document : documents) {
+            if (!current.isEmpty()
+                    && (current.size() >= BATCH_MAX_ENTRIES || currentText + document.body().length() > BATCH_TEXT_MAX)) {
+                batches.add(List.copyOf(current));
+                current.clear();
+                currentText = 0;
+            }
+            current.add(document);
+            currentText += document.body().length();
+        }
+        if (!current.isEmpty()) {
+            batches.add(List.copyOf(current));
+        }
+        return batches;
     }
 }

@@ -17,10 +17,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class ImportService {
 
-    private static final int SOURCE_MAX = 20000;
-    private static final int MAX_ITEMS = 16;
+    private static final int SOURCE_MAX = 100000;
+    private static final int MAX_ITEMS = 200;
     private static final int MAX_QUESTIONS = 3;
-    private static final int MAX_UNMAPPED = 4;
+    private static final int MAX_UNMAPPED = 50;
     private static final int TITLE_MAX = 80;
     private static final int FILE_NAME_MAX = 80;
     private static final String DEFAULT_FILE_NAME = "붙여넣은 내용";
@@ -52,7 +52,11 @@ public class ImportService {
     public ImportResponse classify(String rawSource, String rawFileName) {
         openAiClient.requireConfigured(NOT_CONFIGURED);
 
-        String source = AiSupport.clip(rawSource, SOURCE_MAX);
+        String source = rawSource == null ? "" : rawSource.trim();
+        if (source.length() > SOURCE_MAX) {
+            throw new ApiException(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE,
+                    "정확한 분류를 위해 자료를 100,000자 이하로 나누어 올려 주세요.");
+        }
         if (source.length() < 30) {
             throw ApiException.badRequest("읽을 내용이 너무 짧습니다. 자료를 다시 올리거나 내용을 붙여넣어 주세요.");
         }
@@ -65,6 +69,7 @@ public class ImportService {
                 "import", "handover_import", resources.schema("import"), resources.prompt("import"), user);
 
         String haystack = AiSupport.normalize(source);
+        Set<String> usedQuotes = new java.util.HashSet<>();
         List<ImportResponse.ImportItem> items = new ArrayList<>();
         for (JsonNode item : answer.path("items")) {
             if (items.size() >= MAX_ITEMS) {
@@ -79,8 +84,16 @@ public class ImportService {
 
             List<String> questions = AiSupport.trimmedLines(ModelJson.strings(item.path("questions")), MAX_QUESTIONS);
             List<String> paragraphs = AiSupport.trimmedLines(ModelJson.strings(paragraphNode), Integer.MAX_VALUE);
-            /* an evidence line only counts if the phrase it names is really in the uploaded text */
             String quote = AiSupport.normalize(item.path("sourceQuote").asText(""));
+            /* Ungrounded prose can be fluent but false. It never reaches the editor. */
+            String prose = title + " " + String.join(" ", paragraphs) + " "
+                    + ModelJson.propertyPairs(item.path("properties")).stream()
+                            .map(pair -> pair.value() == null ? "" : pair.value())
+                            .collect(java.util.stream.Collectors.joining(" "));
+            if (quote.isEmpty() || !haystack.contains(quote) || !usedQuotes.add(quote)
+                    || !AiSupport.usesOnlyRecordedNumbers(prose, haystack, Set.of())) {
+                continue;
+            }
 
             items.add(new ImportResponse.ImportItem(
                     "import-" + items.size(),
@@ -89,7 +102,7 @@ public class ImportService {
                     AiSupport.detailHtml(paragraphs, questions),
                     support.cleanProperties(category, ModelJson.propertyPairs(item.path("properties"))),
                     questions,
-                    !quote.isEmpty() && haystack.contains(quote) ? quote : "",
+                    quote,
                     "high".equals(item.path("confidence").asText("")) ? "high" : "low"));
         }
 

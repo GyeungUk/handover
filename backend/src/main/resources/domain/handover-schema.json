@@ -131,5 +131,23 @@
     "revise": "내용 수정",
     "new": "신규 추가",
     "archive": "올해는 제외"
+  },
+  "workflowStatuses": [
+    "draft",
+    "pending",
+    "rejected",
+    "approved"
+  ],
+  "documentLimits": {
+    "entries": 200,
+    "bundles": 50,
+    "entryTitle": 200,
+    "entryDetail": 20000,
+    "bundleTitle": 120,
+    "propertyValue": 200,
+    "comment": 1000,
+    "attachmentsPerEntry": 10,
+    "attachmentName": 260,
+    "attachmentBytes": 20971520
   }
 }

@@ -2,7 +2,7 @@ package com.globalaffairs.handover.auth;
 
 import org.springframework.stereotype.Service;
 
-/** Port of {@code getAppRole} in {@code app/authz.ts}, reading the allow lists from configuration. */
+/** Decides an authenticated account's role, with the configured administrator list taking priority. */
 @Service
 public class AuthzService {
 
@@ -12,15 +12,15 @@ public class AuthzService {
         this.properties = properties;
     }
 
-    /** The role for an email, or null when the account is not registered. Admin wins over member. */
-    public AppRole roleFor(String email) {
-        if (email == null || email.isBlank()) {
+    /** Every signed-in account is a member; a configured administrator number is an admin. */
+    public AppRole roleFor(String employeeId) {
+        if (employeeId == null || employeeId.isBlank()) {
             return null;
         }
-        String normalized = email.trim().toLowerCase();
-        if (properties.adminEmails().contains(normalized)) {
+        String normalized = employeeId.trim();
+        if (properties.adminEmployeeIds().contains(normalized)) {
             return AppRole.ADMIN;
         }
-        return properties.memberEmails().contains(normalized) ? AppRole.MEMBER : null;
+        return AppRole.MEMBER;
     }
 }

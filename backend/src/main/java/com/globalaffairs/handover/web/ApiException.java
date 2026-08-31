@@ -31,6 +31,21 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.BAD_REQUEST, message);
     }
 
+    /** Nothing is stored under the key the caller asked for. */
+    public static ApiException notFound(String message) {
+        return new ApiException(HttpStatus.NOT_FOUND, message);
+    }
+
+    /** The request is well formed but the document is not in a state that allows it. */
+    public static ApiException conflict(String message) {
+        return new ApiException(HttpStatus.CONFLICT, message);
+    }
+
+    /** The caller is being asked to slow down — repeated wrong passwords, or reset codes on demand. */
+    public static ApiException tooManyRequests(String message) {
+        return new ApiException(HttpStatus.TOO_MANY_REQUESTS, message);
+    }
+
     /** The feature is not configured on this deployment, e.g. no OpenAI key. */
     public static ApiException unavailable(String message) {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, message);

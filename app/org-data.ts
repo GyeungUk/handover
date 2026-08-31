@@ -27,7 +27,7 @@ const START_MONTH = Number(months[0].replace(/[^0-9]/g, ''));
 
 export const seedTeams: Team[] = [
   {
-    id: 'management', title: '유학생관리', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#b8544c', soft: '#f7ebe9',
+    id: 'management', title: '유학생관리', short: '유학생관리', english: 'STUDENT CARE', mark: '01', color: '#1d5f92', soft: '#e5eef6',
     description: '유학생의 체류부터 학사·생활까지 안정적인 캠퍼스 생활을 지원합니다.',
     people: [
       { id: 'minseo', name: '박민서', role: '체류·비자 관리', initial: '박', tasks: [
@@ -51,7 +51,7 @@ export const seedTeams: Team[] = [
     ],
   },
   {
-    id: 'recruitment', title: '유학생유치', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#b07d34', soft: '#f8f0e2',
+    id: 'recruitment', title: '유학생유치', short: '유학생유치', english: 'GLOBAL ADMISSIONS', mark: '02', color: '#9a6a24', soft: '#f6efe1',
     description: '전 세계의 우수한 학생과 대학을 연결하고 입학 전 과정을 설계합니다.',
     people: [
       { id: 'seoyeon', name: '김서연', role: '입학전형 기획', initial: '김', tasks: [
@@ -75,7 +75,7 @@ export const seedTeams: Team[] = [
     ],
   },
   {
-    id: 'exchange', title: '교류', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#3d6a92', soft: '#e9eff5',
+    id: 'exchange', title: '교류', short: '교류', english: 'GLOBAL EXCHANGE', mark: '03', color: '#1f7a70', soft: '#e3f1ef',
     description: '협정대학 네트워크를 바탕으로 파견·초청 교류의 전 과정을 운영합니다.',
     people: [
       { id: 'yujin', name: '강유진', role: '파견 교환학생', initial: '강', tasks: [
@@ -99,7 +99,7 @@ export const seedTeams: Team[] = [
     ],
   },
   {
-    id: 'language', title: '한국어교육원', short: '한국어교육원', english: 'KOREAN LANGUAGE', mark: '04', color: '#4c7f72', soft: '#e8f1ee',
+    id: 'language', title: '한국어교육원', short: '한국어교육원', english: 'KOREAN LANGUAGE', mark: '04', color: '#6a559b', soft: '#eeeaf7',
     description: '한국어 정규과정과 문화 프로그램으로 학습자의 성장과 적응을 돕습니다.',
     people: [
       { id: 'hyejin', name: '윤혜진', role: '정규과정 운영', initial: '윤', tasks: [

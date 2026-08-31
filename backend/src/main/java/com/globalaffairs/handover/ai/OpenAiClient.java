@@ -26,6 +26,7 @@ import org.springframework.stereotype.Component;
 public class OpenAiClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiClient.class);
+    private static final String MODEL = "gpt-5.6-luna";
 
     private static final String UPSTREAM_FAILED = "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.";
     private static final String UNREADABLE_RESULT = "결과 형식을 읽지 못했습니다. 다시 시도해 주세요.";
@@ -102,7 +103,13 @@ public class OpenAiClient {
 
     private HttpRequest buildRequest(String schemaName, JsonNode schema, String system, String user) {
         ObjectNode body = objectMapper.createObjectNode();
-        body.put("model", properties.model());
+        body.put("model", MODEL);
+        /* Without this a GPT-5 class model answers with no reasoning, and the judgement each route
+         * asks for — which section a paragraph belongs in, which calendar event a task hangs off —
+         * degrades into a guess. See OpenAiProperties#reasons. */
+        if (properties.reasons()) {
+            body.put("reasoning_effort", properties.reasoningEffort());
+        }
         var messages = body.putArray("messages");
         messages.addObject().put("role", "system").put("content", system);
         messages.addObject().put("role", "user").put("content", user);
