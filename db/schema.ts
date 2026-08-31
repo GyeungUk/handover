@@ -52,6 +52,25 @@ export const createTaskReschedulesIndex = `
   CREATE INDEX IF NOT EXISTS task_reschedules_task_key_idx ON task_reschedules (task_key, id)
 `;
 
+export const createCustomTasksTable = `
+  CREATE TABLE IF NOT EXISTS custom_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    start_week INTEGER NOT NULL CHECK (start_week >= 0 AND start_week < 48),
+    duration INTEGER NOT NULL CHECK (duration >= 1 AND duration <= 48),
+    note TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (person_id, title),
+    CHECK (start_week + duration <= 48)
+  )
+`;
+
+export const createCustomTasksPersonIndex = `
+  CREATE INDEX IF NOT EXISTS custom_tasks_person_idx ON custom_tasks (person_id, start_week, id)
+`;
+
 /** One durable checkbox state per task and checklist item. */
 export const createTaskChecklistItemsTable = `
   CREATE TABLE IF NOT EXISTS task_checklist_items (

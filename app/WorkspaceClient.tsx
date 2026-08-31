@@ -10,6 +10,7 @@ import TeamView from './workspace/views/TeamView';
 import PersonView from './workspace/views/PersonView';
 import TaskModal from './workspace/modals/TaskModal';
 import SearchModal from './workspace/modals/SearchModal';
+import CreateTaskModal, { type CreatedTask } from './workspace/modals/CreateTaskModal';
 import { OrgContext, TodayContext, useResolvedToday } from './workspace/context';
 import type { ScheduleChange } from './workspace/types';
 import { seedTeams, taskKey, type Person, type Task, type Team } from './org-data';
@@ -22,6 +23,7 @@ type View = { type: 'home' } | { type: 'handover' } | { type: 'all' } | { type: 
  */
 export type SessionUser = { employeeId: string; displayName: string; email: string; role: 'admin' | 'member' };
 type CustomMember = Person & { teamId: string };
+type CustomTask = Task & { personId: string };
 type OrgResponse = { removedMemberIds: string[]; customMembers?: CustomMember[] };
 
 /**
@@ -313,11 +315,13 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   const [removedMemberIds, setRemovedMemberIds] = useState<string[]>([]);
   const [customTeams, setCustomTeams] = useState<Team[]>([]);
   const [customMembers, setCustomMembers] = useState<CustomMember[]>([]);
+  const [customTasks, setCustomTasks] = useState<CustomTask[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersLoadError, setMembersLoadError] = useState('');
   const [taskFocus, setTaskFocus] = useState<{ personId: string; taskTitle: string } | null>(null);
   const [scheduleChanges, setScheduleChanges] = useState<ScheduleChange[]>([]);
   const [calendarCheckId, setCalendarCheckId] = useState<string | null>(null);
+  const [taskCreateOpen, setTaskCreateOpen] = useState(false);
 
   /* every recorded move of a task, oldest first; the last one is the schedule in effect */
   const historyByTask = useMemo(() => {
@@ -330,13 +334,32 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   }, [scheduleChanges]);
 
   const allTeams = useMemo(() => {
-    const merged = [...seedTeams, ...customTeams].map((team) => ({ ...team, people: [...team.people] }));
+    const merged = [...seedTeams, ...customTeams].map((team) => ({
+      ...team,
+      people: team.people.map((person) => ({ ...person, tasks: [...person.tasks] })),
+    }));
     for (const member of customMembers) {
       const team = merged.find((item) => item.id === member.teamId);
-      if (team && !team.people.some((person) => person.id === member.id)) team.people.push(member);
+      if (team && !team.people.some((person) => person.id === member.id)) {
+        team.people.push({ ...member, tasks: [...member.tasks] });
+      }
+    }
+    for (const task of customTasks) {
+      for (const team of merged) {
+        const person = team.people.find((item) => item.id === task.personId);
+        if (person && !person.tasks.some((item) => item.title === task.title)) {
+          person.tasks = [...person.tasks, {
+            title: task.title,
+            start: task.start,
+            duration: task.duration,
+            note: task.note,
+          }];
+          break;
+        }
+      }
     }
     return merged;
-  }, [customMembers, customTeams]);
+  }, [customMembers, customTasks, customTeams]);
 
   const teams = useMemo(() => allTeams.map((team) => ({
     ...team,
@@ -355,19 +378,22 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     Promise.all([
       fetch('/api/members', { signal: controller.signal }),
       fetch('/api/teams', { signal: controller.signal }),
+      fetch('/api/tasks', { signal: controller.signal }),
     ])
-      .then(async ([membersResponse, teamsResponse]) => {
-        if (!membersResponse.ok || !teamsResponse.ok) throw new Error('조직 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
-        const [members, teamData] = await Promise.all([
+      .then(async ([membersResponse, teamsResponse, tasksResponse]) => {
+        if (!membersResponse.ok || !teamsResponse.ok || !tasksResponse.ok) throw new Error('조직 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        const [members, teamData, taskData] = await Promise.all([
           membersResponse.json() as Promise<OrgResponse>,
           teamsResponse.json() as Promise<{ customTeams?: Team[] }>,
+          tasksResponse.json() as Promise<{ tasks?: CustomTask[] }>,
         ]);
-        return { members, teamData };
+        return { members, teamData, taskData };
       })
-      .then(({ members, teamData }) => {
+      .then(({ members, teamData, taskData }) => {
         setRemovedMemberIds(members.removedMemberIds);
         setCustomMembers(members.customMembers ?? []);
         setCustomTeams(teamData.customTeams ?? []);
+        setCustomTasks(taskData.tasks ?? []);
       })
       .catch((error) => { if (error instanceof Error && error.name !== 'AbortError') setMembersLoadError(error.message); })
       .finally(() => setMembersLoading(false));
@@ -386,6 +412,22 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     const payload = await response.json().catch(() => null) as { member?: CustomMember; error?: string } | null;
     if (!response.ok || !payload?.member) throw new Error(payload?.error ?? '담당자를 추가하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     setCustomMembers((current) => [...current, payload.member!]);
+  };
+
+  const createTask = async (input: CreatedTask) => {
+    const response = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const payload = await response.json().catch(() => null) as { task?: CustomTask; error?: string } | null;
+    if (!response.ok || !payload?.task) {
+      throw new Error(payload?.error ?? '일정을 추가하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    const saved = payload.task;
+    setCustomTasks((current) => [...current, saved]);
+    const team = teams.find((item) => item.people.some((person) => person.id === saved.personId));
+    if (team) setView({ type: 'person', teamId: team.id, personId: saved.personId });
   };
 
   useEffect(() => {
@@ -450,13 +492,14 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     return null;
   }, [taskFocus, teams]);
   return <OrgContext.Provider value={teams}><TodayContext.Provider value={today}><div className={`site-shell ${view.type !== 'home' ? 'dashboard-shell' : ''}`}>
-    <AppHeader user={currentUser} compact={view.type !== 'home'} handoverActive={view.type === 'handover'} onHome={() => setView({ type: 'home' })} onHandover={() => setView({ type: 'handover' })} onSearch={() => setSearchOpen(true)} onManageMembers={() => setMemberAdminOpen(true)} />
+    <AppHeader user={currentUser} compact={view.type !== 'home'} handoverActive={view.type === 'handover'} onHome={() => setView({ type: 'home' })} onHandover={() => setView({ type: 'handover' })} onSearch={() => setSearchOpen(true)} onAddTask={() => setTaskCreateOpen(true)} onManageMembers={() => setMemberAdminOpen(true)} />
     {view.type === 'home' && <Landing onAll={() => setView({ type: 'all' })} onTeam={openTeam} onPerson={openPerson} />}
     {view.type === 'handover' && <HandoverWorkspace currentUser={currentUser} onHome={() => setView({ type: 'home' })} />}
     {view.type === 'all' && <AllTeamsView onHome={() => setView({ type: 'home' })} onTeam={openTeam} onPerson={openPerson} />}
     {view.type === 'team' && selectedTeam && <TeamView team={selectedTeam} onHome={() => setView({ type: 'home' })} onAll={() => setView({ type: 'all' })} onTeam={openTeam} onPerson={(id) => openPerson(selectedTeam.id, id)} onTask={showTask} />}
     {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => setView({ type: 'home' })} onAll={() => setView({ type: 'all' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} onCalendarCheck={() => setCalendarCheckId(selectedPerson.id)} />}
     {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} onPerson={(teamId, personId) => { openPerson(teamId, personId); setSearchOpen(false); }} />}
+    {taskCreateOpen && <CreateTaskModal teams={teams} initialPersonId={selectedPerson?.id} onCreate={createTask} onClose={() => setTaskCreateOpen(false)} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal allTeams={allTeams} removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onCreateTeam={createTeam} onCreateMember={createMember} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}
     {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onClose={() => setTaskFocus(null)} />}

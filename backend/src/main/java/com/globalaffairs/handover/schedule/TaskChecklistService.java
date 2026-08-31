@@ -18,11 +18,17 @@ public class TaskChecklistService {
     static final List<String> ITEM_KEYS = List.of("result-report", "schedule-share", "contact-refresh");
 
     private final TaskChecklistItemRepository repository;
+    private final CustomTaskRepository customTasks;
     private final OrgData orgData;
     private final Clock clock;
 
-    public TaskChecklistService(TaskChecklistItemRepository repository, OrgData orgData, Clock clock) {
+    public TaskChecklistService(
+            TaskChecklistItemRepository repository,
+            CustomTaskRepository customTasks,
+            OrgData orgData,
+            Clock clock) {
         this.repository = repository;
+        this.customTasks = customTasks;
         this.orgData = orgData;
         this.clock = clock;
     }
@@ -66,7 +72,8 @@ public class TaskChecklistService {
         if (personId == null || personId.isBlank() || taskTitle == null || taskTitle.isBlank()) {
             throw ApiException.badRequest("유효한 업무 정보가 필요합니다.");
         }
-        if (orgData.findSeedTask(personId, taskTitle).isEmpty()) {
+        if (orgData.findSeedTask(personId, taskTitle).isEmpty()
+                && customTasks.findByPersonIdAndTitle(personId, taskTitle).isEmpty()) {
             throw ApiException.badRequest("존재하지 않는 업무입니다.");
         }
         return OrgData.taskKey(personId, taskTitle);

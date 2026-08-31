@@ -154,6 +154,25 @@ small, .caption { font-size: var(--t-caption); }
 
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
 
+.add-task-button {
+  height: 42px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: var(--r-sm);
+  background: var(--blue-700);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 6px 16px rgba(14, 54, 88, 0.16);
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.add-task-button span { font-size: 18px; font-weight: 400; line-height: 1; }
+.add-task-button b { font-weight: var(--fw-semi); white-space: nowrap; }
+.add-task-button:hover { background: var(--blue-800); transform: translateY(-1px); }
+.add-task-button:active { transform: translateY(0); }
+
 .search-button {
   width: 276px;
   height: 42px;
@@ -3412,6 +3431,34 @@ small, .caption { font-size: var(--t-caption); }
 }
 .section-bar .ui-h2 { margin: 0; }
 
+/* New calendar task ------------------------------------------------------- */
+.create-task-form { display: grid; gap: var(--s-5); }
+.create-task-period {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  gap: var(--s-3);
+}
+.create-task-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.create-task-preview > span { width: 8px; height: 38px; flex: 0 0 auto; border-radius: var(--r-pill); }
+.create-task-preview b { display: block; color: var(--ink); font-size: var(--t-sm); font-weight: var(--fw-semi); }
+.create-task-preview small { display: block; margin-top: 3px; color: var(--ink-3); font-size: var(--t-caption); }
+
+@media (max-width: 560px) {
+  .create-task-period { grid-template-columns: 1fr 1fr; }
+  .create-task-period > .ui-field:last-child { grid-column: 1 / -1; }
+  .topbar-actions { gap: 6px; }
+  .brand > span:last-child { display: none; }
+  .icon-button.search-compact { display: none; }
+}
+
 /* ==========================================================================
    Calendar — the two readings
    --------------------------------------------------------------------------
@@ -3604,6 +3651,8 @@ small, .caption { font-size: var(--t-caption); }
   .section-bar { margin: var(--s-10) 0 var(--s-4); flex-wrap: wrap; }
   .handover-link b { display: none; }
   .handover-link { width: var(--h-sm); padding: 0; justify-content: center; }
+  .add-task-button { width: var(--h-sm); padding: 0; }
+  .add-task-button b { display: none; }
   .profile-copy, .chevron { display: none; }
 }
 
@@ -4945,8 +4994,13 @@ small, .caption { font-size: var(--t-caption); }
   .workspace-page .ui-container { padding-inline: var(--s-4); }
 }
 
+@media (max-width: 560px) {
+  .brand > span:last-child { display: none; }
+  .topbar-actions { gap: 6px; }
+  .icon-button.search-compact { display: none; }
+}
+
 @media (max-width: 480px) {
-  .brand strong { font-size: 14px; }
   .hero-title br { display: block; }
   .hero-preview > header em { display: none; }
   .hero-figures dd { font-size: 24px; }

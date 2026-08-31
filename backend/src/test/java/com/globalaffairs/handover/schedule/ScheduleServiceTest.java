@@ -35,6 +35,9 @@ class ScheduleServiceTest {
     @Mock
     private TaskRescheduleRepository repository;
 
+    @Mock
+    private CustomTaskRepository customTasks;
+
     private ScheduleService service;
 
     @BeforeEach
@@ -42,7 +45,11 @@ class ScheduleServiceTest {
         ObjectMapper objectMapper = new ObjectMapper();
         OrgData orgData = new OrgData(objectMapper);
         service = new ScheduleService(
-                repository, orgData, new AcademicCalendar(objectMapper, orgData), Clock.fixed(NOW, ZoneOffset.UTC));
+                repository,
+                customTasks,
+                orgData,
+                new AcademicCalendar(objectMapper, orgData),
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test

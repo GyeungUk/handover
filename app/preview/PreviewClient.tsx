@@ -24,6 +24,7 @@ import type {
 import type { ScheduleChange } from '../workspace/types';
 
 type PreviewMember = Person & { teamId: string };
+type PreviewTask = Person['tasks'][number] & { personId: string };
 type ChecklistKey = 'result-report' | 'schedule-share' | 'contact-refresh';
 type ChecklistItem = {
   key: ChecklistKey;
@@ -75,6 +76,7 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
   const removedMemberIds: string[] = [];
   const customTeams: Team[] = [];
   const customMembers: PreviewMember[] = [];
+  const customTasks: PreviewTask[] = [];
   const scheduleChanges: ScheduleChange[] = [];
   const checklists = new Map<string, ChecklistItem[]>();
   let handoverDocument: HandoverDocument | null = null;
@@ -154,13 +156,33 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       return json({ team }, 201);
     }
 
+    if (url.pathname === '/api/tasks' && method === 'GET') return json({ tasks: customTasks });
+    if (url.pathname === '/api/tasks' && method === 'POST') {
+      const personId = String(body.personId ?? '').trim();
+      const title = String(body.title ?? '').trim();
+      const start = Number(body.start);
+      const duration = Number(body.duration);
+      const note = String(body.note ?? '').trim();
+      const personExists = Boolean(seedPerson(personId)) || customMembers.some((member) => member.id === personId);
+      const duplicate = seedPerson(personId)?.person.tasks.some((task) => task.title === title)
+        || customTasks.some((task) => task.personId === personId && task.title === title);
+      if (!personExists || !title || !Number.isInteger(start) || !Number.isInteger(duration) || start < 0 || duration < 1 || start + duration > WEEKS_IN_YEAR) {
+        return json({ error: '담당자, 일정명과 기간을 확인해 주세요.' }, 400);
+      }
+      if (duplicate) return json({ error: '같은 담당자에게 동일한 이름의 일정이 이미 있습니다.' }, 409);
+      const task: PreviewTask = { personId, title, start, duration, note };
+      customTasks.push(task);
+      return json({ task }, 201);
+    }
+
     if (url.pathname === '/api/schedules' && method === 'GET') return json({ changes: scheduleChanges });
     if (url.pathname === '/api/schedules' && method === 'POST') {
       const personId = String(body.personId ?? '');
       const taskTitle = String(body.taskTitle ?? '');
       const toStart = Number(body.toStart);
       const reason = String(body.reason ?? '').trim();
-      const found = seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle);
+      const found = seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle)
+        ?? customTasks.find((task) => task.personId === personId && task.title === taskTitle);
       if (!found || !Number.isInteger(toStart) || !reason) return json({ error: '유효한 일정과 변경 사유가 필요합니다.' }, 400);
       const key = taskKey(personId, taskTitle);
       const previous = [...scheduleChanges].reverse().find((change) => change.taskKey === key);

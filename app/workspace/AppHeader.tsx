@@ -18,6 +18,7 @@ export default function AppHeader({
   onHome,
   onHandover,
   onSearch,
+  onAddTask,
   onManageMembers,
   compact = false,
   handoverActive = false,
@@ -26,6 +27,7 @@ export default function AppHeader({
   onHome: () => void;
   onHandover: () => void;
   onSearch: () => void;
+  onAddTask: () => void;
   onManageMembers: () => void;
   compact?: boolean;
   handoverActive?: boolean;
@@ -119,6 +121,11 @@ export default function AppHeader({
             <span aria-hidden="true">⌕</span>
             <span>업무 또는 담당자 검색</span>
             <kbd>⌘K</kbd>
+          </button>
+
+          <button className="add-task-button" type="button" onClick={onAddTask}>
+            <span aria-hidden="true">＋</span>
+            <b>일정 추가</b>
           </button>
 
           <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover}>

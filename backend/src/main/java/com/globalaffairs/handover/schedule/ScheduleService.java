@@ -17,13 +17,19 @@ public class ScheduleService {
     private static final int REASON_MAX = 300;
 
     private final TaskRescheduleRepository repository;
+    private final CustomTaskRepository customTasks;
     private final OrgData orgData;
     private final AcademicCalendar calendar;
     private final Clock clock;
 
     public ScheduleService(
-            TaskRescheduleRepository repository, OrgData orgData, AcademicCalendar calendar, Clock clock) {
+            TaskRescheduleRepository repository,
+            CustomTaskRepository customTasks,
+            OrgData orgData,
+            AcademicCalendar calendar,
+            Clock clock) {
         this.repository = repository;
+        this.customTasks = customTasks;
         this.orgData = orgData;
         this.calendar = calendar;
         this.clock = clock;
@@ -46,6 +52,7 @@ public class ScheduleService {
         }
 
         Task seedTask = orgData.findSeedTask(personId, taskTitle)
+                .or(() -> customTasks.findByPersonIdAndTitle(personId, taskTitle).map(CustomTask::asTask))
                 .orElseThrow(() -> ApiException.badRequest("존재하지 않는 업무입니다."));
 
         if (toStart == null || toStart < 0 || toStart + seedTask.duration() > OrgData.WEEKS_IN_YEAR) {
