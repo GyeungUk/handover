@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.globalaffairs.handover.auth.AppRole;
+import com.globalaffairs.handover.auth.AuthenticatedUser;
 import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
@@ -125,6 +127,36 @@ class MemberServiceTest {
     void refusesToCreateAMemberInAnUnknownTeam() {
         assertThatThrownBy(() -> service.createMember("missing", "홍길동", "국제협력"))
                 .hasMessage("담당자가 소속될 파트를 선택해 주세요.");
+        verify(customMembers, never()).save(any());
+    }
+
+    @Test
+    void addsTheSignedInAccountToItsChosenCalendarPart() {
+        when(customMembers.findByEmployeeId("20260001")).thenReturn(Optional.empty());
+        when(customMembers.save(any(CustomMember.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MemberService.MemberView member = service.saveOnboarding(
+                new AuthenticatedUser("20260001", "홍길동", "hong@example.ac.kr", AppRole.MEMBER),
+                "management", " 체류·비자 관리 ");
+
+        assertThat(member.id()).isEqualTo("account-20260001");
+        assertThat(member.teamId()).isEqualTo("management");
+        assertThat(member.name()).isEqualTo("홍길동");
+        assertThat(member.role()).isEqualTo("체류·비자 관리");
+    }
+
+    @Test
+    void updatesTheExistingCalendarMemberWhenOnboardingIsRepeated() {
+        CustomMember existing = new CustomMember(
+                "account-20260001", "management", "홍길동", "기존 업무", "홍", "20260001", NOW.minusSeconds(60));
+        when(customMembers.findByEmployeeId("20260001")).thenReturn(Optional.of(existing));
+
+        service.saveOnboarding(
+                new AuthenticatedUser("20260001", "홍길동", "hong@example.ac.kr", AppRole.MEMBER),
+                "exchange", " 협정·의전 ");
+
+        assertThat(existing.getTeamId()).isEqualTo("exchange");
+        assertThat(existing.getRole()).isEqualTo("협정·의전");
         verify(customMembers, never()).save(any());
     }
 }

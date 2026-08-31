@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,6 +14,7 @@ import com.globalaffairs.handover.account.AccountRepository;
 import com.globalaffairs.handover.account.AccountSessionRepository;
 import com.globalaffairs.handover.account.PasswordResetMailer;
 import com.globalaffairs.handover.account.PasswordResetTokenRepository;
+import com.globalaffairs.handover.member.CustomMemberRepository;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,11 +88,15 @@ class AuthApiIntegrationTest {
     @Autowired
     private PasswordResetTokenRepository resetTokens;
 
+    @Autowired
+    private CustomMemberRepository customMembers;
+
     @MockitoBean
     private PasswordResetMailer mailer;
 
     @BeforeEach
     void clean() {
+        customMembers.deleteAll();
         resetTokens.deleteAll();
         sessions.deleteAll();
         accounts.deleteAll();
@@ -139,6 +145,40 @@ class AuthApiIntegrationTest {
                 .asString()
                 .doesNotContain(PASSWORD)
                 .startsWith("pbkdf2-sha256$");
+    }
+
+    @Test
+    void deletesAnAccountOnlyAfterReauthenticationAndRemovesItsOnboardingMember() throws Exception {
+        Cookie session = register();
+        mockMvc.perform(post("/api/members/onboarding")
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"teamId\":\"management\",\"role\":\"비자 업무\"}"))
+                .andExpect(status().isCreated());
+        assertThat(customMembers.findByEmployeeId(MEMBER_ID)).isPresent();
+
+        mockMvc.perform(delete("/api/auth/account")
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"wrong-password\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("비밀번호가 올바르지 않습니다."));
+        assertThat(accounts.findById(MEMBER_ID)).isPresent();
+
+        mockMvc.perform(delete("/api/auth/account")
+                        .cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"%s\"}".formatted(PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(cookie().maxAge("handover_session", 0));
+
+        assertThat(accounts.findById(MEMBER_ID)).isEmpty();
+        assertThat(customMembers.findByEmployeeId(MEMBER_ID)).isEmpty();
+        assertThat(sessions.findAll()).isEmpty();
+        mockMvc.perform(get("/api/auth/session").cookie(session))
+                .andExpect(jsonPath("$.user").doesNotExist());
+        mockMvc.perform(lookup(MEMBER_ID))
+                .andExpect(jsonPath("$.status").value("register"));
     }
 
     @Test

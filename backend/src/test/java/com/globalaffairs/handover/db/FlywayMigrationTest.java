@@ -74,7 +74,8 @@ class FlywayMigrationTest {
 
         assertThat(applied).containsExactly(
                 "V1__removed_members.sql", "V2__task_reschedules.sql", "V3__handover_documents.sql",
-                "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql");
+                "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql",
+                "V7__account_onboarding_members.sql");
     }
 
     @Test
@@ -106,6 +107,9 @@ class FlywayMigrationTest {
                 .contains(
                         "task_checklist_items_pkey",
                         "task_checklist_items_task_item_key");
+        assertThat(jdbc.queryForList(
+                        "SELECT indexname FROM pg_indexes WHERE tablename = 'custom_members'", String.class))
+                .contains("custom_members_pkey", "custom_members_employee_id_key");
     }
 
     @Test

@@ -26,17 +26,27 @@ public class CustomMember {
     @Column(nullable = false)
     private String initial;
 
+    /** The account that created this row during first-sign-in onboarding, when there is one. */
+    @Column(name = "employee_id")
+    private String employeeId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     protected CustomMember() {}
 
     public CustomMember(String id, String teamId, String name, String role, String initial, Instant createdAt) {
+        this(id, teamId, name, role, initial, null, createdAt);
+    }
+
+    public CustomMember(
+            String id, String teamId, String name, String role, String initial, String employeeId, Instant createdAt) {
         this.id = id;
         this.teamId = teamId;
         this.name = name;
         this.role = role;
         this.initial = initial;
+        this.employeeId = employeeId;
         this.createdAt = createdAt;
     }
 
@@ -45,5 +55,13 @@ public class CustomMember {
     public String getName() { return name; }
     public String getRole() { return role; }
     public String getInitial() { return initial; }
+    public String getEmployeeId() { return employeeId; }
     public Instant getCreatedAt() { return createdAt; }
+
+    public void updateOnboarding(String teamId, String name, String role, String initial) {
+        this.teamId = teamId;
+        this.name = name;
+        this.role = role;
+        this.initial = initial;
+    }
 }

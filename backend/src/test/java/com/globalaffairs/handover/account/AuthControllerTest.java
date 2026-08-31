@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -143,6 +144,27 @@ class AuthControllerTest {
                 .andExpect(cookie().maxAge("handover_session", 0));
 
         verify(accounts).signOut(WebSliceConfig.sessionTokenFor(WebSliceConfig.MEMBER_ID));
+    }
+
+    @Test
+    void deletesTheSignedInAccountWithItsPasswordAndExpiresTheCookie() throws Exception {
+        mockMvc.perform(as(delete("/api/auth/account"), WebSliceConfig.MEMBER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"handover-2026\"}"))
+                .andExpect(status().isOk())
+                .andExpect(cookie().maxAge("handover_session", 0))
+                .andExpect(jsonPath("$.ok").value(true));
+
+        verify(accounts).deleteAccount(WebSliceConfig.MEMBER_ID, "handover-2026");
+    }
+
+    @Test
+    void refusesAccountDeletionWithoutASession() throws Exception {
+        mockMvc.perform(delete("/api/auth/account")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"handover-2026\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("로그인이 필요합니다."));
     }
 
     @Test

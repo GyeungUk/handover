@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Button, Card, Field, H2, Input, Stack, Text } from '../ui';
+import { Button, Card, Field, H2, Input, Select, Stack, Text } from '../ui';
 import LoginShell from './LoginShell';
 import { DeliveryNote, EmployeeIdField, Feedback, IdentifiedAs, NewPasswordFields, PasswordField, digitsOnly } from './fields';
+import { seedTeams, type Team } from '../org-data';
 
 /**
  * The sign-in screen: employee number and password, with password creation and
@@ -20,6 +21,7 @@ type Step =
   | { kind: 'signin' }
   | { kind: 'identify' }
   | { kind: 'register'; employeeId: string }
+  | { kind: 'onboarding' }
   | { kind: 'reset'; employeeId: string; maskedEmail: string }
   | { kind: 'reset-code'; employeeId: string; maskedEmail: string };
 
@@ -67,6 +69,10 @@ export default function LoginClient({ configured }: { configured: boolean }) {
   const [email, setEmail] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [code, setCode] = useState('');
+  const [onboardingTeams, setOnboardingTeams] = useState<Team[]>(seedTeams);
+  const [belongsToOffice, setBelongsToOffice] = useState<'yes' | 'no'>('yes');
+  const [teamId, setTeamId] = useState(seedTeams[0]?.id ?? '');
+  const [workRole, setWorkRole] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -117,6 +123,25 @@ export default function LoginClient({ configured }: { configured: boolean }) {
   const createPassword = submit(async () => {
     if (password !== confirmation) throw new Error('비밀번호가 서로 다릅니다.');
     await post('/api/auth/register', { employeeId, name, email, password });
+    /* The account is now signed in, so this request can include administrator-created parts too.
+       If it cannot be loaded, the four standard international-office parts are still available. */
+    await fetch('/api/teams')
+      .then(async (response) => response.ok ? response.json() as Promise<{ customTeams?: Team[] }> : null)
+      .then((data) => {
+        if (!data) return;
+        const teams = [...seedTeams, ...(data.customTeams ?? [])];
+        setOnboardingTeams(teams);
+        setTeamId((current) => current || teams[0]?.id || '');
+      })
+      .catch(() => {});
+    go({ kind: 'onboarding' });
+  });
+
+  const finishOnboarding = submit(async () => {
+    if (belongsToOffice === 'yes') {
+      if (!teamId) throw new Error('소속 파트를 선택해 주세요.');
+      await post('/api/members/onboarding', { teamId, role: workRole });
+    }
     enterWorkspace();
   });
 
@@ -199,6 +224,35 @@ export default function LoginClient({ configured }: { configured: boolean }) {
             비밀번호 만들고 시작하기
           </Button>
           <SecondaryActions>{backToSignIn}</SecondaryActions>
+        </StepCard>
+      )}
+
+      {step.kind === 'onboarding' && (
+        <StepCard title="소속 설정" lead="캘린더에 담당자로 표시할 소속과 업무를 알려 주세요." onSubmit={finishOnboarding}>
+          <div className="auth-identified"><span>등록한 이름</span><b>{name}</b></div>
+          <fieldset className="onboarding-choice">
+            <legend>국제처 구성원이신가요?</legend>
+            <label className={belongsToOffice === 'yes' ? 'selected' : ''}>
+              <input type="radio" name="office-member" value="yes" checked={belongsToOffice === 'yes'} onChange={() => setBelongsToOffice('yes')} />
+              <span><b>네, 국제처 구성원입니다</b><small>소속 파트의 연간 캘린더에 담당자로 추가됩니다.</small></span>
+            </label>
+            <label className={belongsToOffice === 'no' ? 'selected' : ''}>
+              <input type="radio" name="office-member" value="no" checked={belongsToOffice === 'no'} onChange={() => setBelongsToOffice('no')} />
+              <span><b>아니요</b><small>계정만 만들고, 캘린더에는 표시하지 않습니다.</small></span>
+            </label>
+          </fieldset>
+          {belongsToOffice === 'yes' && <>
+            <Field label="소속 파트" required>
+              {(id) => <Select id={id} value={teamId} onChange={(event) => setTeamId(event.target.value)} required autoFocus>{onboardingTeams.map((team) => <option value={team.id} key={team.id}>{team.title}</option>)}</Select>}
+            </Field>
+            <Field label="담당 업무" required hint="예: 체류·비자 관리, 국제협정 · 의전">
+              {(id) => <Input id={id} value={workRole} onChange={(event) => setWorkRole(event.target.value)} maxLength={80} placeholder="담당하는 업무를 입력해 주세요" required />}
+            </Field>
+          </>}
+          <Feedback notice={notice} error={error} />
+          <Button variant="primary" size="lg" type="submit" block busy={busy} busyLabel="저장하는 중" glyph="→">
+            {belongsToOffice === 'yes' ? '캘린더에 추가하고 시작하기' : '시작하기'}
+          </Button>
         </StepCard>
       )}
 

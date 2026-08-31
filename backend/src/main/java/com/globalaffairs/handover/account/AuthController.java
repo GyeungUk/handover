@@ -2,11 +2,13 @@ package com.globalaffairs.handover.account;
 
 import com.globalaffairs.handover.account.AccountService.LookupResult;
 import com.globalaffairs.handover.account.AccountService.SignedIn;
+import com.globalaffairs.handover.account.AuthRequests.DeleteAccountRequest;
 import com.globalaffairs.handover.account.AuthRequests.EmployeeIdRequest;
 import com.globalaffairs.handover.account.AuthRequests.LoginRequest;
 import com.globalaffairs.handover.account.AuthRequests.RegisterRequest;
 import com.globalaffairs.handover.account.AuthRequests.ResetRequest;
 import com.globalaffairs.handover.auth.AppRole;
+import com.globalaffairs.handover.auth.Access;
 import com.globalaffairs.handover.auth.AuthenticatedUser;
 import com.globalaffairs.handover.auth.SessionAuthFilter;
 import com.globalaffairs.handover.web.ApiException;
@@ -17,6 +19,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -94,6 +97,17 @@ public class AuthController {
     public ResponseEntity<Map<String, Boolean>> logout(
             @CookieValue(name = SessionAuthFilter.SESSION_COOKIE, required = false) String token) {
         accounts.signOut(token);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, SessionCookies.clear(sessionProperties).toString())
+                .body(Map.of("ok", true));
+    }
+
+    /** Deletes the current account and expires this browser's now-invalid session cookie. */
+    @DeleteMapping("/account")
+    public ResponseEntity<Map<String, Boolean>> deleteAccount(
+            AuthenticatedUser user, @RequestBody(required = false) DeleteAccountRequest body) {
+        AuthenticatedUser account = Access.requireRegistered(user);
+        accounts.deleteAccount(account.employeeId(), body == null ? null : body.password());
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, SessionCookies.clear(sessionProperties).toString())
                 .body(Map.of("ok", true));

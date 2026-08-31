@@ -10,6 +10,9 @@ public final class AuthRequests {
 
     public record LoginRequest(String employeeId, String password) {}
 
+    /** Re-authentication before permanently deleting the signed-in account. */
+    public record DeleteAccountRequest(String password) {}
+
     /** Creating a password for the first time; the email is where a future reset would be sent. */
     public record RegisterRequest(String employeeId, String name, String email, String password) {}
 

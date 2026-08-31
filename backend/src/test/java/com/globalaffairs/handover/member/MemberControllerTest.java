@@ -2,6 +2,7 @@ package com.globalaffairs.handover.member;
 
 import static com.globalaffairs.handover.support.Identity.as;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -87,6 +88,20 @@ class MemberControllerTest {
                 .andExpect(jsonPath("$.member.id").value("person-new"))
                 .andExpect(jsonPath("$.member.teamId").value("management"))
                 .andExpect(jsonPath("$.member.tasks").isEmpty());
+    }
+
+    @Test
+    void addsTheRegisteredAccountToTheCalendarFromOnboarding() throws Exception {
+        when(service.saveOnboarding(any(), eq("management"), eq("체류·비자 관리")))
+                .thenReturn(new MemberService.MemberView(
+                        "account-20260001", "management", "홍길동", "체류·비자 관리", "홍", List.of()));
+
+        mockMvc.perform(as(post("/api/members/onboarding"), WebSliceConfig.MEMBER_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"teamId\":\"management\",\"role\":\"체류·비자 관리\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.member.id").value("account-20260001"))
+                .andExpect(jsonPath("$.member.role").value("체류·비자 관리"));
     }
 
     @Test

@@ -29,6 +29,9 @@ public class MemberController {
 
     public record CreateMemberRequest(String teamId, String name, String role) {}
 
+    /** The self-service profile submitted immediately after a first account registration. */
+    public record OnboardingRequest(String teamId, String role) {}
+
     public record MemberSnapshot(List<String> removedMemberIds, List<MemberService.MemberView> customMembers) {}
 
     @GetMapping
@@ -43,6 +46,14 @@ public class MemberController {
         Access.requireAdmin(user);
         CreateMemberRequest body = request == null ? new CreateMemberRequest(null, null, null) : request;
         return ResponseEntity.status(201).body(Map.of("member", service.createMember(body.teamId(), body.name(), body.role())));
+    }
+
+    @PostMapping("/onboarding")
+    public ResponseEntity<Map<String, MemberService.MemberView>> onboarding(
+            AuthenticatedUser user, @RequestBody(required = false) OnboardingRequest request) {
+        AuthenticatedUser account = Access.requireRegistered(user);
+        OnboardingRequest body = request == null ? new OnboardingRequest(null, null) : request;
+        return ResponseEntity.status(201).body(Map.of("member", service.saveOnboarding(account, body.teamId(), body.role())));
     }
 
     @PostMapping

@@ -3,6 +3,8 @@ package com.globalaffairs.handover.account;
 import com.globalaffairs.handover.auth.AccountIdentity;
 import com.globalaffairs.handover.auth.AppRole;
 import com.globalaffairs.handover.auth.AuthzService;
+import com.globalaffairs.handover.member.CustomMemberRepository;
+import com.globalaffairs.handover.member.RemovedMemberRepository;
 import com.globalaffairs.handover.web.ApiException;
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -51,6 +53,8 @@ public class AccountService implements com.globalaffairs.handover.auth.SessionAu
     private final AccountRepository accounts;
     private final AccountSessionRepository sessions;
     private final PasswordResetTokenRepository resetTokens;
+    private final CustomMemberRepository customMembers;
+    private final RemovedMemberRepository removedMembers;
     private final AuthzService authz;
     private final PasswordHasher hasher;
     private final PasswordResetMailer mailer;
@@ -64,6 +68,8 @@ public class AccountService implements com.globalaffairs.handover.auth.SessionAu
             AccountRepository accounts,
             AccountSessionRepository sessions,
             PasswordResetTokenRepository resetTokens,
+            CustomMemberRepository customMembers,
+            RemovedMemberRepository removedMembers,
             AuthzService authz,
             PasswordHasher hasher,
             PasswordResetMailer mailer,
@@ -74,6 +80,8 @@ public class AccountService implements com.globalaffairs.handover.auth.SessionAu
         this.accounts = accounts;
         this.sessions = sessions;
         this.resetTokens = resetTokens;
+        this.customMembers = customMembers;
+        this.removedMembers = removedMembers;
         this.authz = authz;
         this.hasher = hasher;
         this.mailer = mailer;
@@ -179,6 +187,37 @@ public class AccountService implements com.globalaffairs.handover.auth.SessionAu
             return;
         }
         sessions.deleteById(PasswordHasher.tokenDigest(token));
+    }
+
+    /**
+     * Permanently removes the signed-in account after checking its current password.
+     *
+     * <p>Sessions and reset codes disappear through the account foreign keys. A calendar member the
+     * person created during onboarding is private account data too, so it is removed explicitly;
+     * shared handover documents and audit trails remain as organisation records.
+     */
+    @Transactional
+    public void deleteAccount(String employeeId, String rawPassword) {
+        Account account = accounts.findById(employeeId)
+                .orElseThrow(() -> ApiException.unauthorized("로그인이 필요합니다."));
+        String password = rawPassword == null ? "" : rawPassword;
+
+        if (throttle.isBlocked(employeeId)) {
+            throw ApiException.tooManyRequests("비밀번호를 여러 번 잘못 입력했습니다. 잠시 후 다시 시도해 주세요.");
+        }
+        if (!hasher.matches(password, account.getPasswordHash())) {
+            throttle.recordFailure(employeeId);
+            throw ApiException.unauthorized("비밀번호가 올바르지 않습니다.");
+        }
+
+        customMembers.findByEmployeeId(employeeId).ifPresent(member -> {
+            removedMembers.deleteById(member.getId());
+            customMembers.delete(member);
+        });
+        accounts.delete(account);
+        accounts.flush();
+        throttle.clear(employeeId);
+        log.info("account deleted for employee {}", employeeId);
     }
 
     /* ------------------------------------------------------------------ *

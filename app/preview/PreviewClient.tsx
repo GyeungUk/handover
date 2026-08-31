@@ -103,6 +103,7 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
     const body = method === 'GET' || method === 'HEAD' ? {} : await requestBody(input, init);
 
     if (url.pathname === '/api/auth/logout') return json({ ok: true });
+    if (url.pathname === '/api/auth/account' && method === 'DELETE') return json({ ok: true });
 
     if (url.pathname === '/api/members' && method === 'GET') {
       return json({ removedMemberIds, customMembers });

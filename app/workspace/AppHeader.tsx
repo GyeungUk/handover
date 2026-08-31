@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Avatar } from '../ui';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Avatar, Button, Field, Input, Modal } from '../ui';
 import { useScrolled } from './context';
 import type { SessionUser } from '../WorkspaceClient';
 
@@ -32,6 +32,10 @@ export default function AppHeader({
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const stuck = useScrolled();
   const displayName = user.displayName || user.email.split('@')[0];
@@ -60,66 +64,161 @@ export default function AppHeader({
     }
   }
 
+  function openDeleteAccount() {
+    setProfileOpen(false);
+    setDeletePassword('');
+    setDeleteError('');
+    setDeleteOpen(true);
+  }
+
+  function closeDeleteAccount() {
+    if (!deleting) setDeleteOpen(false);
+  }
+
+  async function deleteAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!deletePassword || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const response = await fetch('/api/auth/account', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: deletePassword }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        setDeleteError(data?.error ?? '회원탈퇴를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        return;
+      }
+      window.location.replace('/');
+    } catch {
+      setDeleteError('서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
-    <header className={`topbar ${compact ? 'compact' : ''} ${stuck ? 'is-stuck' : ''}`}>
-      <button className="brand" type="button" onClick={onHome} aria-label="국제처 업무·인수인계 홈">
-        <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-        <span>
-          <strong>국제처 업무·인수인계</strong>
-          <small>SOONGSIL GLOBAL AFFAIRS</small>
-        </span>
-      </button>
-
-      <div className="topbar-actions">
-        <button className="icon-button search-compact" type="button" onClick={onSearch} aria-label="통합 검색">
-          <span aria-hidden="true">⌕</span>
+    <>
+      <header className={`topbar ${compact ? 'compact' : ''} ${stuck ? 'is-stuck' : ''}`}>
+        <button className="brand" type="button" onClick={onHome} aria-label="국제처 업무·인수인계 홈">
+          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
+          <span>
+            <strong>국제처 업무·인수인계</strong>
+            <small>SOONGSIL GLOBAL AFFAIRS</small>
+          </span>
         </button>
 
-        <button className="search-button" type="button" onClick={onSearch}>
-          <span aria-hidden="true">⌕</span>
-          <span>업무 또는 담당자 검색</span>
-          <kbd>⌘K</kbd>
-        </button>
-
-        <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover}>
-          <span aria-hidden="true">↗</span>
-          <b>인수인계 작성</b>
-        </button>
-
-        <div className="profile-wrap" ref={wrap}>
-          <button
-            className="profile"
-            type="button"
-            onClick={() => setProfileOpen((open) => !open)}
-            aria-expanded={profileOpen}
-            aria-haspopup="menu"
-          >
-            <Avatar size="sm" round>{displayName.slice(0, 1).toUpperCase()}</Avatar>
-            <span className="profile-copy">
-              <strong>{displayName}</strong>
-              <small>국제처 · {user.role === 'admin' ? '관리자' : '파트원'}</small>
-            </span>
-            <span className="chevron" aria-hidden="true">⌄</span>
+        <div className="topbar-actions">
+          <button className="icon-button search-compact" type="button" onClick={onSearch} aria-label="통합 검색">
+            <span aria-hidden="true">⌕</span>
           </button>
 
-          {profileOpen && (
-            <div className="profile-menu" role="menu">
-              <div className="profile-menu-who">
-                <b>{displayName}</b>
-                <span>직번 {user.employeeId}</span>
-              </div>
-              {user.role === 'admin' && (
-                <button type="button" role="menuitem" onClick={() => { setProfileOpen(false); onManageMembers(); }}>
-                  <span aria-hidden="true">⚙</span> 파트 · 담당자 관리
+          <button className="search-button" type="button" onClick={onSearch}>
+            <span aria-hidden="true">⌕</span>
+            <span>업무 또는 담당자 검색</span>
+            <kbd>⌘K</kbd>
+          </button>
+
+          <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover}>
+            <span aria-hidden="true">↗</span>
+            <b>인수인계 작성</b>
+          </button>
+
+          <div className="profile-wrap" ref={wrap}>
+            <button
+              className="profile"
+              type="button"
+              onClick={() => setProfileOpen((open) => !open)}
+              aria-expanded={profileOpen}
+              aria-haspopup="menu"
+            >
+              <Avatar size="sm" round>{displayName.slice(0, 1).toUpperCase()}</Avatar>
+              <span className="profile-copy">
+                <strong>{displayName}</strong>
+                <small>국제처 · {user.role === 'admin' ? '관리자' : '파트원'}</small>
+              </span>
+              <span className="chevron" aria-hidden="true">⌄</span>
+            </button>
+
+            {profileOpen && (
+              <div className="profile-menu" role="menu">
+                <div className="profile-menu-who">
+                  <b>{displayName}</b>
+                  <span>직번 {user.employeeId}</span>
+                </div>
+                {user.role === 'admin' && (
+                  <button type="button" role="menuitem" onClick={() => { setProfileOpen(false); onManageMembers(); }}>
+                    <span aria-hidden="true">⚙</span> 파트 · 담당자 관리
+                  </button>
+                )}
+                <button className="logout-button" type="button" role="menuitem" onClick={signOut} disabled={signingOut}>
+                  {signingOut ? '로그아웃 중…' : '로그아웃'}
                 </button>
-              )}
-              <button className="logout-button" type="button" role="menuitem" onClick={signOut} disabled={signingOut}>
-                {signingOut ? '로그아웃 중…' : '로그아웃'}
-              </button>
-            </div>
-          )}
+                <button className="delete-account-button" type="button" role="menuitem" onClick={openDeleteAccount}>
+                  회원탈퇴
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {deleteOpen && (
+        <Modal
+          onClose={closeDeleteAccount}
+          title="회원탈퇴"
+          description="계정을 영구적으로 삭제합니다."
+          width="sm"
+          dismissable={!deleting}
+          stackFooter
+          footer={<>
+            <span className="spacer" />
+            <Button variant="ghost" onClick={closeDeleteAccount} disabled={deleting}>취소</Button>
+            <Button
+              variant="danger"
+              type="submit"
+              form="delete-account-form"
+              busy={deleting}
+              busyLabel="탈퇴 중…"
+              disabled={!deletePassword}
+            >
+              영구적으로 탈퇴
+            </Button>
+          </>}
+        >
+          <form id="delete-account-form" className="account-delete-form" onSubmit={deleteAccount}>
+            <div className="account-delete-warning">
+              <span aria-hidden="true">!</span>
+              <div>
+                <b>이 작업은 되돌릴 수 없습니다.</b>
+                <p>계정, 모든 로그인 세션, 비밀번호 재설정 정보가 삭제됩니다. 처음 등록할 때 만든 담당자 프로필도 함께 삭제됩니다.</p>
+              </div>
+            </div>
+            <Field
+              label="현재 비밀번호"
+              required
+              hint="본인 확인을 위해 현재 비밀번호를 입력해 주세요."
+              error={deleteError}
+            >
+              {(id) => (
+                <Input
+                  id={id}
+                  type="password"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(event) => { setDeletePassword(event.target.value); setDeleteError(''); }}
+                  disabled={deleting}
+                  aria-describedby={`${id}-${deleteError ? 'error' : 'hint'}`}
+                  aria-invalid={Boolean(deleteError)}
+                  placeholder="비밀번호 입력"
+                />
+              )}
+            </Field>
+          </form>
+        </Modal>
+      )}
+    </>
   );
 }

@@ -1,6 +1,7 @@
 package com.globalaffairs.handover.member;
 
 import com.globalaffairs.handover.domain.OrgData;
+import com.globalaffairs.handover.auth.AuthenticatedUser;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
@@ -128,6 +129,32 @@ public class MemberService {
         String initial = new String(name.codePoints().limit(1).toArray(), 0, 1);
         CustomMember saved = customMembers.save(new CustomMember(
                 "person-" + UUID.randomUUID(), teamId, name, role, initial, Instant.now(clock)));
+        return new MemberView(
+                saved.getId(), saved.getTeamId(), saved.getName(), saved.getRole(), saved.getInitial(), List.of());
+    }
+
+    /**
+     * Adds the newly registered account to the shared calendar. The account id is stored separately
+     * from the public person id, so repeating this step updates the person's part and responsibility
+     * instead of creating a second row in the calendar.
+     */
+    @Transactional
+    public MemberView saveOnboarding(AuthenticatedUser user, String rawTeamId, String rawRole) {
+        String teamId = rawTeamId == null ? "" : rawTeamId.trim();
+        if (!isKnownTeam(teamId)) {
+            throw ApiException.badRequest("소속 파트를 선택해 주세요.");
+        }
+        String role = required(rawRole, 80, "담당 업무는 80자 이내로 입력해 주세요.");
+        String name = required(user.displayName(), 40, "계정 이름이 필요합니다.");
+        String initial = new String(name.codePoints().limit(1).toArray(), 0, 1);
+
+        CustomMember saved = customMembers.findByEmployeeId(user.employeeId())
+                .map(existing -> {
+                    existing.updateOnboarding(teamId, name, role, initial);
+                    return existing;
+                })
+                .orElseGet(() -> customMembers.save(new CustomMember(
+                        "account-" + user.employeeId(), teamId, name, role, initial, user.employeeId(), Instant.now(clock))));
         return new MemberView(
                 saved.getId(), saved.getTeamId(), saved.getName(), saved.getRole(), saved.getInitial(), List.of());
     }
