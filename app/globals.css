@@ -1641,6 +1641,26 @@ small, .caption { font-size: var(--t-caption); }
 .task-dates-empty { color: var(--ink-3); font-size: var(--t-caption); }
 .task-dates-form { display: grid; gap: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line-soft); }
 .task-dates-actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
+.task-dates-add { display: flex; gap: var(--s-1); }
+/* What the paste was understood as, line by line. A line that will not be saved stays on screen
+   with its reason rather than disappearing, so a mistyped year is visible before the save. */
+.task-dates-readback { display: grid; gap: 3px; max-height: 168px; overflow-y: auto; }
+.task-dates-readback li {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: var(--soft);
+  font-size: var(--t-caption);
+}
+.task-dates-readback b { color: var(--team); font-weight: var(--fw-bold); white-space: nowrap; }
+.task-dates-readback span { min-width: 0; overflow: hidden; color: var(--ink-3); text-overflow: ellipsis; white-space: nowrap; }
+.task-dates-readback li.is-skipped { background: #fbf1f0; }
+.task-dates-readback li.is-skipped b { color: var(--ink-4); text-decoration: line-through; }
+.task-dates-readback li.is-skipped span { color: #a33a36; }
+.task-dates-skipped { margin-right: auto; color: var(--ink-4); font-size: var(--t-caption); }
 .task-dates-error { color: #a33a36; font-size: var(--t-caption); }
 
 .task-checklist.is-open { background: var(--surface); }

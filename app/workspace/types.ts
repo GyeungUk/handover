@@ -24,5 +24,12 @@ export type DeleteTask = (personId: string, taskTitle: string) => Promise<void>;
 /** Recording a confirmed day inside a task's period. Rejects by throwing. */
 export type AddTaskDate = (personId: string, taskTitle: string, date: string, label: string) => Promise<void>;
 
+/** Recording a pasted block of days in one write — all of them or none. Rejects by throwing. */
+export type AddTaskDates = (
+  personId: string,
+  taskTitle: string,
+  dates: { date: string; label: string }[],
+) => Promise<void>;
+
 /** Removing one confirmed day. Rejects by throwing. */
 export type RemoveTaskDate = (id: number) => Promise<void>;

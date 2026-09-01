@@ -8,8 +8,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,34 +73,63 @@ public class TaskDateService {
         return repository.findByTaskKeyOrderByDateAscIdAsc(key).stream().map(TaskDateResponse::from).toList();
     }
 
+    /** One day and what happens on it, as the request carries it before anything is validated. */
+    public record NewDate(String date, String label) {}
+
     @Transactional
     public TaskDateResponse add(String personId, String taskTitle, String date, String label, String createdBy) {
+        return addAll(personId, taskTitle, List.of(new NewDate(date, label)), createdBy).get(0);
+    }
+
+    /**
+     * Records several days in one go, for a year's worth pasted out of a circular or a spreadsheet.
+     *
+     * <p>All or nothing: a batch that is half accepted leaves the caller unable to say what it now
+     * holds without re-reading it, and the workspace filters the rows it knows are bad before
+     * sending them anyway. The message names the day at fault rather than the row number, because
+     * what came back from a paste is a list of days and not a list of lines.
+     */
+    @Transactional
+    public List<TaskDateResponse> addAll(
+            String personId, String taskTitle, List<NewDate> entries, String createdBy) {
         TaskRef task = requireTask(personId, taskTitle);
-        LocalDate confirmed = parseDate(date);
+        if (entries == null || entries.isEmpty()) {
+            throw ApiException.badRequest("확정 일자를 선택해 주세요.");
+        }
 
         LocalDate opensOn = calendar.weekSlotStart(task.start());
         LocalDate closesOn = calendar.weekSlotEnd(task.start() + task.duration() - 1);
-        if (confirmed.isBefore(opensOn) || confirmed.isAfter(closesOn)) {
-            throw ApiException.badRequest(
-                    "확정 일자는 업무 기간(%s ~ %s) 안에서 선택해 주세요.".formatted(opensOn, closesOn));
-        }
-
-        String trimmedLabel = label == null ? "" : label.trim();
-        if (trimmedLabel.length() > LABEL_MAX) {
-            throw ApiException.badRequest("일자 설명은 %d자 이내로 입력해 주세요.".formatted(LABEL_MAX));
-        }
-        if (repository.existsByTaskKeyAndDate(task.key(), confirmed)) {
-            throw ApiException.conflict("이미 등록된 일자입니다.");
-        }
-        if (repository.countByTaskKey(task.key()) >= PER_TASK_MAX) {
+        long room = PER_TASK_MAX - repository.countByTaskKey(task.key());
+        if (entries.size() > room) {
             throw ApiException.badRequest("한 업무에 등록할 수 있는 일자는 %d개까지입니다.".formatted(PER_TASK_MAX));
         }
 
+        Set<LocalDate> seen = new LinkedHashSet<>();
+        List<TaskDate> pending = new ArrayList<>();
+        Instant now = Instant.now(clock);
+        /* Naming the day answers "which one" in a batch; after a date picker it only repeats it. */
+        boolean batch = entries.size() > 1;
+        for (NewDate entry : entries) {
+            LocalDate confirmed = parseDate(entry.date());
+            if (confirmed.isBefore(opensOn) || confirmed.isAfter(closesOn)) {
+                throw ApiException.badRequest(
+                        "확정 일자는 업무 기간(%s ~ %s) 안에서 선택해 주세요.".formatted(opensOn, closesOn));
+            }
+            String trimmedLabel = entry.label() == null ? "" : entry.label().trim();
+            if (trimmedLabel.length() > LABEL_MAX) {
+                throw ApiException.badRequest("일자 설명은 %d자 이내로 입력해 주세요.".formatted(LABEL_MAX));
+            }
+            if (!seen.add(confirmed) || repository.existsByTaskKeyAndDate(task.key(), confirmed)) {
+                throw ApiException.conflict(batch
+                        ? "이미 등록된 일자입니다: %s".formatted(confirmed)
+                        : "이미 등록된 일자입니다.");
+            }
+            pending.add(new TaskDate(
+                    task.key(), personId.trim(), taskTitle.trim(), confirmed, trimmedLabel, createdBy, now));
+        }
+
         try {
-            TaskDate saved = repository.saveAndFlush(new TaskDate(
-                    task.key(), personId.trim(), taskTitle.trim(), confirmed, trimmedLabel, createdBy,
-                    Instant.now(clock)));
-            return TaskDateResponse.from(saved);
+            return repository.saveAllAndFlush(pending).stream().map(TaskDateResponse::from).toList();
         } catch (DataIntegrityViolationException raced) {
             throw ApiException.conflict("이미 등록된 일자입니다.");
         }

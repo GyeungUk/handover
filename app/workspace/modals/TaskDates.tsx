@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import { Button, Field, Input } from '../../ui';
+import { useMemo, useState, type FormEvent } from 'react';
+import { Button, Field, Input, Textarea } from '../../ui';
 import { taskDateLabel, taskDateRange, weekLabel, type Person, type Task } from '../../org-data';
-import type { AddTaskDate, RemoveTaskDate } from '../types';
+import type { AddTaskDate, AddTaskDates, RemoveTaskDate } from '../types';
+import { parsePastedDates } from './task-date-paste';
 
 /**
  * The confirmed days inside a task's period.
@@ -15,28 +16,46 @@ import type { AddTaskDate, RemoveTaskDate } from '../types';
  *
  * The date input is bounded by the period, so the only days offered are days the month grid can
  * actually mark. The server enforces the same window; this only saves a round trip to hear it.
+ *
+ * A year's dates rarely arrive one at a time, though — they arrive as a circular or a spreadsheet
+ * column — so the same section takes a pasted block, reads every line back before anything is
+ * saved, and sends only the lines that are days the task can hold.
  */
 export default function TaskDates({
   task,
   person,
   onAdd,
+  onAddMany,
   onRemove,
 }: {
   task: Task;
   person: Person;
   onAdd: AddTaskDate;
+  onAddMany: AddTaskDates;
   onRemove: RemoveTaskDate;
 }) {
-  const dates = task.dates ?? [];
-  const range = taskDateRange(task);
+  /* Both feed the read-back memo below, so they have to be stable across renders themselves. */
+  const dates = useMemo(() => task.dates ?? [], [task.dates]);
+  const range = useMemo(() => taskDateRange(task), [task]);
   const [adding, setAdding] = useState(false);
+  const [pasting, setPasting] = useState(false);
   const [date, setDate] = useState('');
   const [label, setLabel] = useState('');
+  const [pasted, setPasted] = useState('');
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const [error, setError] = useState('');
 
+  /* Re-read on every keystroke: the paste is judged in front of the user, not on submit. */
+  const readBack = useMemo(
+    () => (pasted.trim() ? parsePastedDates(pasted, range, dates.map((entry) => entry.date)) : []),
+    [pasted, range, dates],
+  );
+  const usable = readBack.filter((line) => !line.error);
+  const skipped = readBack.length - usable.length;
+
   const close = () => { setAdding(false); setDate(''); setLabel(''); setError(''); };
+  const closePaste = () => { setPasting(false); setPasted(''); setError(''); };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -46,6 +65,21 @@ export default function TaskDates({
     try {
       await onAdd(person.id, task.title, date, label.trim());
       close();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '확정 일자를 저장하지 못했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitPasted(event: FormEvent) {
+    event.preventDefault();
+    if (!usable.length || saving) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onAddMany(person.id, task.title, usable.map(({ date: day, label: text }) => ({ date: day, label: text })));
+      closePaste();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '확정 일자를 저장하지 못했습니다.');
     } finally {
@@ -73,10 +107,15 @@ export default function TaskDates({
           <h3>확정 일자</h3>
           <small>{weekLabel(task.start)} ~ {weekLabel(task.start + task.duration - 1)} 안에서 선택합니다.</small>
         </div>
-        {!adding && (
-          <Button size="sm" variant="outline" onClick={() => { setAdding(true); setError(''); }}>
-            일자 추가
-          </Button>
+        {!adding && !pasting && (
+          <div className="task-dates-add">
+            <Button size="sm" variant="outline" onClick={() => { setAdding(true); setError(''); }}>
+              일자 추가
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setPasting(true); setError(''); }}>
+              여러 건 붙여넣기
+            </Button>
+          </div>
         )}
       </header>
 
@@ -99,7 +138,7 @@ export default function TaskDates({
           ))}
         </ul>
       ) : (
-        !adding && (
+        !adding && !pasting && (
           <p className="task-dates-empty">
             출입국 단체접수일이나 접수 마감일처럼 날짜가 정해진 일이 있다면 기록해 두세요.
           </p>
@@ -143,7 +182,47 @@ export default function TaskDates({
         </form>
       )}
 
-      {!adding && error && <p className="task-dates-error" role="alert">{error}</p>}
+      {pasting && (
+        <form className="task-dates-form" onSubmit={submitPasted}>
+          <Field
+            label="여러 건 붙여넣기"
+            hint="한 줄에 하나씩. 2026-08-20 단체접수 1차 · 8/20 단체접수 1차 · 8월 20일 모두 읽습니다."
+            error={error || undefined}
+          >
+            {(id) => (
+              <Textarea
+                id={id}
+                value={pasted}
+                onChange={(event) => { setPasted(event.target.value); setError(''); }}
+                rows={6}
+                placeholder={`2026-08-20\t단체접수 1차\n9/3\t단체접수 2차`}
+                disabled={saving}
+              />
+            )}
+          </Field>
+
+          {readBack.length > 0 && (
+            <ul className="task-dates-readback">
+              {readBack.map((line, index) => (
+                <li className={line.error ? 'is-skipped' : ''} key={`${line.source}-${index}`}>
+                  <b>{line.date ? taskDateLabel(line.date) : line.source}</b>
+                  <span>{line.error || line.label || '일정 진행'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="task-dates-actions">
+            {skipped > 0 && <small className="task-dates-skipped">{skipped}건은 제외하고 저장합니다.</small>}
+            <Button variant="ghost" size="sm" onClick={closePaste} disabled={saving}>취소</Button>
+            <Button variant="primary" size="sm" type="submit" busy={saving} busyLabel="저장하는 중" disabled={!usable.length}>
+              {usable.length ? `${usable.length}건 저장` : '저장'}
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {!adding && !pasting && error && <p className="task-dates-error" role="alert">{error}</p>}
     </section>
   );
 }

@@ -517,6 +517,20 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     setTaskDates((current) => [...current, saved]);
   };
 
+  /* One write for the whole paste: a batch that half lands leaves the calendar in a state nobody
+     asked for and no way to tell from here which half it was. */
+  const addTaskDates = async (personId: string, taskTitle: string, dates: { date: string; label: string }[]) => {
+    const response = await fetch('/api/task-dates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personId, taskTitle, dates }),
+    });
+    const payload = await response.json().catch(() => null) as { dates?: StoredTaskDate[]; error?: string } | null;
+    if (!response.ok || !payload?.dates) throw new Error(payload?.error ?? '확정 일자를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    const saved = payload.dates;
+    setTaskDates((current) => [...current, ...saved]);
+  };
+
   const removeTaskDate = async (id: number) => {
     const response = await fetch('/api/task-dates', {
       method: 'DELETE',
@@ -590,6 +604,6 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     {taskCreateOpen && <CreateTaskModal teams={teams} initialPersonId={selectedPerson?.id} onCreate={createTask} onClose={() => setTaskCreateOpen(false)} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal allTeams={allTeams} removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onCreateTeam={createTeam} onCreateMember={createMember} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}
-    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onAddDate={addTaskDate} onRemoveDate={removeTaskDate} onClose={() => setTaskFocus(null)} />}
+    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onAddDate={addTaskDate} onAddDates={addTaskDates} onRemoveDate={removeTaskDate} onClose={() => setTaskFocus(null)} />}
   </div></TodayContext.Provider></OrgContext.Provider>;
 }

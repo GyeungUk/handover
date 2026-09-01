@@ -25,7 +25,16 @@ public class TaskDateController {
         this.service = service;
     }
 
-    public record AddRequest(String personId, String taskTitle, String date, String label) {}
+    /**
+     * One day, or a batch of them. {@code dates} is what a paste out of a circular arrives as; the
+     * single pair is what the one-at-a-time form sends. Whichever is present decides the reply.
+     */
+    public record AddRequest(
+            String personId,
+            String taskTitle,
+            String date,
+            String label,
+            List<TaskDateService.NewDate> dates) {}
 
     public record DeleteRequest(Long id) {}
 
@@ -43,10 +52,15 @@ public class TaskDateController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, TaskDateResponse>> add(
+    public ResponseEntity<Map<String, Object>> add(
             AuthenticatedUser user, @RequestBody(required = false) AddRequest request) {
         AuthenticatedUser current = Access.requireRegistered(user);
-        AddRequest body = request == null ? new AddRequest(null, null, null, null) : request;
+        AddRequest body = request == null ? new AddRequest(null, null, null, null, null) : request;
+        if (body.dates() != null && !body.dates().isEmpty()) {
+            List<TaskDateResponse> saved = service.addAll(
+                    body.personId(), body.taskTitle(), body.dates(), current.displayName());
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("dates", saved));
+        }
         TaskDateResponse saved =
                 service.add(body.personId(), body.taskTitle(), body.date(), body.label(), current.displayName());
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("date", saved));

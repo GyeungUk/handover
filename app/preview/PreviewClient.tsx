@@ -251,30 +251,38 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
     if (url.pathname === '/api/task-dates' && method === 'POST') {
       const personId = String(body.personId ?? '').trim();
       const taskTitle = String(body.taskTitle ?? '').trim();
-      const date = String(body.date ?? '').trim();
-      const label = String(body.label ?? '').trim();
+      const batch = Array.isArray(body.dates) ? body.dates as { date?: unknown; label?: unknown }[] : null;
+      const entries = (batch?.length ? batch : [{ date: body.date, label: body.label }])
+        .map((entry) => ({ date: String(entry.date ?? '').trim(), label: String(entry.label ?? '').trim() }));
       const task = currentTask(personId, taskTitle);
       if (!task) return json({ error: '존재하지 않는 업무입니다.' }, 400);
       const range = taskDateRange(task);
-      if (!date) return json({ error: '확정 일자를 선택해 주세요.' }, 400);
-      if (date < range.from || date > range.to) {
-        return json({ error: `확정 일자는 업무 기간(${range.from} ~ ${range.to}) 안에서 선택해 주세요.` }, 400);
-      }
       const key = taskKey(personId, taskTitle);
-      if (taskDates.some((entry) => entry.taskKey === key && entry.date === date)) {
-        return json({ error: '이미 등록된 일자입니다.' }, 409);
+      const seen = new Set<string>();
+      for (const entry of entries) {
+        if (!entry.date) return json({ error: '확정 일자를 선택해 주세요.' }, 400);
+        if (entry.date < range.from || entry.date > range.to) {
+          return json({ error: `확정 일자는 업무 기간(${range.from} ~ ${range.to}) 안에서 선택해 주세요.` }, 400);
+        }
+        if (seen.has(entry.date) || taskDates.some((saved) => saved.taskKey === key && saved.date === entry.date)) {
+          return json({ error: entries.length > 1 ? `이미 등록된 일자입니다: ${entry.date}` : '이미 등록된 일자입니다.' }, 409);
+        }
+        seen.add(entry.date);
       }
-      const saved: PreviewTaskDate = {
-        id: nextTaskDateId,
-        taskKey: key,
-        date,
-        label,
-        createdBy: user.displayName,
-        createdAt: new Date().toISOString(),
-      };
-      nextTaskDateId += 1;
-      taskDates.push(saved);
-      return json({ date: saved }, 201);
+      const saved = entries.map((entry) => {
+        const stored: PreviewTaskDate = {
+          id: nextTaskDateId,
+          taskKey: key,
+          date: entry.date,
+          label: entry.label,
+          createdBy: user.displayName,
+          createdAt: new Date().toISOString(),
+        };
+        nextTaskDateId += 1;
+        taskDates.push(stored);
+        return stored;
+      });
+      return json(batch?.length ? { dates: saved } : { date: saved[0] }, 201);
     }
     if (url.pathname === '/api/task-dates' && method === 'DELETE') {
       const index = taskDates.findIndex((entry) => entry.id === Number(body.id));

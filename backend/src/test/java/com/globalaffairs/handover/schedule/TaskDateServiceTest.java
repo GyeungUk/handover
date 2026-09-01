@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,7 @@ class TaskDateServiceTest {
 
     @Test
     void recordsADateInsideTheTasksSpanAndTrimsItsLabel() {
-        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAllAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         TaskDateResponse saved = service.add(
                 "minseo", "비자 연장 집중기간", "2026-08-20", "  단체접수 1차  ", "김지현");
@@ -70,7 +71,7 @@ class TaskDateServiceTest {
 
     @Test
     void acceptsTheLastDayOfTheSpanBecauseTheMonthsFinalSlotRunsToTheMonthsEnd() {
-        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAllAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         assertThat(service.add("minseo", "비자 연장 집중기간", "2026-09-14", "", "김지현").date())
                 .isEqualTo("2026-09-14");
@@ -81,7 +82,7 @@ class TaskDateServiceTest {
         assertThatThrownBy(() -> service.add("minseo", "비자 연장 집중기간", "2026-09-15", "", "김지현"))
                 .isInstanceOf(ApiException.class)
                 .hasMessage("확정 일자는 업무 기간(2026-08-08 ~ 2026-09-14) 안에서 선택해 주세요.");
-        verify(repository, never()).saveAndFlush(any());
+        verify(repository, never()).saveAllAndFlush(any());
     }
 
     @Test
@@ -91,7 +92,7 @@ class TaskDateServiceTest {
                 .thenReturn(Optional.of(new TaskReschedule(
                         "minseo::비자 연장 집중기간", "minseo", "비자 연장 집중기간", 21, 25, "순연",
                         "박민서", Instant.parse("2026-08-29T01:02:03Z"))));
-        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAllAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         assertThat(service.add("minseo", "비자 연장 집중기간", "2026-10-01", "", "김지현").date())
                 .isEqualTo("2026-10-01");
@@ -124,6 +125,66 @@ class TaskDateServiceTest {
         assertThatThrownBy(() -> service.add("minseo", "비자 연장 집중기간", "2026-08-20", "", "김지현"))
                 .isInstanceOf(ApiException.class)
                 .hasMessage("존재하지 않는 업무입니다.");
+    }
+
+    @Test
+    void recordsAWholePastedBatchInOneWrite() {
+        when(repository.saveAllAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<TaskDateResponse> saved = service.addAll(
+                "minseo",
+                "비자 연장 집중기간",
+                List.of(
+                        new TaskDateService.NewDate("2026-08-20", "단체접수 1차"),
+                        new TaskDateService.NewDate("2026-09-03", "단체접수 2차")),
+                "김지현");
+
+        assertThat(saved).extracting(TaskDateResponse::date).containsExactly("2026-08-20", "2026-09-03");
+        assertThat(saved).extracting(TaskDateResponse::label).containsExactly("단체접수 1차", "단체접수 2차");
+    }
+
+    @Test
+    void savesNoneOfABatchWhenOneOfItsDaysIsOutsideTheSpan() {
+        assertThatThrownBy(() -> service.addAll(
+                        "minseo",
+                        "비자 연장 집중기간",
+                        List.of(
+                                new TaskDateService.NewDate("2026-08-20", "단체접수 1차"),
+                                new TaskDateService.NewDate("2026-09-20", "늦은 날짜")),
+                        "김지현"))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("확정 일자는 업무 기간(2026-08-08 ~ 2026-09-14) 안에서 선택해 주세요.");
+        verify(repository, never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    void refusesABatchThatRepeatsADayInsideItself() {
+        assertThatThrownBy(() -> service.addAll(
+                        "minseo",
+                        "비자 연장 집중기간",
+                        List.of(
+                                new TaskDateService.NewDate("2026-08-20", "1차"),
+                                new TaskDateService.NewDate("2026-08-20", "다시 1차")),
+                        "김지현"))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("이미 등록된 일자입니다: 2026-08-20");
+        verify(repository, never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    void refusesABatchThatWouldOverfillTheTask() {
+        when(repository.countByTaskKey("minseo::비자 연장 집중기간")).thenReturn(10L);
+
+        assertThatThrownBy(() -> service.addAll(
+                        "minseo",
+                        "비자 연장 집중기간",
+                        List.of(
+                                new TaskDateService.NewDate("2026-08-10", ""),
+                                new TaskDateService.NewDate("2026-08-11", ""),
+                                new TaskDateService.NewDate("2026-08-12", "")),
+                        "김지현"))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("한 업무에 등록할 수 있는 일자는 12개까지입니다.");
     }
 
     @Test

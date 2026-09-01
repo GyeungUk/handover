@@ -3,7 +3,7 @@
 import { useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Modal, Text } from '../../ui';
 import { WEEKS_IN_YEAR, months, weekLabel, type Person, type Task, type Team } from '../../org-data';
-import type { AddTaskDate, DeleteTask, RemoveTaskDate, Reschedule, ScheduleChange } from '../types';
+import type { AddTaskDate, AddTaskDates, DeleteTask, RemoveTaskDate, Reschedule, ScheduleChange } from '../types';
 import { RescheduleForm, RescheduleHistory } from './RescheduleForm';
 import TaskChecklist from './TaskChecklist';
 import TaskDates from './TaskDates';
@@ -60,6 +60,7 @@ export default function TaskModal({
   onReschedule,
   onDelete,
   onAddDate,
+  onAddDates,
   onRemoveDate,
   onClose,
 }: {
@@ -70,6 +71,7 @@ export default function TaskModal({
   onReschedule: Reschedule;
   onDelete: DeleteTask;
   onAddDate: AddTaskDate;
+  onAddDates: AddTaskDates;
   onRemoveDate: RemoveTaskDate;
   onClose: () => void;
 }) {
@@ -146,7 +148,7 @@ export default function TaskModal({
           <Text>{task.note}</Text>
         </section>
 
-        <TaskDates task={task} person={person} onAdd={onAddDate} onRemove={onRemoveDate} />
+        <TaskDates task={task} person={person} onAdd={onAddDate} onAddMany={onAddDates} onRemove={onRemoveDate} />
 
         <TaskChecklist key={`${person.id}::${task.title}`} task={task} person={person} />
 
