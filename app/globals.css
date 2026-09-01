@@ -1289,6 +1289,9 @@ small, .caption { font-size: var(--t-caption); }
    height, in the part's colour, so five days read as one thing crossing the
    week — a pale block the size of the chip reads as five empty fields. */
 .date-task.is-open { border-radius: 6px 2px 2px 6px; }
+/* A run that began in an earlier month. The chip repeats so a month reads on
+   its own, and the flat left edge says the task did not start here. */
+.date-task.is-continuation { border-left-style: dashed; border-radius: 2px; }
 .date-run {
   display: block;
   height: 8px;

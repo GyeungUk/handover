@@ -21,6 +21,9 @@ import { useToday } from '../context';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+/** The year is four week slots to a month, so a slot is a quarter of one. */
+const SLOTS_PER_MONTH = 4;
+
 /** The academic month index (0 = 3월) resolved to a real calendar month. */
 export function getCalendarDays(monthIndex: number) {
   const year = monthIndex < 10 ? ACADEMIC_YEAR_START : ACADEMIC_YEAR_START + 1;
@@ -30,7 +33,34 @@ export function getCalendarDays(monthIndex: number) {
   return {
     year,
     realMonth,
+    days: count,
     cells: [...Array(first).fill(null), ...Array.from({ length: count }, (_, i) => i + 1)] as (number | null)[],
+  };
+}
+
+/**
+ * The days of `monthIndex` a task runs across.
+ *
+ * The model holds week slots rather than dates, four to a month, so slot n is
+ * days 7n+1 to 7n+7 and the month's last slot keeps whatever days are left
+ * over. This used to be worked out partly from the task's position in the
+ * month's list, which meant adding one task moved the days of the others, and
+ * the length was the duration in weeks drawn as that many days — a two-week
+ * task covered two. Both are a function of the task and the month alone now.
+ */
+function taskRun(task: Task, monthIndex: number, daysInMonth: number) {
+  const monthStart = monthIndex * SLOTS_PER_MONTH;
+  const monthEnd = monthStart + SLOTS_PER_MONTH - 1;
+  const endSlot = task.start + task.duration - 1;
+  const first = Math.max(task.start, monthStart) - monthStart;
+  const last = Math.min(endSlot, monthEnd) - monthStart;
+  return {
+    from: first * 7 + 1,
+    to: last === SLOTS_PER_MONTH - 1 ? daysInMonth : (last + 1) * 7,
+    /** false while the task carries on past this month, which the run's end shows */
+    endsHere: endSlot <= monthEnd,
+    /** the chip repeats in every month the task runs through, from the 1st */
+    continued: task.start < monthStart,
   };
 }
 
@@ -48,9 +78,11 @@ function MonthNav({ monthIndex, setMonthIndex }: { monthIndex: number; setMonthI
 /**
  * The date grid.
  *
- * The day a task appears on is derived, not stored — the model holds weeks, not
- * dates — so `taskDays` spreads a month's tasks across it deterministically
- * rather than piling them all onto the 1st.
+ * The day a task appears on is derived, not stored — the model holds week
+ * slots, not dates — so `taskRun` resolves each task's slots to the days they
+ * stand for. A run is a chip on its first day and a spine on the rest, which is
+ * how five days read as one task crossing the week rather than as the same chip
+ * printed five times.
  */
 function MonthGrid({
   monthIndex,
@@ -67,11 +99,7 @@ function MonthGrid({
 }) {
   const today = useToday();
   const calendar = getCalendarDays(monthIndex);
-  const taskDays = monthTasks.map((task, index) => ({
-    task,
-    day: Math.min(27, 3 + (task.start % 4) * 7 + index * 2),
-    span: Math.max(2, Math.min(5, task.duration)),
-  }));
+  const runs = monthTasks.map((task) => ({ task, ...taskRun(task, monthIndex, calendar.days) }));
 
   return (
     <div className="monthly-calendar">
@@ -90,22 +118,28 @@ function MonthGrid({
               {day && (
                 <>
                   <span className="date-number">{day}</span>
-                  {taskDays
-                    .filter((entry) => day >= entry.day && day < entry.day + entry.span)
-                    .map((entry) => (
+                  {runs
+                    .filter((run) => day >= run.from && day <= run.to)
+                    .map((run) => (day === run.from ? (
                       <button
-                        key={entry.task.title}
+                        key={run.task.title}
                         type="button"
-                        className={`date-task ${entry.span > 1 ? 'is-open' : ''} ${entry.day !== day ? 'is-continuation' : ''}`}
+                        className={`date-task ${run.to > run.from ? 'is-open' : ''} ${run.continued ? 'is-continuation' : ''}`}
                         style={{ background: team.soft, color: team.color } as CSSProperties}
-                        onClick={() => onTask(entry.task, person)}
+                        onClick={() => onTask(run.task, person)}
                       >
-                        <b>{entry.task.title}</b>
-                        <small>{entry.task.note}</small>
-                        <em>{entry.task.duration}주</em>
-                        {entry.day === day && entry.task.movedFrom !== undefined && <mark>일정 변경</mark>}
+                        <b>{run.task.title}</b>
+                        <small>{run.task.note}</small>
+                        <em>{run.task.duration}주</em>
+                        {run.task.movedFrom !== undefined && <mark>일정 변경</mark>}
                       </button>
-                    ))}
+                    ) : (
+                      <span
+                        key={run.task.title}
+                        className={`date-run ${day === run.to && run.endsHere ? 'is-end' : ''}`}
+                        aria-hidden="true"
+                      />
+                    )))}
                 </>
               )}
             </div>
@@ -130,7 +164,9 @@ export default function MonthCalendar({
   onTask: (task: Task, person: Person) => void;
 }) {
   const monthTasks = person.tasks.filter(
-    (task) => Math.floor(task.start / 4) <= monthIndex && Math.floor((task.start + task.duration - 1) / 4) >= monthIndex,
+    (task) =>
+      Math.floor(task.start / SLOTS_PER_MONTH) <= monthIndex
+      && Math.floor((task.start + task.duration - 1) / SLOTS_PER_MONTH) >= monthIndex,
   );
 
   return (
