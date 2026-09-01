@@ -3,9 +3,10 @@
 import { useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Modal, Text } from '../../ui';
 import { WEEKS_IN_YEAR, months, weekLabel, type Person, type Task, type Team } from '../../org-data';
-import type { DeleteTask, Reschedule, ScheduleChange } from '../types';
+import type { AddTaskDate, DeleteTask, RemoveTaskDate, Reschedule, ScheduleChange } from '../types';
 import { RescheduleForm, RescheduleHistory } from './RescheduleForm';
 import TaskChecklist from './TaskChecklist';
+import TaskDates from './TaskDates';
 
 /**
  * Where this task sits in the year.
@@ -58,6 +59,8 @@ export default function TaskModal({
   history,
   onReschedule,
   onDelete,
+  onAddDate,
+  onRemoveDate,
   onClose,
 }: {
   task: Task;
@@ -66,6 +69,8 @@ export default function TaskModal({
   history: ScheduleChange[];
   onReschedule: Reschedule;
   onDelete: DeleteTask;
+  onAddDate: AddTaskDate;
+  onRemoveDate: RemoveTaskDate;
   onClose: () => void;
 }) {
   const startMonth = months[Math.floor(task.start / 4)];
@@ -100,7 +105,7 @@ export default function TaskModal({
         <>
           <p className="task-delete-confirm" role="alert">
             <b>{deleteError || `${task.title} 일정을 삭제할까요?`}</b>
-            <span>일정 변경 기록과 준비사항 체크도 함께 지워지며, 되돌릴 수 없습니다.</span>
+            <span>일정 변경 기록과 확정 일자, 준비사항 체크도 함께 지워지며, 되돌릴 수 없습니다.</span>
           </p>
           <Button variant="ghost" onClick={() => { setConfirmingDelete(false); setDeleteError(''); }} disabled={deleting}>
             취소
@@ -140,6 +145,8 @@ export default function TaskModal({
           <h3>업무 개요</h3>
           <Text>{task.note}</Text>
         </section>
+
+        <TaskDates task={task} person={person} onAdd={onAddDate} onRemove={onRemoveDate} />
 
         <TaskChecklist key={`${person.id}::${task.title}`} task={task} person={person} />
 

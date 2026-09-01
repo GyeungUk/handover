@@ -38,6 +38,9 @@ class CustomTaskServiceTest {
     private TaskChecklistItemRepository checklistItems;
 
     @Mock
+    private TaskDateRepository taskDates;
+
+    @Mock
     private CustomMemberRepository customMembers;
 
     private CustomTaskService service;
@@ -49,6 +52,7 @@ class CustomTaskServiceTest {
                 removedTasks,
                 reschedules,
                 checklistItems,
+                taskDates,
                 customMembers,
                 new OrgData(new ObjectMapper()),
                 Clock.fixed(Instant.parse("2026-08-31T03:00:00Z"), ZoneOffset.UTC));
@@ -107,6 +111,7 @@ class CustomTaskServiceTest {
         verify(removedTasks, never()).save(any());
         verify(reschedules).deleteByTaskKey("minseo::출입국 정기 점검");
         verify(checklistItems).deleteByTaskKey("minseo::출입국 정기 점검");
+        verify(taskDates).deleteByTaskKey("minseo::출입국 정기 점검");
     }
 
     @Test
@@ -121,6 +126,7 @@ class CustomTaskServiceTest {
         assertThat(saved.getValue().getTaskKey()).isEqualTo("minseo::비자 연장 집중기간");
         assertThat(saved.getValue().getRemovedBy()).isEqualTo("김지현");
         verify(reschedules).deleteByTaskKey("minseo::비자 연장 집중기간");
+        verify(taskDates).deleteByTaskKey("minseo::비자 연장 집중기간");
     }
 
     @Test

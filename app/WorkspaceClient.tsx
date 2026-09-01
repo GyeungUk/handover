@@ -13,7 +13,7 @@ import SearchModal from './workspace/modals/SearchModal';
 import CreateTaskModal, { type CreatedTask } from './workspace/modals/CreateTaskModal';
 import { OrgContext, TodayContext, useResolvedToday } from './workspace/context';
 import type { ScheduleChange } from './workspace/types';
-import { seedTeams, taskKey, type Person, type Task, type Team } from './org-data';
+import { seedTeams, taskKey, type Person, type Task, type TaskDate, type Team } from './org-data';
 import { academicYears, alignmentActionLabels, baseAcademicYear, shiftLabel, type AlignmentItem, type AlignmentResponse } from './academic-calendar';
 
 type View = { type: 'home' } | { type: 'handover' } | { type: 'all' } | { type: 'team'; teamId: string } | { type: 'person'; teamId: string; personId: string };
@@ -24,6 +24,8 @@ type View = { type: 'home' } | { type: 'handover' } | { type: 'all' } | { type: 
 export type SessionUser = { employeeId: string; displayName: string; email: string; role: 'admin' | 'member' };
 type CustomMember = Person & { teamId: string };
 type CustomTask = Task & { personId: string };
+/** A confirmed date as the server files it: the task key travels with it, the task does not. */
+type StoredTaskDate = TaskDate & { taskKey: string };
 type OrgResponse = { removedMemberIds: string[]; customMembers?: CustomMember[] };
 
 /**
@@ -318,6 +320,8 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   const [customTasks, setCustomTasks] = useState<CustomTask[]>([]);
   /* `personId::title` of every seed-plan task somebody deleted; seed tasks are code, not rows. */
   const [removedTaskKeys, setRemovedTaskKeys] = useState<string[]>([]);
+  /* every confirmed day, flat; `datesByTask` files them under the task that owns them */
+  const [taskDates, setTaskDates] = useState<StoredTaskDate[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersLoadError, setMembersLoadError] = useState('');
   const [taskFocus, setTaskFocus] = useState<{ personId: string; taskTitle: string } | null>(null);
@@ -334,6 +338,16 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     }
     return map;
   }, [scheduleChanges]);
+
+  /* the confirmed days of each task, oldest first — the order the server lists them in */
+  const datesByTask = useMemo(() => {
+    const map = new Map<string, TaskDate[]>();
+    for (const { taskKey: key, ...date } of taskDates) {
+      const dates = map.get(key);
+      if (dates) dates.push(date); else map.set(key, [date]);
+    }
+    return map;
+  }, [taskDates]);
 
   const allTeams = useMemo(() => {
     /* Deleting only ever hides a *seed* task — one authored here is deleted as a row and is simply
@@ -373,12 +387,15 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     people: team.people.filter((person) => !removedMemberIds.includes(person.id)).map((person) => ({
       ...person,
       tasks: person.tasks.map((task) => {
-        const trail = historyByTask.get(taskKey(person.id, task.title));
+        const key = taskKey(person.id, task.title);
+        const trail = historyByTask.get(key);
         const current = trail?.[trail.length - 1]?.toStart;
-        return current === undefined || current === task.start ? task : { ...task, start: current, movedFrom: task.start };
+        const moved = current === undefined || current === task.start ? task : { ...task, start: current, movedFrom: task.start };
+        const dates = datesByTask.get(key);
+        return dates ? { ...moved, dates } : moved;
       }).sort((first, second) => first.start - second.start),
     })),
-  })), [allTeams, removedMemberIds, historyByTask]);
+  })), [allTeams, removedMemberIds, historyByTask, datesByTask]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -459,6 +476,7 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     if (authored) setCustomTasks((current) => current.filter((task) => !(task.personId === personId && task.title === taskTitle)));
     else setRemovedTaskKeys((current) => current.includes(key) ? current : [...current, key]);
     setScheduleChanges((current) => current.filter((change) => change.taskKey !== key));
+    setTaskDates((current) => current.filter((date) => date.taskKey !== key));
     setTaskFocus(null);
   };
 
@@ -473,6 +491,44 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
       .catch(() => {});
     return () => controller.abort();
   }, []);
+
+  /* The whole set at once: the month grid marks days across every task on screen, not one task. */
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/task-dates', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('확정 일자를 불러오지 못했습니다.');
+        return response.json() as Promise<{ dates: StoredTaskDate[] }>;
+      })
+      .then((data) => setTaskDates(data.dates ?? []))
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  const addTaskDate = async (personId: string, taskTitle: string, date: string, label: string) => {
+    const response = await fetch('/api/task-dates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personId, taskTitle, date, label }),
+    });
+    const payload = await response.json().catch(() => null) as { date?: StoredTaskDate; error?: string } | null;
+    if (!response.ok || !payload?.date) throw new Error(payload?.error ?? '확정 일자를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    const saved = payload.date;
+    setTaskDates((current) => [...current, saved]);
+  };
+
+  const removeTaskDate = async (id: number) => {
+    const response = await fetch('/api/task-dates', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error ?? '확정 일자를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    setTaskDates((current) => current.filter((date) => date.id !== id));
+  };
 
   const removeMember = async (personId: string, teamId: string) => {
     const response = await fetch('/api/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
@@ -534,6 +590,6 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     {taskCreateOpen && <CreateTaskModal teams={teams} initialPersonId={selectedPerson?.id} onCreate={createTask} onClose={() => setTaskCreateOpen(false)} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal allTeams={allTeams} removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onCreateTeam={createTeam} onCreateMember={createMember} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}
-    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onClose={() => setTaskFocus(null)} />}
+    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onAddDate={addTaskDate} onRemoveDate={removeTaskDate} onClose={() => setTaskFocus(null)} />}
   </div></TodayContext.Provider></OrgContext.Provider>;
 }

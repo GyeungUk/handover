@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
-import { ACADEMIC_YEAR_START, type Person, type Task, type Team } from '../../org-data';
+import { SLOTS_PER_MONTH, calendarMonth, isoDate, type Person, type Task, type Team } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -21,13 +21,9 @@ import { useToday } from '../context';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
-/** The year is four week slots to a month, so a slot is a quarter of one. */
-const SLOTS_PER_MONTH = 4;
-
 /** The academic month index (0 = 3월) resolved to a real calendar month. */
 export function getCalendarDays(monthIndex: number) {
-  const year = monthIndex < 10 ? ACADEMIC_YEAR_START : ACADEMIC_YEAR_START + 1;
-  const realMonth = monthIndex < 10 ? monthIndex + 3 : monthIndex - 9;
+  const { year, month: realMonth } = calendarMonth(monthIndex);
   const first = new Date(year, realMonth - 1, 1).getDay();
   const count = new Date(year, realMonth, 0).getDate();
   return {
@@ -99,7 +95,12 @@ function MonthGrid({
 }) {
   const today = useToday();
   const calendar = getCalendarDays(monthIndex);
-  const runs = monthTasks.map((task) => ({ task, ...taskRun(task, monthIndex, calendar.days) }));
+  const runs = monthTasks.map((task) => ({
+    task,
+    ...taskRun(task, monthIndex, calendar.days),
+    /* The days inside the run that are actually fixed, looked up by the cell's own ISO date. */
+    confirmed: new Map((task.dates ?? []).map((entry) => [entry.date, entry] as const)),
+  }));
 
   return (
     <div className="monthly-calendar">
@@ -120,26 +121,44 @@ function MonthGrid({
                   <span className="date-number">{day}</span>
                   {runs
                     .filter((run) => day >= run.from && day <= run.to)
-                    .map((run) => (day === run.from ? (
-                      <button
-                        key={run.task.title}
-                        type="button"
-                        className={`date-task ${run.to > run.from ? 'is-open' : ''} ${run.continued ? 'is-continuation' : ''}`}
-                        style={{ background: team.soft, color: team.color } as CSSProperties}
-                        onClick={() => onTask(run.task, person)}
-                      >
-                        <b>{run.task.title}</b>
-                        <small>{run.task.note}</small>
-                        <em>{run.task.duration}주</em>
-                        {run.task.movedFrom !== undefined && <mark>일정 변경</mark>}
-                      </button>
-                    ) : (
-                      <span
-                        key={run.task.title}
-                        className={`date-run ${day === run.to && run.endsHere ? 'is-end' : ''}`}
-                        aria-hidden="true"
-                      />
-                    )))}
+                    .flatMap((run) => {
+                      /* The band says which weeks the work covers; a marker says which day of it
+                         somebody has to be somewhere. Both belong on the cell, so the run is drawn
+                         unbroken and the marker sits on it. */
+                      const fixed = run.confirmed.get(isoDate(calendar.year, calendar.realMonth, day));
+                      return [
+                        day === run.from ? (
+                          <button
+                            key={run.task.title}
+                            type="button"
+                            className={`date-task ${run.to > run.from ? 'is-open' : ''} ${run.continued ? 'is-continuation' : ''}`}
+                            style={{ background: team.soft, color: team.color } as CSSProperties}
+                            onClick={() => onTask(run.task, person)}
+                          >
+                            <b>{run.task.title}</b>
+                            <small>{run.task.note}</small>
+                            <em>{run.task.duration}주</em>
+                            {run.task.movedFrom !== undefined && <mark>일정 변경</mark>}
+                          </button>
+                        ) : (
+                          <span
+                            key={run.task.title}
+                            className={`date-run ${day === run.to && run.endsHere ? 'is-end' : ''}`}
+                            aria-hidden="true"
+                          />
+                        ),
+                        fixed ? (
+                          <button
+                            key={`${run.task.title}-fixed`}
+                            type="button"
+                            className="date-confirmed"
+                            onClick={() => onTask(run.task, person)}
+                          >
+                            {fixed.label || '확정 일자'}
+                          </button>
+                        ) : null,
+                      ];
+                    })}
                 </>
               )}
             </div>

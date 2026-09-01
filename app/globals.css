@@ -1301,6 +1301,30 @@ small, .caption { font-size: var(--t-caption); }
 }
 .date-run.is-end { border-radius: 0 4px 4px 0; }
 
+/* A day inside the run that is actually fixed — a group appointment, a deadline. The band answers
+   "which weeks"; this answers "which day", so it sits on the band instead of beside it. */
+.date-confirmed {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--team);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.date-confirmed:hover { filter: brightness(1.1); }
+.date-confirmed:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+
 /* ---- the column beside the grid ---------------------------------------- */
 
 .month-agenda {
@@ -1575,6 +1599,50 @@ small, .caption { font-size: var(--t-caption); }
   background: color-mix(in srgb, var(--soft) 32%, var(--surface));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--team) 14%, var(--line));
 }
+/* Confirmed dates in the task detail. The list is read far more often than it is added to, so
+   the form stays folded away and the days themselves are what the section opens with. */
+.task-dates {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: var(--s-4);
+  display: grid;
+  gap: var(--s-3);
+}
+.task-dates-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.task-dates-head h3 { font-size: var(--t-sm); font-weight: var(--fw-semi); }
+.task-dates-head small { display: block; margin-top: 2px; color: var(--ink-3); font-size: var(--t-caption); }
+.task-dates-list { display: grid; gap: 6px; }
+.task-dates-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  background: var(--soft);
+}
+.task-dates-list b { color: var(--team); font-size: var(--t-caption); font-weight: var(--fw-bold); }
+.task-dates-list span { min-width: 0; overflow: hidden; font-size: var(--t-caption); text-overflow: ellipsis; white-space: nowrap; }
+.task-dates-list small { color: var(--ink-4); font-size: 10px; }
+.task-dates-list button {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-4);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.task-dates-list button:hover:not(:disabled) { background: #fff2f1; color: #a33a36; }
+.task-dates-list button:disabled { cursor: default; opacity: 0.5; }
+.task-dates-empty { color: var(--ink-3); font-size: var(--t-caption); }
+.task-dates-form { display: grid; gap: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line-soft); }
+.task-dates-actions { display: flex; justify-content: flex-end; gap: var(--s-2); }
+.task-dates-error { color: #a33a36; font-size: var(--t-caption); }
+
 .task-checklist.is-open { background: var(--surface); }
 .task-checklist-toggle {
   width: 100%;

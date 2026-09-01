@@ -86,6 +86,31 @@ export const createRemovedTasksPersonIndex = `
   CREATE INDEX IF NOT EXISTS removed_tasks_person_idx ON removed_tasks (person_id)
 `;
 
+/**
+ * A confirmed calendar date inside a task's week span.
+ *
+ * The plan is kept in week slots; these are the days inside one that are actually fixed — a group
+ * appointment, a published deadline. A task may carry several, so the day is unique per task
+ * rather than the task being unique.
+ */
+export const createTaskDatesTable = `
+  CREATE TABLE IF NOT EXISTS task_dates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_key TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    task_title TEXT NOT NULL,
+    date TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (task_key, date)
+  )
+`;
+
+export const createTaskDatesPersonIndex = `
+  CREATE INDEX IF NOT EXISTS task_dates_person_idx ON task_dates (person_id, date)
+`;
+
 /** One durable checkbox state per task and checklist item. */
 export const createTaskChecklistItemsTable = `
   CREATE TABLE IF NOT EXISTS task_checklist_items (

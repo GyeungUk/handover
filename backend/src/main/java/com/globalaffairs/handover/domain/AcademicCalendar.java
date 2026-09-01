@@ -78,6 +78,30 @@ public class AcademicCalendar {
     }
 
     /**
+     * The first calendar date a week slot stands for.
+     *
+     * <p>Four slots to a month, so slot n opens on its day 7n+1. This is the same arithmetic the
+     * month grid draws a task's band with — a confirmed date is validated against the band it will
+     * be marked on, so the two cannot disagree about where a week is.
+     */
+    public LocalDate weekSlotStart(int week) {
+        return monthOf(week).plusDays(7L * Math.floorMod(week, OrgData.SLOTS_PER_MONTH));
+    }
+
+    /** The last date a week slot stands for; a month's final slot keeps the days left over. */
+    public LocalDate weekSlotEnd(int week) {
+        LocalDate month = monthOf(week);
+        int slot = Math.floorMod(week, OrgData.SLOTS_PER_MONTH);
+        return slot == OrgData.SLOTS_PER_MONTH - 1
+                ? month.withDayOfMonth(month.lengthOfMonth())
+                : month.plusDays(7L * (slot + 1) - 1);
+    }
+
+    private LocalDate monthOf(int week) {
+        return startsOn().plusMonths(Math.floorDiv(week, OrgData.SLOTS_PER_MONTH));
+    }
+
+    /**
      * Locate a real date inside the academic year, or {@link Today#NONE} when it falls outside.
      *
      * <p>The window and the month ordering both come from the exported data — the base year from the

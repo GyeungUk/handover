@@ -20,3 +20,9 @@ export type Reschedule = (personId: string, taskTitle: string, toStart: number, 
  * a row, so the server records the key as removed and every reader skips it from then on.
  */
 export type DeleteTask = (personId: string, taskTitle: string) => Promise<void>;
+
+/** Recording a confirmed day inside a task's period. Rejects by throwing. */
+export type AddTaskDate = (personId: string, taskTitle: string, date: string, label: string) => Promise<void>;
+
+/** Removing one confirmed day. Rejects by throwing. */
+export type RemoveTaskDate = (id: number) => Promise<void>;

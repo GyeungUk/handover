@@ -16,8 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Deletion has to cover two kinds of task. One authored here is a row, so it goes; one from the
  * shipped seed plan is not, so its key is written to {@code removed_tasks} and every reader skips
- * it from then on. Either way the task's reschedule trail and saved checks go with it — leaving
- * them behind would resurrect the task the moment somebody re-used its name.
+ * it from then on. Either way the task's reschedule trail, saved checks and confirmed dates go
+ * with it — leaving them behind would resurrect the task the moment somebody re-used its name.
  */
 @Service
 public class CustomTaskService {
@@ -29,6 +29,7 @@ public class CustomTaskService {
     private final RemovedTaskRepository removedTasks;
     private final TaskRescheduleRepository reschedules;
     private final TaskChecklistItemRepository checklistItems;
+    private final TaskDateRepository taskDates;
     private final CustomMemberRepository customMembers;
     private final OrgData orgData;
     private final Clock clock;
@@ -38,6 +39,7 @@ public class CustomTaskService {
             RemovedTaskRepository removedTasks,
             TaskRescheduleRepository reschedules,
             TaskChecklistItemRepository checklistItems,
+            TaskDateRepository taskDates,
             CustomMemberRepository customMembers,
             OrgData orgData,
             Clock clock) {
@@ -45,6 +47,7 @@ public class CustomTaskService {
         this.removedTasks = removedTasks;
         this.reschedules = reschedules;
         this.checklistItems = checklistItems;
+        this.taskDates = taskDates;
         this.customMembers = customMembers;
         this.orgData = orgData;
         this.clock = clock;
@@ -112,8 +115,8 @@ public class CustomTaskService {
     }
 
     /**
-     * Removes one task from the calendar for everyone, along with its reschedule trail and its
-     * saved checks. Deleting a task that is already gone is a 404 rather than a silent success, so
+     * Removes one task from the calendar for everyone, along with its reschedule trail, its saved
+     * checks and its confirmed dates. Deleting a task that is already gone is a 404 rather than a silent success, so
      * two people clicking delete on the same task do not both see it work.
      */
     @Transactional
@@ -138,5 +141,6 @@ public class CustomTaskService {
 
         reschedules.deleteByTaskKey(key);
         checklistItems.deleteByTaskKey(key);
+        taskDates.deleteByTaskKey(key);
     }
 }

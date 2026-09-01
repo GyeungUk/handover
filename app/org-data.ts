@@ -1,5 +1,23 @@
 /** Shared org chart + academic-year helpers, used by the client workspace and the API routes. */
 
+/**
+ * A confirmed calendar date inside a task's period.
+ *
+ * The plan is kept in week slots, which is what the work is planned at and what the academic-year
+ * alignment moves. Some of the work underneath it is not planned at all — an immigration office
+ * fixes the day of a group appointment, the university publishes the day an application closes —
+ * and those days are recorded here rather than by narrowing the plan to them.
+ */
+export type TaskDate = {
+  id: number;
+  /** `YYYY-MM-DD`; a plain date, never a timestamp */
+  date: string;
+  /** what happens that day, e.g. "단체접수 1차"; blank when the day speaks for itself */
+  label: string;
+  createdBy: string;
+  createdAt: string;
+};
+
 export type Task = {
   title: string;
   start: number;
@@ -7,12 +25,16 @@ export type Task = {
   note: string;
   /** week the task originally started on, present only while a reschedule is in effect */
   movedFrom?: number;
+  /** confirmed days inside the period, oldest first; absent until somebody records one */
+  dates?: TaskDate[];
 };
 export type Person = { id: string; name: string; role: string; initial: string; tasks: Task[] };
 export type Team = { id: string; title: string; short: string; english: string; description: string; color: string; soft: string; mark: string; people: Person[] };
 
 /** the academic year is 48 week slots, 4 per month, opening in `months[0]` of `ACADEMIC_YEAR_START` */
 export const WEEKS_IN_YEAR = 48;
+/** week slots to a month. A slot is a quarter of a month rather than an ISO week. */
+export const SLOTS_PER_MONTH = 4;
 export const months = ['3월','4월','5월','6월','7월','8월','9월','10월','11월','12월','1월','2월'];
 
 /**
@@ -154,6 +176,53 @@ export function locateToday(now: Date): Today {
 
 /** "8월 2주 ~ 9월 2주" — the span a task occupies, both ends inclusive */
 export const taskPeriodLabel = (task: Task) => `${weekLabel(task.start)} ~ ${weekLabel(task.start + task.duration - 1)}`;
+
+/** The calendar year and 1-based month an academic month index falls in. */
+export function calendarMonth(monthIndex: number) {
+  const absolute = START_MONTH - 1 + monthIndex;
+  return { year: ACADEMIC_YEAR_START + Math.floor(absolute / 12), month: (absolute % 12) + 1 };
+}
+
+/**
+ * The days of the month a week slot stands for.
+ *
+ * Four slots to a month, so slot n is its days 7n+1 to 7n+7 and the last slot keeps whatever the
+ * month has left over. Every part of the workspace that turns a week into a date goes through
+ * here — the month grid draws its bands with it, the task detail offers dates inside it, and the
+ * backend validates against the same arithmetic — so they cannot disagree about where a week is.
+ */
+export function weekSlotDays(week: number) {
+  const slot = week % SLOTS_PER_MONTH;
+  const { year, month } = calendarMonth(Math.floor(week / SLOTS_PER_MONTH));
+  return {
+    year,
+    month,
+    from: slot * 7 + 1,
+    to: slot === SLOTS_PER_MONTH - 1 ? new Date(year, month, 0).getDate() : (slot + 1) * 7,
+  };
+}
+
+/** `2026-08-08` — an ISO date built from calendar parts, without `toISOString`'s timezone shift. */
+export const isoDate = (year: number, month: number, day: number) =>
+  `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+/** The first and last dates a task covers, as the `min` and `max` a date input is bounded by. */
+export function taskDateRange(task: Task) {
+  const opens = weekSlotDays(task.start);
+  const closes = weekSlotDays(task.start + task.duration - 1);
+  return {
+    from: isoDate(opens.year, opens.month, opens.from),
+    to: isoDate(closes.year, closes.month, closes.to),
+  };
+}
+
+/** "8월 20일 (목)" — how a confirmed date reads next to the week it sits in. */
+export function taskDateLabel(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  if (!year || !month || !day) return date;
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][new Date(year, month - 1, day).getDay()];
+  return `${month}월 ${day}일 (${weekday})`;
+}
 
 export type TaskPhase = 'done' | 'active' | 'upcoming';
 

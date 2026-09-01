@@ -5,9 +5,12 @@ import WorkspaceClient, { type SessionUser } from '../WorkspaceClient';
 import {
   WEEKS_IN_YEAR,
   seedTeams,
+  taskDateRange,
   taskKey,
   weekLabel,
   type Person,
+  type Task,
+  type TaskDate,
   type Team,
 } from '../org-data';
 import {
@@ -25,6 +28,7 @@ import type { ScheduleChange } from '../workspace/types';
 
 type PreviewMember = Person & { teamId: string };
 type PreviewTask = Person['tasks'][number] & { personId: string };
+type PreviewTaskDate = TaskDate & { taskKey: string };
 type ChecklistKey = 'result-report' | 'schedule-share' | 'contact-refresh';
 type ChecklistItem = {
   key: ChecklistKey;
@@ -80,7 +84,22 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
   const removedTaskKeys: string[] = [];
   const scheduleChanges: ScheduleChange[] = [];
   const checklists = new Map<string, ChecklistItem[]>();
+  const taskDates: PreviewTaskDate[] = [];
+  let nextTaskDateId = 1;
   let handoverDocument: HandoverDocument | null = null;
+
+  /* The task as the workspace currently shows it, so a preview date is bounded by the moved span
+     the same way the server bounds a real one. */
+  const currentTask = (personId: string, taskTitle: string): Task | null => {
+    const key = taskKey(personId, taskTitle);
+    const found = customTasks.find((task) => task.personId === personId && task.title === taskTitle)
+      ?? (removedTaskKeys.includes(key)
+        ? undefined
+        : seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle));
+    if (!found) return null;
+    const moved = [...scheduleChanges].reverse().find((change) => change.taskKey === key);
+    return moved ? { ...found, start: moved.toStart } : found;
+  };
 
   const checklistFor = (personId: string, taskTitle: string) => {
     const key = taskKey(personId, taskTitle);
@@ -171,6 +190,9 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
         if (scheduleChanges[index].taskKey === key) scheduleChanges.splice(index, 1);
       }
       checklists.delete(key);
+      for (let index = taskDates.length - 1; index >= 0; index -= 1) {
+        if (taskDates[index].taskKey === key) taskDates.splice(index, 1);
+      }
       return json({ ok: true });
     }
     if (url.pathname === '/api/tasks' && method === 'POST') {
@@ -217,6 +239,48 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       };
       scheduleChanges.push(change);
       return json({ change });
+    }
+
+    if (url.pathname === '/api/task-dates' && method === 'GET') {
+      const personId = url.searchParams.get('personId');
+      const taskTitle = url.searchParams.get('taskTitle');
+      if (personId === null && taskTitle === null) return json({ dates: taskDates });
+      const key = taskKey(personId ?? '', taskTitle ?? '');
+      return json({ dates: taskDates.filter((date) => date.taskKey === key) });
+    }
+    if (url.pathname === '/api/task-dates' && method === 'POST') {
+      const personId = String(body.personId ?? '').trim();
+      const taskTitle = String(body.taskTitle ?? '').trim();
+      const date = String(body.date ?? '').trim();
+      const label = String(body.label ?? '').trim();
+      const task = currentTask(personId, taskTitle);
+      if (!task) return json({ error: '존재하지 않는 업무입니다.' }, 400);
+      const range = taskDateRange(task);
+      if (!date) return json({ error: '확정 일자를 선택해 주세요.' }, 400);
+      if (date < range.from || date > range.to) {
+        return json({ error: `확정 일자는 업무 기간(${range.from} ~ ${range.to}) 안에서 선택해 주세요.` }, 400);
+      }
+      const key = taskKey(personId, taskTitle);
+      if (taskDates.some((entry) => entry.taskKey === key && entry.date === date)) {
+        return json({ error: '이미 등록된 일자입니다.' }, 409);
+      }
+      const saved: PreviewTaskDate = {
+        id: nextTaskDateId,
+        taskKey: key,
+        date,
+        label,
+        createdBy: user.displayName,
+        createdAt: new Date().toISOString(),
+      };
+      nextTaskDateId += 1;
+      taskDates.push(saved);
+      return json({ date: saved }, 201);
+    }
+    if (url.pathname === '/api/task-dates' && method === 'DELETE') {
+      const index = taskDates.findIndex((entry) => entry.id === Number(body.id));
+      if (index < 0) return json({ error: '존재하지 않는 일자입니다.' }, 404);
+      taskDates.splice(index, 1);
+      return json({ ok: true });
     }
 
     if (url.pathname === '/api/task-checklists' && method === 'GET') {

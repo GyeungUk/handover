@@ -21,6 +21,9 @@ public class OrgData {
     /** The academic year is 48 week slots, 4 per month, starting at {@link #startMonth()}. */
     public static final int WEEKS_IN_YEAR = 48;
 
+    /** Week slots to a month. A slot is a quarter of a month rather than an ISO week. */
+    public static final int SLOTS_PER_MONTH = 4;
+
     private final List<String> months;
     private final List<Team> teams;
     private final int startMonth;
@@ -75,7 +78,8 @@ public class OrgData {
 
     /** "3월 2주" — the label used everywhere a week slot is shown to a user. */
     public String weekLabel(int week) {
-        return "%s %d주".formatted(months.get(Math.floorDiv(week, 4)), (week % 4) + 1);
+        return "%s %d주".formatted(
+                months.get(Math.floorDiv(week, SLOTS_PER_MONTH)), (week % SLOTS_PER_MONTH) + 1);
     }
 
     /** "8월 2주 ~ 9월 2주" — the span a task occupies, both ends inclusive. */
