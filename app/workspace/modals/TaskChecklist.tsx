@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { Person, Task } from '../../org-data';
 
 type ChecklistKey = 'result-report' | 'schedule-share' | 'contact-refresh';
@@ -45,8 +45,11 @@ function auditLabel(item: ChecklistState) {
   return `${item.updatedBy}${date ? ` · ${date}` : ''}`;
 }
 
-/** The three task-level handover checks, loaded only while the detail is open. */
+/** Optional task-level preparation checks, loaded only after the user opens them. */
 export default function TaskChecklist({ task, person }: { task: Task; person: Person }) {
+  const panelId = useId();
+  const [open, setOpen] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [items, setItems] = useState<ChecklistState[]>(blankItems);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -55,6 +58,7 @@ export default function TaskChecklist({ task, person }: { task: Task; person: Pe
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    if (!open || loaded) return;
     const controller = new AbortController();
     const query = new URLSearchParams({ personId: person.id, taskTitle: task.title });
     fetch(`/api/task-checklists?${query}`, { signal: controller.signal })
@@ -65,7 +69,10 @@ export default function TaskChecklist({ task, person }: { task: Task; person: Pe
         }
         return payload.items;
       })
-      .then(setItems)
+      .then((loadedItems) => {
+        setItems(loadedItems);
+        setLoaded(true);
+      })
       .catch((error) => {
         if (error instanceof Error && error.name !== 'AbortError') {
           setLoadError(error.message);
@@ -75,7 +82,7 @@ export default function TaskChecklist({ task, person }: { task: Task; person: Pe
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [person.id, retry, task.title]);
+  }, [loaded, open, person.id, retry, task.title]);
 
   const toggle = async (key: ChecklistKey, completed: boolean) => {
     const previous = items.find((item) => item.key === key);
@@ -107,77 +114,95 @@ export default function TaskChecklist({ task, person }: { task: Task; person: Pe
   const percent = Math.round((completedCount / CHECKS.length) * 100);
 
   return (
-    <section className="task-checklist" aria-labelledby="task-checklist-title" aria-busy={loading}>
-      <header className="task-checklist-head">
-        <div>
-          <span>인수인계 준비</span>
-          <h3 id="task-checklist-title">업무 시작 전 확인</h3>
-        </div>
-        <strong aria-label={`${CHECKS.length}개 중 ${completedCount}개 완료`}>
-          <b>{completedCount}</b> / {CHECKS.length}
-        </strong>
-      </header>
+    <section className={`task-checklist${open ? ' is-open' : ''}`} aria-busy={loading}>
+      <button
+        className="task-checklist-toggle"
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>
+          <b>인수인계 준비사항</b>
+          <small>{loaded ? `${completedCount}/${CHECKS.length} 완료` : `체크리스트 ${CHECKS.length}개`}</small>
+        </span>
+        <i aria-hidden="true">⌄</i>
+      </button>
 
-      <div className="task-checklist-progress" aria-hidden="true">
-        <i style={{ width: `${percent}%` }} />
+      <div className="task-checklist-panel" id={panelId} hidden={!open}>
+        {open && (
+          <>
+            <header className="task-checklist-head">
+              <span>필요할 때만 확인해 주세요</span>
+              <strong aria-label={`${CHECKS.length}개 중 ${completedCount}개 완료`}>
+                <b>{completedCount}</b> / {CHECKS.length}
+              </strong>
+            </header>
+
+            <div className="task-checklist-progress" aria-hidden="true">
+              <i style={{ width: `${percent}%` }} />
+            </div>
+
+            {loading ? (
+              <div className="task-checklist-skeleton" aria-label="준비사항을 불러오는 중">
+                {CHECKS.map(({ key }) => <i key={key} />)}
+              </div>
+            ) : loadError ? (
+              <div className="task-checklist-error" role="alert">
+                <span className="mark" aria-hidden="true">!</span>
+                <div>
+                  <b>준비사항을 불러오지 못했습니다</b>
+                  <small>{loadError}</small>
+                </div>
+                <button type="button" onClick={() => {
+                  setLoaded(false);
+                  setLoading(true);
+                  setLoadError('');
+                  setSaveError('');
+                  setRetry((current) => current + 1);
+                }}>다시 시도</button>
+              </div>
+            ) : (
+              <div className="task-checklist-items">
+                {CHECKS.map((definition) => {
+                  const item = items.find((candidate) => candidate.key === definition.key) ?? {
+                    key: definition.key,
+                    completed: false,
+                    updatedBy: null,
+                    updatedAt: null,
+                  };
+                  const isPending = pending.includes(definition.key);
+                  const audit = auditLabel(item);
+                  return (
+                    <label className={item.completed ? 'is-complete' : ''} key={definition.key}>
+                      <input
+                        type="checkbox"
+                        checked={item.completed}
+                        onChange={(event) => toggle(definition.key, event.target.checked)}
+                        disabled={isPending}
+                      />
+                      <span>
+                        <b>{definition.label}</b>
+                        <small>{definition.description}</small>
+                      </span>
+                      <em>{isPending ? '저장 중…' : audit ?? '미완료'}</em>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {saveError && <p className="task-checklist-save-error" role="alert">{saveError}</p>}
+            {!loading && !loadError && (
+              <p className="task-checklist-status" role="status" aria-live="polite">
+                {completedCount === CHECKS.length
+                  ? '모든 준비사항을 확인했습니다.'
+                  : `남은 준비사항 ${CHECKS.length - completedCount}개 · 변경 내용은 바로 저장됩니다.`}
+              </p>
+            )}
+          </>
+        )}
       </div>
-
-      {loading ? (
-        <div className="task-checklist-skeleton" aria-label="준비사항을 불러오는 중">
-          {CHECKS.map(({ key }) => <i key={key} />)}
-        </div>
-      ) : loadError ? (
-        <div className="task-checklist-error" role="alert">
-          <span className="mark" aria-hidden="true">!</span>
-          <div>
-            <b>준비사항을 불러오지 못했습니다</b>
-            <small>{loadError}</small>
-          </div>
-          <button type="button" onClick={() => {
-            setLoading(true);
-            setLoadError('');
-            setSaveError('');
-            setRetry((current) => current + 1);
-          }}>다시 시도</button>
-        </div>
-      ) : (
-        <div className="task-checklist-items">
-          {CHECKS.map((definition) => {
-            const item = items.find((candidate) => candidate.key === definition.key) ?? {
-              key: definition.key,
-              completed: false,
-              updatedBy: null,
-              updatedAt: null,
-            };
-            const isPending = pending.includes(definition.key);
-            const audit = auditLabel(item);
-            return (
-              <label className={item.completed ? 'is-complete' : ''} key={definition.key}>
-                <input
-                  type="checkbox"
-                  checked={item.completed}
-                  onChange={(event) => toggle(definition.key, event.target.checked)}
-                  disabled={isPending}
-                />
-                <span>
-                  <b>{definition.label}</b>
-                  <small>{definition.description}</small>
-                </span>
-                <em>{isPending ? '저장 중…' : audit ?? '미완료'}</em>
-              </label>
-            );
-          })}
-        </div>
-      )}
-
-      {saveError && <p className="task-checklist-save-error" role="alert">{saveError}</p>}
-      {!loading && !loadError && (
-        <p className="task-checklist-status" role="status" aria-live="polite">
-          {completedCount === CHECKS.length
-            ? '모든 준비사항을 확인했습니다.'
-            : `남은 준비사항 ${CHECKS.length - completedCount}개 · 체크하면 바로 저장됩니다.`}
-        </p>
-      )}
     </section>
   );
 }
