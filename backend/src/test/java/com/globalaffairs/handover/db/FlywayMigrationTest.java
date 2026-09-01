@@ -75,7 +75,8 @@ class FlywayMigrationTest {
         assertThat(applied).containsExactly(
                 "V1__removed_members.sql", "V2__task_reschedules.sql", "V3__handover_documents.sql",
                 "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql",
-                "V7__account_onboarding_members.sql", "V8__custom_tasks.sql");
+                "V7__account_onboarding_members.sql", "V8__custom_tasks.sql",
+                "V9__removed_tasks.sql");
     }
 
     @Test
@@ -96,7 +97,8 @@ class FlywayMigrationTest {
                         "custom_teams",
                         "custom_members",
                         "task_checklist_items",
-                        "custom_tasks");
+                        "custom_tasks",
+                        "removed_tasks");
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'task_reschedules'", String.class))
                 .contains("task_reschedules_pkey", "task_reschedules_task_key_idx", "task_reschedules_person_id_idx");
@@ -114,6 +116,9 @@ class FlywayMigrationTest {
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'custom_tasks'", String.class))
                 .contains("custom_tasks_pkey", "custom_tasks_person_title_key", "custom_tasks_person_id_idx");
+        assertThat(jdbc.queryForList(
+                        "SELECT indexname FROM pg_indexes WHERE tablename = 'removed_tasks'", String.class))
+                .contains("removed_tasks_pkey", "removed_tasks_person_id_idx");
     }
 
     @Test

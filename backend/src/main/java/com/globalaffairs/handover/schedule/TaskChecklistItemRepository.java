@@ -9,4 +9,7 @@ public interface TaskChecklistItemRepository extends JpaRepository<TaskChecklist
     List<TaskChecklistItem> findByTaskKeyOrderByItemKey(String taskKey);
 
     Optional<TaskChecklistItem> findByTaskKeyAndItemKey(String taskKey, String itemKey);
+
+    /** Drops a deleted task's saved checks. */
+    void deleteByTaskKey(String taskKey);
 }

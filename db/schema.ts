@@ -71,6 +71,21 @@ export const createCustomTasksPersonIndex = `
   CREATE INDEX IF NOT EXISTS custom_tasks_person_idx ON custom_tasks (person_id, start_week, id)
 `;
 
+/** A seed-plan task somebody deleted. Seed tasks are code, not rows, so the key is tombstoned. */
+export const createRemovedTasksTable = `
+  CREATE TABLE IF NOT EXISTS removed_tasks (
+    task_key TEXT PRIMARY KEY,
+    person_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    removed_by TEXT NOT NULL,
+    removed_at TEXT NOT NULL
+  )
+`;
+
+export const createRemovedTasksPersonIndex = `
+  CREATE INDEX IF NOT EXISTS removed_tasks_person_idx ON removed_tasks (person_id)
+`;
+
 /** One durable checkbox state per task and checklist item. */
 export const createTaskChecklistItemsTable = `
   CREATE TABLE IF NOT EXISTS task_checklist_items (

@@ -38,6 +38,9 @@ class ScheduleServiceTest {
     @Mock
     private CustomTaskRepository customTasks;
 
+    @Mock
+    private RemovedTaskRepository removedTasks;
+
     private ScheduleService service;
 
     @BeforeEach
@@ -47,6 +50,7 @@ class ScheduleServiceTest {
         service = new ScheduleService(
                 repository,
                 customTasks,
+                removedTasks,
                 orgData,
                 new AcademicCalendar(objectMapper, orgData),
                 Clock.fixed(NOW, ZoneOffset.UTC));

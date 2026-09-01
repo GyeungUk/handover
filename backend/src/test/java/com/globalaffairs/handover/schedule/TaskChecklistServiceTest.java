@@ -32,12 +32,16 @@ class TaskChecklistServiceTest {
     @Mock
     private CustomTaskRepository customTasks;
 
+    @Mock
+    private RemovedTaskRepository removedTasks;
+
     private TaskChecklistService service;
 
     @BeforeEach
     void setUp() {
         OrgData orgData = new OrgData(new ObjectMapper());
-        service = new TaskChecklistService(repository, customTasks, orgData, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new TaskChecklistService(
+                repository, customTasks, removedTasks, orgData, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test

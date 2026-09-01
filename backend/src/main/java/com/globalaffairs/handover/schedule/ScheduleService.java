@@ -7,6 +7,7 @@ import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,6 +19,7 @@ public class ScheduleService {
 
     private final TaskRescheduleRepository repository;
     private final CustomTaskRepository customTasks;
+    private final RemovedTaskRepository removedTasks;
     private final OrgData orgData;
     private final AcademicCalendar calendar;
     private final Clock clock;
@@ -25,11 +27,13 @@ public class ScheduleService {
     public ScheduleService(
             TaskRescheduleRepository repository,
             CustomTaskRepository customTasks,
+            RemovedTaskRepository removedTasks,
             OrgData orgData,
             AcademicCalendar calendar,
             Clock clock) {
         this.repository = repository;
         this.customTasks = customTasks;
+        this.removedTasks = removedTasks;
         this.orgData = orgData;
         this.calendar = calendar;
         this.clock = clock;
@@ -51,8 +55,11 @@ public class ScheduleService {
             throw ApiException.badRequest("유효한 업무 정보가 필요합니다.");
         }
 
-        Task seedTask = orgData.findSeedTask(personId, taskTitle)
-                .or(() -> customTasks.findByPersonIdAndTitle(personId, taskTitle).map(CustomTask::asTask))
+        /* A task authored here wins over a seed task of the same name — that name is only free to
+           re-use because the seed one was deleted, and a deleted seed task is not movable. */
+        String key = OrgData.taskKey(personId, taskTitle);
+        Task seedTask = customTasks.findByPersonIdAndTitle(personId, taskTitle).map(CustomTask::asTask)
+                .or(() -> removedTasks.existsById(key) ? Optional.empty() : orgData.findSeedTask(personId, taskTitle))
                 .orElseThrow(() -> ApiException.badRequest("존재하지 않는 업무입니다."));
 
         if (toStart == null || toStart < 0 || toStart + seedTask.duration() > OrgData.WEEKS_IN_YEAR) {
@@ -69,7 +76,6 @@ public class ScheduleService {
             throw ApiException.badRequest("변경 사유는 %d자 이내로 입력해 주세요.".formatted(REASON_MAX));
         }
 
-        String key = OrgData.taskKey(personId, taskTitle);
         int fromStart = repository.findFirstByTaskKeyOrderByIdDesc(key)
                 .map(TaskReschedule::getToStart)
                 .orElse(seedTask.start());

@@ -77,6 +77,7 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
   const customTeams: Team[] = [];
   const customMembers: PreviewMember[] = [];
   const customTasks: PreviewTask[] = [];
+  const removedTaskKeys: string[] = [];
   const scheduleChanges: ScheduleChange[] = [];
   const checklists = new Map<string, ChecklistItem[]>();
   let handoverDocument: HandoverDocument | null = null;
@@ -156,7 +157,22 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       return json({ team }, 201);
     }
 
-    if (url.pathname === '/api/tasks' && method === 'GET') return json({ tasks: customTasks });
+    if (url.pathname === '/api/tasks' && method === 'GET') return json({ tasks: customTasks, removedTaskKeys });
+    if (url.pathname === '/api/tasks' && method === 'DELETE') {
+      const personId = String(body.personId ?? '').trim();
+      const taskTitle = String(body.taskTitle ?? '').trim();
+      const key = taskKey(personId, taskTitle);
+      const authored = customTasks.findIndex((task) => task.personId === personId && task.title === taskTitle);
+      if (authored >= 0) customTasks.splice(authored, 1);
+      else if (seedPerson(personId)?.person.tasks.some((task) => task.title === taskTitle) && !removedTaskKeys.includes(key)) {
+        removedTaskKeys.push(key);
+      } else return json({ error: '존재하지 않는 업무입니다.' }, 404);
+      for (let index = scheduleChanges.length - 1; index >= 0; index -= 1) {
+        if (scheduleChanges[index].taskKey === key) scheduleChanges.splice(index, 1);
+      }
+      checklists.delete(key);
+      return json({ ok: true });
+    }
     if (url.pathname === '/api/tasks' && method === 'POST') {
       const personId = String(body.personId ?? '').trim();
       const title = String(body.title ?? '').trim();
@@ -164,7 +180,8 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       const duration = Number(body.duration);
       const note = String(body.note ?? '').trim();
       const personExists = Boolean(seedPerson(personId)) || customMembers.some((member) => member.id === personId);
-      const duplicate = seedPerson(personId)?.person.tasks.some((task) => task.title === title)
+      const duplicate = (seedPerson(personId)?.person.tasks.some((task) => task.title === title)
+          && !removedTaskKeys.includes(taskKey(personId, title)))
         || customTasks.some((task) => task.personId === personId && task.title === title);
       if (!personExists || !title || !Number.isInteger(start) || !Number.isInteger(duration) || start < 0 || duration < 1 || start + duration > WEEKS_IN_YEAR) {
         return json({ error: '담당자, 일정명과 기간을 확인해 주세요.' }, 400);
@@ -181,8 +198,10 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       const taskTitle = String(body.taskTitle ?? '');
       const toStart = Number(body.toStart);
       const reason = String(body.reason ?? '').trim();
-      const found = seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle)
-        ?? customTasks.find((task) => task.personId === personId && task.title === taskTitle);
+      const found = customTasks.find((task) => task.personId === personId && task.title === taskTitle)
+        ?? (removedTaskKeys.includes(taskKey(personId, taskTitle))
+          ? undefined
+          : seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle));
       if (!found || !Number.isInteger(toStart) || !reason) return json({ error: '유효한 일정과 변경 사유가 필요합니다.' }, 400);
       const key = taskKey(personId, taskTitle);
       const previous = [...scheduleChanges].reverse().find((change) => change.taskKey === key);

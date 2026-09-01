@@ -12,3 +12,11 @@ export type ScheduleChange = {
 
 /** Moving a task, with the reason that justifies it. Rejects by throwing. */
 export type Reschedule = (personId: string, taskTitle: string, toStart: number, reason: string) => Promise<void>;
+
+/**
+ * Removing a task from the calendar for everyone. Rejects by throwing.
+ *
+ * A task authored in the workspace is deleted outright; one from the seed plan is code rather than
+ * a row, so the server records the key as removed and every reader skips it from then on.
+ */
+export type DeleteTask = (personId: string, taskTitle: string) => Promise<void>;

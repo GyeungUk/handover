@@ -14,4 +14,7 @@ public interface TaskRescheduleRepository extends JpaRepository<TaskReschedule, 
 
     /** The move currently in effect for a task, if any. */
     Optional<TaskReschedule> findFirstByTaskKeyOrderByIdDesc(String taskKey);
+
+    /** Drops a deleted task's whole trail; nothing may replay a move of a task that is gone. */
+    void deleteByTaskKey(String taskKey);
 }

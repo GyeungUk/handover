@@ -1,9 +1,9 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Modal, Text } from '../../ui';
 import { WEEKS_IN_YEAR, months, weekLabel, type Person, type Task, type Team } from '../../org-data';
-import type { Reschedule, ScheduleChange } from '../types';
+import type { DeleteTask, Reschedule, ScheduleChange } from '../types';
 import { RescheduleForm, RescheduleHistory } from './RescheduleForm';
 import TaskChecklist from './TaskChecklist';
 
@@ -42,10 +42,14 @@ function YearPosition({ task }: { task: Task }) {
  * background scroll lock it never had — and, on a phone, becomes a sheet
  * instead of a dialog floating in the middle of a scrolled page.
  *
- * The body used to be four tinted boxes stacked on each other, one of which
- * held three more boxes. It is sections on the modal's own ground now, told
- * apart by their headings and by hairlines, which is what lets the one thing
- * that should look like a panel — the checklist — actually read as one.
+ * The body uses progressive disclosure for optional preparation checks, so the
+ * default view stays focused on the task's owner, timing and summary.
+ *
+ * Deleting takes over the footer rather than opening a second dialog on top of
+ * this one. The confirmation has to say what else goes with the task — the
+ * reschedule trail and the saved checks are both in this modal, and both are
+ * gone afterwards — and a dialog stacked over the one holding that evidence is
+ * the wrong place to say it.
  */
 export default function TaskModal({
   task,
@@ -53,6 +57,7 @@ export default function TaskModal({
   team,
   history,
   onReschedule,
+  onDelete,
   onClose,
 }: {
   task: Task;
@@ -60,11 +65,28 @@ export default function TaskModal({
   team: Team;
   history: ScheduleChange[];
   onReschedule: Reschedule;
+  onDelete: DeleteTask;
   onClose: () => void;
 }) {
   const startMonth = months[Math.floor(task.start / 4)];
   const endWeek = Math.min(WEEKS_IN_YEAR - 1, task.start + task.duration - 1);
   const endMonth = months[Math.floor(endWeek / 4)];
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  /* The parent closes the modal once the delete lands, so there is no success state to return to. */
+  async function remove() {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await onDelete(person.id, task.title);
+    } catch (failure) {
+      setDeleteError(failure instanceof Error ? failure.message : '일정을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      setDeleting(false);
+    }
+  }
 
   return (
     <Modal
@@ -73,10 +95,24 @@ export default function TaskModal({
       title={task.title}
       initialFocus="dialog"
       className="task-modal"
-      footer={<>
-        <p className="task-modal-footnote"><b>자동 저장</b><span>준비사항 변경은 즉시 반영됩니다.</span></p>
-        <Button variant="primary" onClick={onClose}>닫기</Button>
-      </>}
+      dismissable={!deleting}
+      footer={confirmingDelete ? (
+        <>
+          <p className="task-delete-confirm" role="alert">
+            <b>{deleteError || `${task.title} 일정을 삭제할까요?`}</b>
+            <span>일정 변경 기록과 준비사항 체크도 함께 지워지며, 되돌릴 수 없습니다.</span>
+          </p>
+          <Button variant="ghost" onClick={() => { setConfirmingDelete(false); setDeleteError(''); }} disabled={deleting}>
+            취소
+          </Button>
+          <Button variant="danger" onClick={remove} busy={deleting} busyLabel="삭제하는 중…">일정 삭제</Button>
+        </>
+      ) : (
+        <>
+          <Button variant="ghost" className="task-delete-open" onClick={() => setConfirmingDelete(true)}>일정 삭제</Button>
+          <Button variant="primary" className="task-modal-close-action" onClick={onClose}>닫기</Button>
+        </>
+      )}
     >
       <div className="task-detail-flow" style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>
         <div className="task-detail-who">

@@ -1724,10 +1724,16 @@ small, .caption { font-size: var(--t-caption); }
 .task-checklist-save-error { margin: 0 var(--s-4) var(--s-3); color: #a33a36; font-size: var(--t-caption); }
 .task-checklist-status { margin: 0; padding: 0 var(--s-5) var(--s-4); color: var(--ink-3); font-size: var(--t-caption); }
 
-.task-modal-footnote { flex: 1 1 auto; margin: 0; display: grid; gap: 1px; }
-.task-modal-footnote b { color: var(--ink-2); font-size: var(--t-caption); }
-.task-modal-footnote span { color: var(--ink-4); font-size: var(--t-caption); }
 .task-modal .ui-modal-foot .ui-btn { min-width: 104px; }
+.task-modal .ui-modal-foot .task-modal-close-action { margin-left: auto; }
+
+/* Deleting sits at the far end of the footer from 닫기, and stays quiet until it is asked for. */
+.task-modal .ui-modal-foot .ui-btn.task-delete-open { min-width: 0; color: var(--ink-4); }
+.task-modal .ui-modal-foot .ui-btn.task-delete-open:hover { color: #a33a36; background: #fff2f1; }
+
+.task-delete-confirm { flex: 1 1 auto; margin: 0; display: grid; gap: 2px; }
+.task-delete-confirm b { color: #a33a36; font-size: var(--t-caption); font-weight: var(--fw-semi); }
+.task-delete-confirm span { color: var(--ink-4); font-size: var(--t-caption); }
 
 .modal-primary {
   width: 100%;
@@ -4312,7 +4318,8 @@ small, .caption { font-size: var(--t-caption); }
   /* In sheet mode the footer stacks, so the note would push the buttons off
      the bottom. It is guidance, and the guidance is already in the body. */
   .ui-modal-foot .ho-modal-note { display: none; }
-  .task-modal-footnote { display: none; }
+  /* The confirmation is the whole point of the footer in that state, so it stays. */
+  .task-delete-confirm { flex-basis: 100%; }
   .task-modal .ui-modal-foot .ui-btn { width: 100%; }
   .task-checklist-items label { grid-template-columns: 24px minmax(0, 1fr); }
   .task-checklist-items label em { grid-column: 2; }

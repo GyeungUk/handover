@@ -316,6 +316,8 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   const [customTeams, setCustomTeams] = useState<Team[]>([]);
   const [customMembers, setCustomMembers] = useState<CustomMember[]>([]);
   const [customTasks, setCustomTasks] = useState<CustomTask[]>([]);
+  /* `personId::title` of every seed-plan task somebody deleted; seed tasks are code, not rows. */
+  const [removedTaskKeys, setRemovedTaskKeys] = useState<string[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersLoadError, setMembersLoadError] = useState('');
   const [taskFocus, setTaskFocus] = useState<{ personId: string; taskTitle: string } | null>(null);
@@ -334,14 +336,19 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   }, [scheduleChanges]);
 
   const allTeams = useMemo(() => {
+    /* Deleting only ever hides a *seed* task — one authored here is deleted as a row and is simply
+       absent from `customTasks` — so the filter runs before the authored tasks are merged in. That
+       is what lets a deleted seed task's name be used again for a new one. */
+    const removed = new Set(removedTaskKeys);
+    const keep = (person: Person) => person.tasks.filter((task) => !removed.has(taskKey(person.id, task.title)));
     const merged = [...seedTeams, ...customTeams].map((team) => ({
       ...team,
-      people: team.people.map((person) => ({ ...person, tasks: [...person.tasks] })),
+      people: team.people.map((person) => ({ ...person, tasks: keep(person) })),
     }));
     for (const member of customMembers) {
       const team = merged.find((item) => item.id === member.teamId);
       if (team && !team.people.some((person) => person.id === member.id)) {
-        team.people.push({ ...member, tasks: [...member.tasks] });
+        team.people.push({ ...member, tasks: keep(member) });
       }
     }
     for (const task of customTasks) {
@@ -359,7 +366,7 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
       }
     }
     return merged;
-  }, [customMembers, customTasks, customTeams]);
+  }, [customMembers, customTasks, customTeams, removedTaskKeys]);
 
   const teams = useMemo(() => allTeams.map((team) => ({
     ...team,
@@ -385,7 +392,7 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
         const [members, teamData, taskData] = await Promise.all([
           membersResponse.json() as Promise<OrgResponse>,
           teamsResponse.json() as Promise<{ customTeams?: Team[] }>,
-          tasksResponse.json() as Promise<{ tasks?: CustomTask[] }>,
+          tasksResponse.json() as Promise<{ tasks?: CustomTask[]; removedTaskKeys?: string[] }>,
         ]);
         return { members, teamData, taskData };
       })
@@ -394,6 +401,7 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
         setCustomMembers(members.customMembers ?? []);
         setCustomTeams(teamData.customTeams ?? []);
         setCustomTasks(taskData.tasks ?? []);
+        setRemovedTaskKeys(taskData.removedTaskKeys ?? []);
       })
       .catch((error) => { if (error instanceof Error && error.name !== 'AbortError') setMembersLoadError(error.message); })
       .finally(() => setMembersLoading(false));
@@ -428,6 +436,30 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     setCustomTasks((current) => [...current, saved]);
     const team = teams.find((item) => item.people.some((person) => person.id === saved.personId));
     if (team) setView({ type: 'person', teamId: team.id, personId: saved.personId });
+  };
+
+  /**
+   * Removes a task from the calendar for everyone. The server decides which of the two kinds it is;
+   * the reply says nothing back, so both local shapes are updated and whichever one held the task
+   * is the one that changes. Its reschedule trail goes too — the server drops it, and leaving it
+   * here would re-apply a move to a task that no longer exists.
+   */
+  const deleteTask = async (personId: string, taskTitle: string) => {
+    const response = await fetch('/api/tasks', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personId, taskTitle }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error ?? '일정을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    const key = taskKey(personId, taskTitle);
+    const authored = customTasks.some((task) => task.personId === personId && task.title === taskTitle);
+    if (authored) setCustomTasks((current) => current.filter((task) => !(task.personId === personId && task.title === taskTitle)));
+    else setRemovedTaskKeys((current) => current.includes(key) ? current : [...current, key]);
+    setScheduleChanges((current) => current.filter((change) => change.taskKey !== key));
+    setTaskFocus(null);
   };
 
   useEffect(() => {
@@ -502,6 +534,6 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     {taskCreateOpen && <CreateTaskModal teams={teams} initialPersonId={selectedPerson?.id} onCreate={createTask} onClose={() => setTaskCreateOpen(false)} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal allTeams={allTeams} removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onCreateTeam={createTeam} onCreateMember={createMember} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}
-    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onClose={() => setTaskFocus(null)} />}
+    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onClose={() => setTaskFocus(null)} />}
   </div></TodayContext.Provider></OrgContext.Provider>;
 }
