@@ -105,7 +105,7 @@ export default function AppHeader({
     <>
       <header className={`topbar ${compact ? 'compact' : ''} ${stuck ? 'is-stuck' : ''}`}>
         <button className="brand" type="button" onClick={onHome} aria-label="국제처 업무·인수인계 홈">
-          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
+          <span className="brand-mark" aria-hidden="true"><span>SS</span><b>U</b></span>
           <span>
             <strong>국제처 업무·인수인계</strong>
             <small>SOONGSIL GLOBAL AFFAIRS</small>

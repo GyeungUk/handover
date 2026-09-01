@@ -125,22 +125,19 @@ small, .caption { font-size: var(--t-caption); }
   height: 34px;
   flex: 0 0 auto;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding-bottom: 10px;
   border-radius: 11px;
   background: linear-gradient(155deg, var(--blue-600), var(--blue-800));
   box-shadow: 0 4px 12px rgba(14, 54, 88, 0.24);
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  line-height: 1;
 }
-.brand-mark i {
-  width: 3px;
-  border-radius: 2px;
-  background: var(--blue-300);
-}
-.brand-mark i:nth-child(1) { height: 8px; }
-.brand-mark i:nth-child(2) { height: 14px; background: #fff; }
-.brand-mark i:nth-child(3) { height: 11px; background: rgba(255, 255, 255, 0.62); }
+.brand-mark > span { color: #fff; }
+.brand-mark > b { color: var(--blue-300); font: inherit; }
 
 .brand strong { display: block; font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
 .brand small {
