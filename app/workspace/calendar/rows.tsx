@@ -72,14 +72,16 @@ type Placed = {
   displayDuration: number;
 };
 
-/** Minimum visual room for a title + period while keeping the whole year visible. */
-const MIN_CARD_WEEKS = 7;
+/** Enough room to keep the existing title-and-period card treatment readable. */
+const MIN_CARD_WEEKS = 5;
 
 /**
  * Greedy interval packing over the task bars.
  *
  * A task goes in the first lane whose prior task has finished, and a new lane
- * opens only for a real overlap. Labels no longer claim space beside a bar.
+ * opens only for a real overlap. Five weeks is the visual floor for the
+ * existing in-card title treatment; using the former seven-week floor made an
+ * actual five-week task look as though it continued for two extra weeks.
  */
 export function layoutTasks(tasks: Task[]): { placed: Placed[]; lanes: number } {
   const claims = tasks.map((task) => {

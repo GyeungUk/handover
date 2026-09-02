@@ -3,7 +3,7 @@
 import { useEffect, type CSSProperties } from 'react';
 import type { HandoverEntry, WorkBundle } from '../../handover-schema';
 import { AttachmentAction, CategoryIcon } from '../atoms';
-import { categories } from '../categories';
+import { categories, fontStack } from '../categories';
 import { fileKind, formatBytes } from '../format';
 import { Button, Modal } from '../../ui';
 
@@ -52,7 +52,7 @@ export default function EntryDetailModal({ entry, bundle, entries, onSelect, onC
     <div style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties}>
       <div className="ho-detail-body">
         {filled.length > 0 && <dl className="ho-detail-properties">{filled.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{entry.properties[field.key]}</dd></div>)}</dl>}
-        <div className="ho-detail-content" style={{ fontFamily: entry.formatting.fontFamily, fontSize: `${entry.formatting.fontSize}px` }} dangerouslySetInnerHTML={{ __html: entry.detail }} />
+        <div className="ho-detail-content" style={{ fontFamily: fontStack(entry.formatting.fontFamily), fontSize: `${entry.formatting.fontSize}px` }} dangerouslySetInnerHTML={{ __html: entry.detail }} />
         <div className="ho-detail-files">
           <span>첨부파일 <b>{entry.attachments.length}개</b></span>
           {entry.attachments.length > 0

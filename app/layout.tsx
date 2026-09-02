@@ -26,8 +26,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /*
+    The font variables belong on `<html>`, not on `<body>`. `--sans` is declared on `:root` and
+    names `var(--font-geist-sans)` inside it, and a custom property is substituted where it is
+    declared: with the variable one level lower that lookup failed, `--sans` computed to nothing,
+    and `font-family: var(--sans)` was dropped from every element on the page — the whole interface
+    fell back to the browser's default face instead of Pretendard.
+  */
   return (
-    <html lang="ko">
+    <html lang="ko" className={`${geistSans.variable} ${geistMono.variable}`}>
       <head>
         {/*
           Korean display type carries this interface, and Geist has no Hangul. Pretendard is the
@@ -40,11 +47,7 @@ export default function RootLayout({
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
         />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

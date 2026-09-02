@@ -28,6 +28,18 @@ export const categories: CategoryMeta[] = [
 
 export const defaultFormatting: EntryFormatting = { fontFamily: 'Pretendard', fontSize: '16' };
 
+/**
+ * The font-family to actually render an entry in.
+ *
+ * The picker stores a plain family name, and that name is what a saved entry carries — but the
+ * Pretendard the rest of the interface uses is served as `Pretendard Variable`, so the bare name
+ * matched nothing and every entry fell back to whatever face the reader's browser defaults to.
+ * Expanding it here rather than at the picker keeps entries written before this fix rendering in
+ * the same face as the ones written after it.
+ */
+export const fontStack = (family: string) =>
+  family === 'Pretendard' ? '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", sans-serif' : family;
+
 export const initialEntries: HandoverEntry[] = [];
 export const initialBundles: WorkBundle[] = [];
 

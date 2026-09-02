@@ -16,12 +16,14 @@ export function EmployeeIdField({ value, onChange, autoFocus = false }: {
       {(id) => (
         <Input
           id={id}
+          name="employeeId"
           value={value}
           onChange={(event) => onChange(digitsOnly(event.target.value))}
           inputMode="numeric"
           pattern="[0-9]*"
           autoComplete="username"
-          placeholder="숫자만 입력"
+          spellCheck={false}
+          placeholder="예: 20260001…"
           required
           autoFocus={autoFocus}
         />
@@ -44,6 +46,7 @@ export function PasswordField({ label, value, onChange, autoComplete, hint, minL
       {(id) => (
         <Input
           id={id}
+          name={autoComplete === 'current-password' ? 'password' : 'newPassword'}
           type="password"
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -85,6 +88,7 @@ export function NewPasswordFields({ password, confirmation, onPassword, onConfir
         {(id) => (
           <Input
             id={id}
+            name="newPasswordConfirmation"
             type="password"
             value={confirmation}
             onChange={(event) => onConfirmation(event.target.value)}

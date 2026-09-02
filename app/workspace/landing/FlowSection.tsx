@@ -18,7 +18,7 @@ import { useToday } from '../context';
  */
 type CurrentWorkItem = { team: Team; person: Person; task: Task };
 
-export default function FlowSection({ weekLoad, currentWork }: { weekLoad: number[]; currentWork: CurrentWorkItem[] }) {
+export default function FlowSection({ weekLoad, currentWork, onPerson }: { weekLoad: number[]; currentWork: CurrentWorkItem[]; onPerson: (teamId: string, personId: string) => void }) {
   const peak = Math.max(1, ...weekLoad);
   const half = Math.round(peak / 2);
   const today = useToday();
@@ -99,11 +99,14 @@ export default function FlowSection({ weekLoad, currentWork }: { weekLoad: numbe
                     key={`${person.id}-${task.title}`}
                     style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}
                   >
-                    <span className="current-work-avatar" aria-hidden="true">{person.initial}</span>
-                    <div>
-                      <p><strong>{person.name}</strong><small>{team.short} · {person.role}</small></p>
-                      <b>{task.title}</b>
-                    </div>
+                    <button type="button" onClick={() => onPerson(team.id, person.id)} aria-label={`${task.title} · ${person.name} 담당자 페이지 열기`}>
+                      <span className="current-work-avatar" aria-hidden="true">{person.initial}</span>
+                      <div>
+                        <p><strong>{person.name}</strong><small>{team.short} · {person.role}</small></p>
+                        <b>{task.title}</b>
+                      </div>
+                      <span className="current-work-open" aria-hidden="true">→</span>
+                    </button>
                   </li>
                 ))}
               </ul>

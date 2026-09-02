@@ -27,11 +27,16 @@ type Step =
 
 /** Every endpoint answers `{"error": "..."}` on failure, and the message is already written for the reader. */
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('서버에 연결하지 못했습니다. 잠시 후 다시 시도하거나 시스템 관리자에게 문의해 주세요.');
+  }
   const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) throw new Error(payload.error || '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.');
   return payload;
@@ -213,10 +218,10 @@ export default function LoginClient({ configured }: { configured: boolean }) {
         <StepCard title="비밀번호 만들기" lead="처음 접속하는 직번입니다. 사용할 비밀번호를 만들어 주세요." onSubmit={createPassword}>
           <IdentifiedAs employeeId={step.employeeId} />
           <Field label="이름">
-            {(id) => <Input id={id} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required autoFocus />}
+            {(id) => <Input id={id} name="name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" required autoFocus />}
           </Field>
           <Field label="이메일 주소" hint="비밀번호를 잊었을 때 인증번호를 받을 주소입니다.">
-            {(id) => <Input id={id} type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />}
+            {(id) => <Input id={id} name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" spellCheck={false} placeholder="예: name@ssu.ac.kr…" required />}
           </Field>
           <NewPasswordFields password={password} confirmation={confirmation} onPassword={setPassword} onConfirmation={setConfirmation} />
           <Feedback notice={notice} error={error} />
@@ -243,10 +248,10 @@ export default function LoginClient({ configured }: { configured: boolean }) {
           </fieldset>
           {belongsToOffice === 'yes' && <>
             <Field label="소속 파트" required>
-              {(id) => <Select id={id} value={teamId} onChange={(event) => setTeamId(event.target.value)} required autoFocus>{onboardingTeams.map((team) => <option value={team.id} key={team.id}>{team.title}</option>)}</Select>}
+              {(id) => <Select id={id} name="teamId" value={teamId} onChange={(event) => setTeamId(event.target.value)} required autoFocus>{onboardingTeams.map((team) => <option value={team.id} key={team.id}>{team.title}</option>)}</Select>}
             </Field>
             <Field label="담당 업무" required hint="예: 체류·비자 관리, 국제협정 · 의전">
-              {(id) => <Input id={id} value={workRole} onChange={(event) => setWorkRole(event.target.value)} maxLength={80} placeholder="담당하는 업무를 입력해 주세요" required />}
+              {(id) => <Input id={id} name="workRole" autoComplete="off" value={workRole} onChange={(event) => setWorkRole(event.target.value)} maxLength={80} placeholder="예: 체류·비자 관리…" required />}
             </Field>
           </>}
           <Feedback notice={notice} error={error} />
@@ -275,12 +280,14 @@ export default function LoginClient({ configured }: { configured: boolean }) {
             {(id) => (
               <Input
                 id={id}
+                name="verificationCode"
                 className="auth-code"
                 value={code}
                 onChange={(event) => setCode(digitsOnly(event.target.value).slice(0, 6))}
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                placeholder="6자리"
+                spellCheck={false}
+                placeholder="예: 123456…"
                 required
                 autoFocus
               />

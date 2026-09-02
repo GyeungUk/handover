@@ -35,5 +35,16 @@ public record DocumentResponse(
             List<Attachment> attachments,
             Formatting formatting) {}
 
-    public record Bundle(String id, String title, List<String> entryIds, String decision, String comment) {}
+    /**
+     * {@code previousComment} is the rejection this unit was resubmitted against. It survives the
+     * submission that clears {@code decision} and {@code comment}, so the reviewer reading the
+     * correction can still see what they asked for, and is cleared by the next verdict.
+     */
+    public record Bundle(
+            String id,
+            String title,
+            List<String> entryIds,
+            String decision,
+            String comment,
+            String previousComment) {}
 }

@@ -58,7 +58,7 @@ export default function Modal({
   /** Stack the footer's buttons full-width in sheet mode. */
   stackFooter?: boolean;
   /** Keep long read-first dialogs at their top instead of scrolling to a lower control. */
-  initialFocus?: 'first' | 'dialog';
+  initialFocus?: 'first' | 'head' | 'dialog';
   className?: string;
   children: ReactNode;
 }) {
@@ -83,7 +83,9 @@ export default function Modal({
     const body = node?.querySelector<HTMLElement>('.ui-modal-body');
     const wanted = initialFocus === 'dialog'
       ? node
-      : body?.querySelector<HTMLElement>(FOCUSABLE) ?? node?.querySelector<HTMLElement>(FOCUSABLE);
+      : initialFocus === 'head'
+        ? node?.querySelector<HTMLElement>(FOCUSABLE)
+        : body?.querySelector<HTMLElement>(FOCUSABLE) ?? node?.querySelector<HTMLElement>(FOCUSABLE);
     (wanted ?? node)?.focus();
     return () => opener?.focus?.();
   }, [initialFocus]);
@@ -112,14 +114,15 @@ export default function Modal({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const node = dialog.current;
+      const dialogs = Array.from(document.querySelectorAll<HTMLElement>('.ui-modal[role="dialog"]'));
+      if (!node || dialogs.at(-1) !== node) return;
       if (event.key === 'Escape' && dismissable) {
         event.stopPropagation();
         onClose();
         return;
       }
       if (event.key !== 'Tab') return;
-      const node = dialog.current;
-      if (!node) return;
       const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
         (item) => item.offsetParent !== null || item === document.activeElement,
       );

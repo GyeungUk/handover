@@ -113,22 +113,22 @@ export default function AppHeader({
         </button>
 
         <div className="topbar-actions">
-          <button className="icon-button search-compact" type="button" onClick={onSearch} aria-label="통합 검색">
+          <button className="icon-button search-compact" type="button" onClick={onSearch} aria-label="업무 또는 담당자 검색" title="검색 (⌘/Ctrl K)">
             <span aria-hidden="true">⌕</span>
           </button>
 
           <button className="search-button" type="button" onClick={onSearch}>
             <span aria-hidden="true">⌕</span>
             <span>업무 또는 담당자 검색</span>
-            <kbd>⌘K</kbd>
+            <kbd>⌘/Ctrl K</kbd>
           </button>
 
-          <button className="add-task-button" type="button" onClick={onAddTask}>
+          <button className="add-task-button" type="button" onClick={onAddTask} aria-label="새 일정 추가" title="새 일정 추가">
             <span aria-hidden="true">＋</span>
             <b>일정 추가</b>
           </button>
 
-          <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover}>
+          <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover} aria-label="인수인계 작성" title="인수인계 작성">
             <span aria-hidden="true">↗</span>
             <b>인수인계 작성</b>
           </button>
@@ -139,7 +139,8 @@ export default function AppHeader({
               type="button"
               onClick={() => setProfileOpen((open) => !open)}
               aria-expanded={profileOpen}
-              aria-haspopup="menu"
+              aria-label={`${displayName} 계정 메뉴`}
+              aria-haspopup="true"
             >
               <Avatar size="sm" round>{displayName.slice(0, 1).toUpperCase()}</Avatar>
               <span className="profile-copy">
@@ -150,20 +151,20 @@ export default function AppHeader({
             </button>
 
             {profileOpen && (
-              <div className="profile-menu" role="menu">
+              <div className="profile-menu" aria-label="계정 메뉴">
                 <div className="profile-menu-who">
                   <b>{displayName}</b>
                   <span>직번 {user.employeeId}</span>
                 </div>
                 {user.role === 'admin' && (
-                  <button type="button" role="menuitem" onClick={() => { setProfileOpen(false); onManageMembers(); }}>
+                  <button type="button" onClick={() => { setProfileOpen(false); onManageMembers(); }}>
                     <span aria-hidden="true">⚙</span> 파트 · 담당자 관리
                   </button>
                 )}
-                <button className="logout-button" type="button" role="menuitem" onClick={signOut} disabled={signingOut}>
+                <button className="logout-button" type="button" onClick={signOut} disabled={signingOut}>
                   {signingOut ? '로그아웃 중…' : '로그아웃'}
                 </button>
-                <button className="delete-account-button" type="button" role="menuitem" onClick={openDeleteAccount}>
+                <button className="delete-account-button" type="button" onClick={openDeleteAccount}>
                   회원탈퇴
                 </button>
               </div>
@@ -212,6 +213,7 @@ export default function AppHeader({
               {(id) => (
                 <Input
                   id={id}
+                  name="currentPassword"
                   type="password"
                   autoComplete="current-password"
                   value={deletePassword}
@@ -219,7 +221,7 @@ export default function AppHeader({
                   disabled={deleting}
                   aria-describedby={`${id}-${deleteError ? 'error' : 'hint'}`}
                   aria-invalid={Boolean(deleteError)}
-                  placeholder="비밀번호 입력"
+                  placeholder="현재 비밀번호 입력…"
                 />
               )}
             </Field>

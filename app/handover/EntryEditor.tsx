@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { documentLimits, type EntryAttachment, type EntryFormatting, type HandoverEntry } from '../handover-schema';
 import { AttachmentAction, CategoryIcon } from './atoms';
-import { type CategoryMeta, defaultFormatting } from './categories';
+import { type CategoryMeta, defaultFormatting, fontStack } from './categories';
 import { fileKind, formatBytes, plainText } from './format';
 import { Button, Modal } from '../ui';
 
@@ -155,7 +155,7 @@ export default function EntryEditor({ category, entry, onSave, onClose }: { cate
           <button type="button" title="실행 취소" aria-label="실행 취소" onMouseDown={(event) => runCommand(event, 'undo')}>↶</button>
           <button type="button" title="다시 실행" aria-label="다시 실행" onMouseDown={(event) => runCommand(event, 'redo')}>↷</button>
         </div>
-        <div ref={editorRef} className="ho-rich-editor" contentEditable suppressContentEditableWarning data-placeholder="다음 담당자가 바로 업무를 이어갈 수 있도록 내용을 작성하세요. 표, 목록, 강조 서식을 함께 사용할 수 있습니다." style={{ fontFamily: formatting.fontFamily, fontSize: `${formatting.fontSize}px` }} onInput={syncEditorValue} />
+        <div ref={editorRef} className="ho-rich-editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="인수인계 본문" aria-multiline="true" aria-required="true" tabIndex={0} data-placeholder="다음 담당자가 바로 업무를 이어갈 수 있도록 내용을 작성하세요. 표, 목록, 강조 서식을 함께 사용할 수 있습니다." style={{ fontFamily: fontStack(formatting.fontFamily), fontSize: `${formatting.fontSize}px` }} onInput={syncEditorValue} />
         <div className="ho-editor-status"><span>▦ 표 삽입 가능</span><span>{contentLength}자</span></div>
       </div>
       <div className="ho-attach-block">

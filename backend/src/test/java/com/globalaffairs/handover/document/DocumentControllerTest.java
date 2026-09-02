@@ -48,7 +48,7 @@ class DocumentControllerTest {
                         Map.of("cycle", "수시"),
                         List.of(new DocumentResponse.Attachment("f1", "명단.xlsx", 2048, "", "")),
                         new DocumentResponse.Formatting("Pretendard", "16"))),
-                List.of(new DocumentResponse.Bundle("b1", "체류·비자", List.of("r1"), null, "")),
+                List.of(new DocumentResponse.Bundle("b1", "체류·비자", List.of("r1"), null, "", "")),
                 "2026-08-29T01:02:03.456Z",
                 null,
                 null,

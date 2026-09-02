@@ -30,6 +30,7 @@ public class CustomTaskController {
      */
     public record CreateTaskRequest(
             String personId,
+            List<String> personIds,
             String title,
             Integer start,
             Integer duration,
@@ -52,11 +53,23 @@ public class CustomTaskController {
     }
 
     @PostMapping
-    public ResponseEntity<Map<String, CustomTaskResponse>> create(
+    public ResponseEntity<Map<String, Object>> create(
             AuthenticatedUser user, @RequestBody(required = false) CreateTaskRequest request) {
         AuthenticatedUser current = Access.requireRegistered(user);
         CreateTaskRequest body =
-                request == null ? new CreateTaskRequest(null, null, null, null, null, null, null) : request;
+                request == null ? new CreateTaskRequest(null, null, null, null, null, null, null, null) : request;
+        if (body.personIds() != null) {
+            List<CustomTaskResponse> tasks = service.createMany(
+                    body.personIds(),
+                    body.title(),
+                    body.start(),
+                    body.duration(),
+                    body.note(),
+                    body.startsOn(),
+                    body.endsOn(),
+                    current.displayName());
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.<String, Object>of("tasks", tasks));
+        }
         CustomTaskResponse task = service.create(
                 body.personId(),
                 body.title(),
@@ -66,7 +79,7 @@ public class CustomTaskController {
                 body.startsOn(),
                 body.endsOn(),
                 current.displayName());
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("task", task));
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.<String, Object>of("task", task));
     }
 
     @DeleteMapping

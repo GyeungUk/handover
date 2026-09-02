@@ -3,6 +3,7 @@ package com.globalaffairs.handover.schedule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -16,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -78,6 +80,44 @@ class CustomTaskServiceTest {
         assertThat(task.start()).isEqualTo(12);
         assertThat(task.duration()).isEqualTo(3);
         assertThat(task.note()).isEqualTo("대상자 명단 확인");
+    }
+
+    @Test
+    void createsOneTaskForEveryTeamTarget() {
+        when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<CustomTaskResponse> tasks = service.createMany(
+                List.of("minseo", "jiwoo", "minseo"),
+                "파트 공통 점검",
+                12,
+                2,
+                "공통 준비사항",
+                null,
+                null,
+                "김지현");
+
+        assertThat(tasks).extracting(CustomTaskResponse::personId).containsExactly("minseo", "jiwoo");
+        assertThat(tasks).allMatch(task -> task.title().equals("파트 공통 점검"));
+    }
+
+    @Test
+    void validatesEveryTeamTargetBeforeWritingAnything() {
+        when(repository.existsByPersonIdAndTitle(any(), eq("파트 공통 점검")))
+                .thenAnswer(invocation -> invocation.<String>getArgument(0).equals("jiwoo"));
+
+        assertThatThrownBy(() -> service.createMany(
+                        List.of("minseo", "jiwoo"),
+                        "파트 공통 점검",
+                        12,
+                        2,
+                        "",
+                        null,
+                        null,
+                        "김지현"))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("같은 담당자에게 동일한 이름의 일정이 이미 있습니다.");
+
+        verify(repository, never()).saveAndFlush(any());
     }
 
     @Test

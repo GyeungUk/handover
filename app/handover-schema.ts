@@ -172,13 +172,21 @@ export type HandoverEntry = {
   formatting: EntryFormatting;
 };
 
-/** A group of entries reviewed and approved as one unit. */
+/**
+ * A group of entries reviewed and approved as one unit.
+ *
+ * `comment` is the verdict standing on it now; `previousComment` is the rejection a resubmitted
+ * unit is answering. Submitting clears the verdict so the unit can be judged afresh, and without
+ * the second field the reviewer would re-read a correction with no record of what they asked for.
+ * Both are set only by the server: a save never sends them.
+ */
 export type WorkBundle = {
   id: string;
   title: string;
   entryIds: string[];
   decision: ReviewDecision | null;
   comment: string;
+  previousComment: string;
 };
 
 export type HandoverDocument = {

@@ -50,6 +50,7 @@ export default function Landing({
 
   return (
     <>
+      <main>
       <HeroSection
         parts={teams.length}
         people={peopleCount}
@@ -58,7 +59,8 @@ export default function Landing({
         onAll={onAll}
       />
       <PartsSection teams={teams} totalPeople={peopleCount} onAll={onAll} onTeam={onTeam} onPerson={onPerson} />
-      <FlowSection weekLoad={weekLoad} currentWork={currentWork} />
+      <FlowSection weekLoad={weekLoad} currentWork={currentWork} onPerson={onPerson} />
+      </main>
       <SiteFooter />
     </>
   );

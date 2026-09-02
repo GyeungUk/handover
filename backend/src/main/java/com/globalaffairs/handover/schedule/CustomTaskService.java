@@ -40,6 +40,16 @@ public class CustomTaskService {
     private final AcademicCalendar calendar;
     private final Clock clock;
 
+    private record PreparedTask(
+            String personId,
+            String title,
+            int start,
+            int duration,
+            String note,
+            String startsOn,
+            String endsOn,
+            boolean fixed) {}
+
     public CustomTaskService(
             CustomTaskRepository repository,
             RemovedTaskRepository removedTasks,
@@ -95,6 +105,51 @@ public class CustomTaskService {
             String startsOn,
             String endsOn,
             String createdBy) {
+        return persist(prepare(personId, title, start, duration, note, startsOn, endsOn), createdBy);
+    }
+
+    /**
+     * Creates the same task for several people as one transaction.
+     *
+     * <p>Every target is validated before the first row is written. That makes a team add all-or-
+     * nothing: a duplicate title for one teammate cannot leave the other teammates with a task the
+     * team believes was never created.
+     */
+    @Transactional
+    public List<CustomTaskResponse> createMany(
+            List<String> personIds,
+            String title,
+            Integer start,
+            Integer duration,
+            String note,
+            String startsOn,
+            String endsOn,
+            String createdBy) {
+        List<String> targets = personIds == null
+                ? List.of()
+                : personIds.stream()
+                        .map(personId -> personId == null ? "" : personId.trim())
+                        .filter(personId -> !personId.isEmpty())
+                        .distinct()
+                        .toList();
+        if (targets.isEmpty()) {
+            throw ApiException.badRequest("일정을 등록할 파트원을 선택해 주세요.");
+        }
+
+        List<PreparedTask> prepared = targets.stream()
+                .map(personId -> prepare(personId, title, start, duration, note, startsOn, endsOn))
+                .toList();
+        return prepared.stream().map(task -> persist(task, createdBy)).toList();
+    }
+
+    private PreparedTask prepare(
+            String personId,
+            String title,
+            Integer start,
+            Integer duration,
+            String note,
+            String startsOn,
+            String endsOn) {
         String normalizedPersonId = personId == null ? "" : personId.trim();
         String normalizedTitle = title == null ? "" : title.trim();
         String normalizedNote = note == null ? "" : note.trim();
@@ -112,7 +167,12 @@ public class CustomTaskService {
         if (normalizedNote.length() > NOTE_MAX) {
             throw ApiException.badRequest("업무 설명은 %d자 이내로 입력해 주세요.".formatted(NOTE_MAX));
         }
-        boolean fixed = startsOn != null && !startsOn.isBlank() && endsOn != null && !endsOn.isBlank();
+        boolean hasStartDate = startsOn != null && !startsOn.isBlank();
+        boolean hasEndDate = endsOn != null && !endsOn.isBlank();
+        if (hasStartDate != hasEndDate) {
+            throw ApiException.badRequest("확정 기간의 시작일과 종료일을 모두 선택해 주세요.");
+        }
+        boolean fixed = hasStartDate;
         if (fixed) {
             /* The slots follow the dates rather than whatever the form last had selected, so the two
                halves of a date-fixed task cannot be created disagreeing about which month it is in. */
@@ -141,17 +201,29 @@ public class CustomTaskService {
             throw ApiException.conflict("같은 담당자에게 동일한 이름의 일정이 이미 있습니다.");
         }
 
+        return new PreparedTask(
+                normalizedPersonId,
+                normalizedTitle,
+                start,
+                duration,
+                normalizedNote,
+                startsOn,
+                endsOn,
+                fixed);
+    }
+
+    private CustomTaskResponse persist(PreparedTask task, String createdBy) {
         try {
             CustomTask saved = repository.saveAndFlush(new CustomTask(
-                    normalizedPersonId,
-                    normalizedTitle,
-                    start,
-                    duration,
-                    normalizedNote,
+                    task.personId(),
+                    task.title(),
+                    task.start(),
+                    task.duration(),
+                    task.note(),
                     createdBy,
                     Instant.now(clock)));
-            if (fixed) {
-                taskPeriods.set(normalizedPersonId, normalizedTitle, startsOn, endsOn, createdBy);
+            if (task.fixed()) {
+                taskPeriods.set(task.personId(), task.title(), task.startsOn(), task.endsOn(), createdBy);
             }
             return CustomTaskResponse.from(saved);
         } catch (DataIntegrityViolationException raced) {

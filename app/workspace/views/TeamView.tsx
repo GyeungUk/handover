@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { Chip, ChipRail, Container, Stat } from '../../ui';
+import { Button, Chip, ChipRail, Container, Stat } from '../../ui';
 import type { Person, Task, Team } from '../../org-data';
 import { useTeams } from '../context';
 import { CalendarBody, WeekHeader } from '../calendar/WeekRuler';
@@ -25,6 +25,7 @@ export default function TeamView({
   onTeam,
   onPerson,
   onTask,
+  onAddTask,
 }: {
   team: Team;
   onHome: () => void;
@@ -32,6 +33,7 @@ export default function TeamView({
   onTeam: (id: string) => void;
   onPerson: (id: string) => void;
   onTask: (task: Task, person: Person) => void;
+  onAddTask: () => void;
 }) {
   const teams = useTeams();
   const busyWeeks = new Set(
@@ -62,32 +64,38 @@ export default function TeamView({
           <Stat label="주요 업무" value={taskCount} unit="건" />
         </SummaryBar>
 
-        <YearCalendar
-          label={`${team.title} 연간 업무 일정표`}
-          wide={
-            <section className="calendar-card team-calendar">
-              <CalendarBody>
-                <WeekHeader lead="담당자 / 역할" />
+        <section className="team-annual-section">
+          <div className="section-bar">
+            <h2 className="ui-h2">연간 일정</h2>
+            <Button size="sm" variant="outline" glyph="＋" onClick={onAddTask}>파트 일정 추가</Button>
+          </div>
+          <YearCalendar
+            label={`${team.title} 연간 업무 일정표`}
+            wide={
+              <section className="calendar-card team-calendar">
+                <CalendarBody>
+                  <WeekHeader lead="담당자 / 역할" />
+                  {team.people.map((person) => (
+                    <PersonTaskRow key={person.id} person={person} team={team} onPerson={() => onPerson(person.id)} onTask={onTask} />
+                  ))}
+                </CalendarBody>
+              </section>
+            }
+            narrow={
+              <div className="timeline-groups">
                 {team.people.map((person) => (
-                  <PersonTaskRow key={person.id} person={person} team={team} onPerson={() => onPerson(person.id)} onTask={onTask} />
+                  <PersonTimelineCard
+                    key={person.id}
+                    person={person}
+                    color={team.color}
+                    onPerson={() => onPerson(person.id)}
+                    onTask={onTask}
+                  />
                 ))}
-              </CalendarBody>
-            </section>
-          }
-          narrow={
-            <div className="timeline-groups">
-              {team.people.map((person) => (
-                <PersonTimelineCard
-                  key={person.id}
-                  person={person}
-                  color={team.color}
-                  onPerson={() => onPerson(person.id)}
-                  onTask={onTask}
-                />
-              ))}
-            </div>
-          }
-        />
+              </div>
+            }
+          />
+        </section>
 
         <section className="handover-note">
           <p>

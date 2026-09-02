@@ -17,12 +17,12 @@ function AnnualTrack({
   person,
   team,
   monthIndex,
-  onSelectMonth,
+  onTask,
 }: {
   person: Person;
   team: Team;
   monthIndex: number;
-  onSelectMonth: (month: number) => void;
+  onTask: (task: Task, person: Person) => void;
 }) {
   const { placed, lanes } = layoutTasks(person.tasks);
   return (
@@ -50,8 +50,9 @@ function AnnualTrack({
                 '--actual-width': `${(task.duration / displayDuration) * 100}%`,
               } as CSSProperties}
               type="button"
-              onClick={() => onSelectMonth(taskMonth)}
-              title={`${task.title} · 누르면 ${months[taskMonth]} 월간 일정으로 이동합니다${task.movedFrom !== undefined ? ` (${weekLabel(task.movedFrom)}에서 변경됨)` : ''}`}
+              onClick={() => onTask(task, person)}
+              aria-label={`${task.title} 업무 상세 보기`}
+              title={`${task.title} · 업무 상세 보기${task.movedFrom !== undefined ? ` (${weekLabel(task.movedFrom)}에서 변경됨)` : ''}`}
             >
               <span className="task-bar-fill" aria-hidden="true" />
               <span className="task-bar-label">
@@ -83,6 +84,7 @@ export default function PersonView({
   onTeam,
   onTask,
   onCalendarCheck,
+  onAddTask,
 }: {
   team: Team;
   person: Person;
@@ -91,6 +93,7 @@ export default function PersonView({
   onTeam: () => void;
   onTask: (task: Task, person: Person) => void;
   onCalendarCheck: () => void;
+  onAddTask: (monthIndex: number) => void;
 }) {
   const today = useToday();
   const [monthIndex, setMonthIndex] = useState(0);
@@ -157,6 +160,7 @@ export default function PersonView({
         <section className="person-annual-section">
           <div className="section-bar">
             <h2 className="ui-h2">연간 일정</h2>
+            <Button size="sm" variant="outline" glyph="＋" onClick={() => onAddTask(monthIndex)}>일정 추가</Button>
           </div>
           <YearCalendar
             label={`${person.name} 담당자 연간 업무 일정표`}
@@ -164,7 +168,7 @@ export default function PersonView({
               <div className="calendar-card person-annual">
                 <CalendarBody>
                   <WeekHeader lead="연간 주요 업무" />
-                  <AnnualTrack person={person} team={team} monthIndex={monthIndex} onSelectMonth={setMonthIndex} />
+                  <AnnualTrack person={person} team={team} monthIndex={monthIndex} onTask={onTask} />
                 </CalendarBody>
               </div>
             }
@@ -179,7 +183,13 @@ export default function PersonView({
           />
         </section>
 
-        <MonthCalendar person={person} team={team} monthIndex={monthIndex} setMonthIndex={setMonthIndex} onTask={onTask} />
+        <MonthCalendar
+          person={person}
+          monthIndex={monthIndex}
+          setMonthIndex={setMonthIndex}
+          onTask={onTask}
+          action={<Button size="sm" variant="outline" glyph="＋" onClick={() => onAddTask(monthIndex)}>일정 추가</Button>}
+        />
       </Container>
     </main>
   );

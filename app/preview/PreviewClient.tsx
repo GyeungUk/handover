@@ -224,43 +224,49 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       return json({ ok: true });
     }
     if (url.pathname === '/api/tasks' && method === 'POST') {
-      const personId = String(body.personId ?? '').trim();
+      const requestedIds = Array.isArray(body.personIds)
+        ? body.personIds.map((personId) => String(personId ?? '').trim()).filter(Boolean)
+        : [String(body.personId ?? '').trim()].filter(Boolean);
+      const personIds = [...new Set(requestedIds)];
       const title = String(body.title ?? '').trim();
-      const start = Number(body.start);
-      const duration = Number(body.duration);
+      let start = Number(body.start);
+      let duration = Number(body.duration);
       const note = String(body.note ?? '').trim();
       const fixedStart = String(body.startsOn ?? '').trim();
       const fixedEnd = String(body.endsOn ?? '').trim();
-      const personExists = Boolean(seedPerson(personId)) || customMembers.some((member) => member.id === personId);
-      const duplicate = (seedPerson(personId)?.person.tasks.some((task) => task.title === title)
-          && !removedTaskKeys.includes(taskKey(personId, title)))
-        || customTasks.some((task) => task.personId === personId && task.title === title);
-      if (!personExists || !title || !Number.isInteger(start) || !Number.isInteger(duration) || start < 0 || duration < 1 || start + duration > WEEKS_IN_YEAR) {
-        return json({ error: '담당자, 일정명과 기간을 확인해 주세요.' }, 400);
-      }
-      if (duplicate) return json({ error: '같은 담당자에게 동일한 이름의 일정이 이미 있습니다.' }, 409);
-      const task: PreviewTask = { personId, title, start, duration, note };
-      if (fixedStart && fixedEnd) {
+      if (fixedStart || fixedEnd) {
+        if (!fixedStart || !fixedEnd) return json({ error: '확정 기간의 시작일과 종료일을 모두 선택해 주세요.' }, 400);
         if (fixedEnd < fixedStart) return json({ error: '종료일이 시작일보다 빠를 수 없습니다.' }, 400);
         if (fixedStart < academicYearBounds.from || fixedEnd > academicYearBounds.to) {
           return json({ error: `확정 기간은 학년도(${academicYearBounds.from} ~ ${academicYearBounds.to}) 안에 있어야 합니다.` }, 400);
         }
-        const period = describePeriod({
-          taskKey: taskKey(personId, title),
-          personId,
+        start = weekOfDate(fixedStart);
+        duration = Math.max(1, weekOfDate(fixedEnd) - start + 1);
+      }
+      if (personIds.length === 0 || !title || !Number.isInteger(start) || !Number.isInteger(duration) || start < 0 || duration < 1 || start + duration > WEEKS_IN_YEAR) {
+        return json({ error: '담당자, 일정명과 기간을 확인해 주세요.' }, 400);
+      }
+      for (const personId of personIds) {
+        const personExists = Boolean(seedPerson(personId)) || customMembers.some((member) => member.id === personId);
+        const duplicate = (seedPerson(personId)?.person.tasks.some((task) => task.title === title)
+            && !removedTaskKeys.includes(taskKey(personId, title)))
+          || customTasks.some((task) => task.personId === personId && task.title === title);
+        if (!personExists) return json({ error: '담당자를 선택해 주세요.' }, 400);
+        if (duplicate) return json({ error: '같은 담당자에게 동일한 이름의 일정이 이미 있습니다.' }, 409);
+      }
+      const tasks = personIds.map((personId): PreviewTask => ({ personId, title, start, duration, note }));
+      if (fixedStart && fixedEnd) {
+        for (const task of tasks) taskPeriods.push(describePeriod({
+          taskKey: taskKey(task.personId, title),
+          personId: task.personId,
           taskTitle: title,
           startsOn: fixedStart,
           endsOn: fixedEnd,
           setBy: user.displayName,
-        });
-        /* The slots follow the dates rather than whatever the form last had selected, so the two
-           halves of a date-fixed task cannot be created disagreeing about which month it is in. */
-        task.start = period.startWeek;
-        task.duration = period.duration;
-        taskPeriods.push(period);
+        }));
       }
-      customTasks.push(task);
-      return json({ task }, 201);
+      customTasks.push(...tasks);
+      return json(Array.isArray(body.personIds) ? { tasks } : { task: tasks[0] }, 201);
     }
 
     if (url.pathname === '/api/schedules' && method === 'GET') return json({ changes: scheduleChanges });
@@ -506,18 +512,34 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       return json({ document: handoverDocument, viewerRole: 'admin', pendingDocuments });
     }
     if (url.pathname === '/api/handover' && method === 'PUT') {
+      const frozen = handoverDocument?.status === 'pending' || handoverDocument?.status === 'approved' ? handoverDocument.status : null;
+      if (frozen) {
+        return json({ error: frozen === 'pending' ? '검토 중인 문서는 수정할 수 없습니다.' : '승인된 문서는 수정할 수 없습니다.' }, 409);
+      }
       const entries = (Array.isArray(body.entries) ? body.entries : []) as HandoverEntry[];
       const bundles = (Array.isArray(body.bundles) ? body.bundles : []) as Array<Partial<WorkBundle> & Pick<WorkBundle, 'id' | 'title' | 'entryIds'>>;
       const now = new Date().toISOString();
+      /* A correction save keeps the previous verdict: the approved units have to stay visibly
+       * fixed, and the rejected ones have to keep the comment the author is working from. */
+      const correcting = handoverDocument?.status === 'rejected';
+      const verdicts = new Map((handoverDocument?.bundles ?? []).map((bundle) => [bundle.id, bundle]));
       handoverDocument = {
         ownerName: user.displayName,
-        status: handoverDocument?.status === 'rejected' ? 'rejected' : 'draft',
+        status: correcting ? 'rejected' : 'draft',
         entries,
-        bundles: bundles.map((bundle) => ({ ...bundle, decision: null, comment: '' })),
+        bundles: bundles.map((bundle) => {
+          const previous = correcting ? verdicts.get(bundle.id) : undefined;
+          return {
+            ...bundle,
+            decision: previous?.decision ?? null,
+            comment: previous?.comment ?? '',
+            previousComment: previous?.previousComment ?? '',
+          };
+        }),
         updatedAt: now,
         submittedAt: handoverDocument?.submittedAt ?? null,
-        reviewedAt: null,
-        reviewedBy: null,
+        reviewedAt: handoverDocument?.reviewedAt ?? null,
+        reviewedBy: handoverDocument?.reviewedBy ?? null,
       };
       return json({ document: handoverDocument });
     }
@@ -526,7 +548,24 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       const action = String(body.action ?? '');
       const now = new Date().toISOString();
       if (action === 'submit') {
-        handoverDocument = { ...handoverDocument, status: 'pending', submittedAt: now, updatedAt: now };
+        /* Approved units survive a correction round; only the returned ones go back to review. */
+        handoverDocument = {
+          ...handoverDocument,
+          status: 'pending',
+          submittedAt: now,
+          updatedAt: now,
+          reviewedAt: null,
+          reviewedBy: null,
+          bundles: handoverDocument.bundles.map((bundle) => ({
+            ...bundle,
+            decision: bundle.decision === 'approved' ? 'approved' : null,
+            comment: '',
+            /* the rejection a returned unit is answering outlives the verdict it came with */
+            previousComment: bundle.decision === 'approved'
+              ? ''
+              : bundle.decision === 'rejected' ? bundle.comment : bundle.previousComment,
+          })),
+        };
       } else if (action === 'rollover') {
         handoverDocument = {
           ...handoverDocument,
@@ -535,21 +574,26 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
           reviewedAt: null,
           reviewedBy: null,
           updatedAt: now,
-          bundles: handoverDocument.bundles.map((bundle) => ({ ...bundle, decision: null, comment: '' })),
+          bundles: handoverDocument.bundles.map((bundle) => ({ ...bundle, decision: null, comment: '', previousComment: '' })),
         };
       } else if (action === 'review') {
         const decisions = Array.isArray(body.decisions) ? body.decisions as Array<Record<string, unknown>> : [];
-        const rejected = decisions.some((decision) => decision.decision === 'rejected');
+        /* An approval is final, so a later review can only settle the units that came back — and
+         * the document's own verdict follows from all of them, not just the ones just decided. */
+        const reviewed = handoverDocument.bundles.map((bundle) => {
+          const verdict = bundle.decision === 'approved' ? undefined : decisions.find((candidate) => candidate.bundleId === bundle.id);
+          if (!verdict) return bundle;
+          const decision = verdict.decision as WorkBundle['decision'];
+          /* the verdict answers whatever was outstanding, so the old request retires */
+          return { ...bundle, decision, comment: decision === 'rejected' ? String(verdict.comment ?? '') : '', previousComment: '' };
+        });
         handoverDocument = {
           ...handoverDocument,
-          status: rejected ? 'rejected' : 'approved',
+          status: reviewed.some((bundle) => bundle.decision === 'rejected') ? 'rejected' : 'approved',
           reviewedAt: now,
           reviewedBy: user.displayName,
           updatedAt: now,
-          bundles: handoverDocument.bundles.map((bundle) => {
-            const decision = decisions.find((candidate) => candidate.bundleId === bundle.id);
-            return decision ? { ...bundle, decision: decision.decision as WorkBundle['decision'], comment: String(decision.comment ?? '') } : bundle;
-          }),
+          bundles: reviewed,
         };
       } else {
         return json({ error: '지원하지 않는 작업입니다.' }, 400);

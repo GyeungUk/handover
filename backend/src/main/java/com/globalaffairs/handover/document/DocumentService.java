@@ -118,7 +118,10 @@ public class DocumentService {
         List<DocumentResponse.Entry> parsedEntries = parseEntries(body.entries());
         List<DocumentResponse.Bundle> parsedBundles = parseBundles(body.bundles(), parsedEntries);
         if (existing.filter(document -> REJECTED.equals(document.getStatus())).isPresent()) {
-            parsedBundles = preserveReview(parsedBundles, readBundles(ownerEmail));
+            List<DocumentResponse.Entry> storedEntries = readEntries(ownerEmail);
+            List<DocumentResponse.Bundle> storedBundles = readBundles(ownerEmail);
+            requireApprovedContentUnchanged(parsedEntries, parsedBundles, storedEntries, storedBundles);
+            parsedBundles = preserveReview(parsedBundles, storedBundles);
         }
 
         HandoverDocument document = existing.orElseGet(
@@ -146,10 +149,19 @@ public class DocumentService {
         document.setSubmittedAt(now);
         document.setReviewedAt(null);
         document.setReviewedBy(null);
-        /* a resubmission starts the review over, so last round's verdicts are cleared */
+        /* Approved units survive a correction round; only returned units go back to review, and the
+         * rejection they are answering moves aside so the reviewer can still read it. */
         List<DocumentResponse.Bundle> cleared = storedBundles.stream()
-                .map(bundle -> new DocumentResponse.Bundle(
-                        bundle.id(), bundle.title(), bundle.entryIds(), null, ""))
+                .map(bundle -> APPROVED.equals(bundle.decision())
+                        ? new DocumentResponse.Bundle(
+                                bundle.id(), bundle.title(), bundle.entryIds(), APPROVED, "", "")
+                        : new DocumentResponse.Bundle(
+                                bundle.id(),
+                                bundle.title(),
+                                bundle.entryIds(),
+                                null,
+                                "",
+                                REJECTED.equals(bundle.decision()) ? bundle.comment() : bundle.previousComment()))
                 .toList();
         return write(document, storedEntries, cleared);
     }
@@ -169,7 +181,7 @@ public class DocumentService {
 
         List<DocumentResponse.Bundle> cleared = readBundles(ownerEmail).stream()
                 .map(bundle -> new DocumentResponse.Bundle(
-                        bundle.id(), bundle.title(), bundle.entryIds(), null, ""))
+                        bundle.id(), bundle.title(), bundle.entryIds(), null, "", ""))
                 .toList();
         document.setStatus(DRAFT);
         document.setUpdatedAt(Instant.now(clock));
@@ -191,18 +203,34 @@ public class DocumentService {
         Map<String, DecisionInput> verdicts = parseDecisions(decisions);
         List<DocumentResponse.Bundle> storedBundles = readBundles(ownerEmail);
         Set<String> expectedBundleIds = storedBundles.stream()
+                .filter(bundle -> !APPROVED.equals(bundle.decision()))
                 .map(DocumentResponse.Bundle::id)
                 .collect(Collectors.toSet());
+
+        /* Older clients may echo an already-approved verdict. Accept that harmless echo, but never
+         * let a later review overturn the approval. */
+        storedBundles.stream()
+                .filter(bundle -> APPROVED.equals(bundle.decision()))
+                .forEach(bundle -> {
+                    DecisionInput repeated = verdicts.remove(bundle.id());
+                    if (repeated != null && !APPROVED.equals(repeated.decision())) {
+                        throw ApiException.conflict("이미 승인된 담당업무 단위는 검토 결과를 변경할 수 없습니다.");
+                    }
+                });
         if (!verdicts.keySet().equals(expectedBundleIds)) {
             throw ApiException.badRequest("모든 담당업무 단위를 검토해야 합니다.");
         }
 
         List<DocumentResponse.Bundle> reviewed = storedBundles.stream()
                 .map(bundle -> {
+                    if (APPROVED.equals(bundle.decision())) {
+                        return bundle;
+                    }
                     DecisionInput verdict = verdicts.get(bundle.id());
                     String comment = REJECTED.equals(verdict.decision()) ? trimmed(verdict.comment()) : "";
+                    /* the verdict answers whatever was outstanding, so the old request retires */
                     return new DocumentResponse.Bundle(
-                            bundle.id(), bundle.title(), bundle.entryIds(), verdict.decision(), comment);
+                            bundle.id(), bundle.title(), bundle.entryIds(), verdict.decision(), comment, "");
                 })
                 .toList();
 
@@ -261,7 +289,8 @@ public class DocumentService {
                         row.getTitle(),
                         fromJson(row.getEntryIds(), ID_LIST),
                         row.getDecision(),
-                        row.getComment()))
+                        row.getComment(),
+                        row.getPreviousComment()))
                 .toList();
     }
 
@@ -280,9 +309,41 @@ public class DocumentService {
                                     bundle.title(),
                                     bundle.entryIds(),
                                     verdict.decision(),
-                                    verdict.comment());
+                                    verdict.comment(),
+                                    verdict.previousComment());
                 })
                 .toList();
+    }
+
+    /** A returned document may change only the units the reviewer rejected. */
+    private static void requireApprovedContentUnchanged(
+            List<DocumentResponse.Entry> incomingEntries,
+            List<DocumentResponse.Bundle> incomingBundles,
+            List<DocumentResponse.Entry> storedEntries,
+            List<DocumentResponse.Bundle> storedBundles) {
+        Map<String, DocumentResponse.Entry> incomingEntryById = incomingEntries.stream()
+                .collect(Collectors.toMap(DocumentResponse.Entry::id, entry -> entry));
+        Map<String, DocumentResponse.Entry> storedEntryById = storedEntries.stream()
+                .collect(Collectors.toMap(DocumentResponse.Entry::id, entry -> entry));
+        Map<String, DocumentResponse.Bundle> incomingBundleById = incomingBundles.stream()
+                .collect(Collectors.toMap(DocumentResponse.Bundle::id, bundle -> bundle));
+
+        for (DocumentResponse.Bundle approved : storedBundles) {
+            if (!APPROVED.equals(approved.decision())) {
+                continue;
+            }
+            DocumentResponse.Bundle incoming = incomingBundleById.get(approved.id());
+            if (incoming == null
+                    || !approved.title().equals(incoming.title())
+                    || !approved.entryIds().equals(incoming.entryIds())) {
+                throw ApiException.conflict("승인된 담당업무 단위는 수정할 수 없습니다.");
+            }
+            for (String entryId : approved.entryIds()) {
+                if (!storedEntryById.get(entryId).equals(incomingEntryById.get(entryId))) {
+                    throw ApiException.conflict("승인된 담당업무 단위의 항목은 수정할 수 없습니다.");
+                }
+            }
+        }
     }
 
     /* ------------------------------------------------------------------ *
@@ -331,7 +392,8 @@ public class DocumentService {
                     bundle.title(),
                     toJson(bundle.entryIds()),
                     bundle.decision(),
-                    bundle.comment()));
+                    bundle.comment(),
+                    bundle.previousComment()));
         }
         bundles.saveAll(bundleRows);
 
@@ -471,7 +533,7 @@ public class DocumentService {
             }
             /* an unnamed unit is legal while drafting; submission is where the name becomes required */
             parsed.add(new DocumentResponse.Bundle(
-                    id, text(bundle.title(), "업무 단위 이름", limits().bundleTitle(), false), linked, null, ""));
+                    id, text(bundle.title(), "업무 단위 이름", limits().bundleTitle(), false), linked, null, "", ""));
         }
         return parsed;
     }

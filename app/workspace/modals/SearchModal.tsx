@@ -55,12 +55,16 @@ export default function SearchModal({
       onClose={onClose}
       width="md"
       className="search-modal"
+      initialFocus="head"
       head={
         <div className="search-input">
+          <h2 className="sr-only" id="workspace-search-title">통합 검색</h2>
           <span aria-hidden="true">⌕</span>
           <input
             autoFocus
-            placeholder="담당자, 역할 또는 업무를 검색하세요"
+            name="workspaceSearch"
+            autoComplete="off"
+            placeholder="예: 담당자 이름 또는 업무명…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label="통합 검색"
@@ -68,7 +72,7 @@ export default function SearchModal({
           <kbd>ESC</kbd>
         </div>
       }
-      labelledBy={undefined}
+      labelledBy="workspace-search-title"
     >
       <Text size="caption" tone="muted" className="search-count">
         {trimmed ? `검색 결과 ${results.length}건` : '빠른 탐색'}

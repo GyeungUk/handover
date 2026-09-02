@@ -1,7 +1,7 @@
 'use client';
 
-import type { CSSProperties, Dispatch, SetStateAction } from 'react';
-import { calendarMonth, dateParts, isoDate, taskLengthLabel, taskSpan, type Person, type Task, type Team } from '../../org-data';
+import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
+import { calendarMonth, dateParts, isoDate, months, taskLengthLabel, taskSpan, type Person, type Task, type TaskDate } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -9,14 +9,15 @@ import { useToday } from '../context';
    --------------------------------------------------------------------------
    One 470-character line in the old file held the month nav, the weekday row,
    the date grid, the per-day chips, the agenda list, the empty state and the
-   tip. It is five components here, which is what makes the date grid's
+   tip. It is four components here, which is what makes the date grid's
    responsive behaviour editable at all.
 
-   The column beside the grid used to be a grey slab holding one or two entries
-   and then three hundred pixels of nothing, and the only way to another month
-   was to step through them one arrow at a time. It carries the twelve months
-   now, marked with whether there is work in them, so the empty half of the
-   panel became the fastest way to move around the year.
+   The grid used to hang every task off the cell it happened to be in, in
+   whatever order the month's list gave: a task's band sat at one height on
+   Monday and another on Wednesday, and a second task in the same week pushed
+   the first one down on the days they shared. A run holds a lane for the whole
+   month now, and every cell prints all the lanes — empty ones as blanks — so a
+   band crosses the week on one line.
    ========================================================================== */
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -64,6 +65,46 @@ function taskRun(task: Task, monthIndex: number, daysInMonth: number) {
   };
 }
 
+type MonthRun = NonNullable<ReturnType<typeof taskRun>> & {
+  task: Task;
+  /** the days inside the run that are actually fixed, looked up by the day's own ISO date */
+  confirmed: Map<string, TaskDate>;
+  /** the row the run keeps in every cell it touches */
+  lane: number;
+};
+
+/**
+ * The month's runs, each on a lane it holds from its first day to its last.
+ *
+ * Lanes are the whole of what keeps the grid straight: a cell draws lane 0, then lane 1, and so on,
+ * so a run drawn on lane 1 is at the same height on every day it covers and the day it starts is
+ * level with the day it ends. Longest-first packing means the run that spans the week takes the top
+ * lane and the short ones settle underneath it, rather than the order of `person.tasks` deciding.
+ */
+function monthRuns(tasks: Task[], monthIndex: number, daysInMonth: number): MonthRun[] {
+  const runs = tasks.flatMap((task) => {
+    const run = taskRun(task, monthIndex, daysInMonth);
+    return run
+      ? [{
+        ...run,
+        task,
+        confirmed: new Map((task.dates ?? []).map((entry) => [entry.date, entry] as const)),
+        lane: 0,
+      }]
+      : [];
+  });
+  runs.sort((a, b) => a.from - b.from || (b.to - b.from) - (a.to - a.from) || a.task.title.localeCompare(b.task.title));
+
+  /* The last day each lane is taken up to; a run goes in the first lane free by the day it opens. */
+  const takenTo: number[] = [];
+  for (const run of runs) {
+    const free = takenTo.findIndex((day) => day < run.from);
+    run.lane = free === -1 ? takenTo.length : free;
+    takenTo[run.lane] = run.to;
+  }
+  return runs;
+}
+
 function MonthNav({ monthIndex, setMonthIndex }: { monthIndex: number; setMonthIndex: Dispatch<SetStateAction<number>> }) {
   const { year, realMonth } = getCalendarDays(monthIndex);
   return (
@@ -78,43 +119,36 @@ function MonthNav({ monthIndex, setMonthIndex }: { monthIndex: number; setMonthI
 /**
  * The date grid.
  *
- * The day a task appears on is derived, not stored — the model holds week
- * slots, not dates — so `taskRun` resolves each task's slots to the days they
- * stand for. A run is a chip on its first day and a spine on the rest, which is
- * how five days read as one task crossing the week rather than as the same chip
- * printed five times.
+ * The day a task appears on is derived, not stored — the model holds week slots, not dates — so
+ * `monthRuns` resolves each task's slots to the days they stand for and hands it a lane.
+ *
+ * Every day of a run carries the task's name. The grid used to name a run on its first day only
+ * and draw the rest as a bare band, which read as one thing crossing the week for anybody who had
+ * the first day in view and as an anonymous grey bar for anybody who did not — the second week of a
+ * three-week task, the whole of a task that started last month, every day of it in the row below
+ * the one it began on. The band is still one band: the days join edge to edge, only its ends are
+ * rounded, and only its first day carries the length and the reschedule flag.
  */
 function MonthGrid({
   monthIndex,
-  team,
   person,
-  monthTasks,
   onTask,
 }: {
   monthIndex: number;
-  team: Team;
   person: Person;
-  monthTasks: Task[];
-  onTask: (task: Task, person: Person) => void;
+  onTask?: (task: Task, person: Person) => void;
 }) {
   const today = useToday();
   const calendar = getCalendarDays(monthIndex);
-  const runs = monthTasks.flatMap((task) => {
-    const run = taskRun(task, monthIndex, calendar.days);
-    return run ? [{
-      task,
-      ...run,
-      /* The days inside the run that are actually fixed, looked up by the cell's own ISO date. */
-      confirmed: new Map((task.dates ?? []).map((entry) => [entry.date, entry] as const)),
-    }] : [];
-  });
+  const runs = monthRuns(person.tasks, monthIndex, calendar.days);
+  const lanes = runs.reduce((count, run) => Math.max(count, run.lane + 1), 0);
 
   return (
     <div className="monthly-calendar">
       <div className="weekday-row">
         {WEEKDAYS.map((day) => <span key={day}>{day}</span>)}
       </div>
-      <div className="date-grid">
+      <div className="date-grid" style={{ '--lanes': lanes } as CSSProperties}>
         {calendar.cells.map((day, index) => {
           const weekend = index % 7 === 0 || index % 7 === 6;
           const isToday = day !== null && day === today.day && monthIndex === today.month;
@@ -126,46 +160,40 @@ function MonthGrid({
               {day && (
                 <>
                   <span className="date-number">{day}</span>
-                  {runs
-                    .filter((run) => day >= run.from && day <= run.to)
-                    .flatMap((run) => {
-                      /* The band says which weeks the work covers; a marker says which day of it
-                         somebody has to be somewhere. Both belong on the cell, so the run is drawn
-                         unbroken and the marker sits on it. */
-                      const fixed = run.confirmed.get(isoDate(calendar.year, calendar.realMonth, day));
-                      return [
-                        day === run.from ? (
-                          <button
-                            key={run.task.title}
-                            type="button"
-                            className={`date-task ${run.to > run.from ? 'is-open' : ''} ${run.continued ? 'is-continuation' : ''} ${run.fixed ? 'is-fixed' : ''}`}
-                            style={{ background: team.soft, color: team.color } as CSSProperties}
-                            onClick={() => onTask(run.task, person)}
-                          >
-                            <b>{run.task.title}</b>
-                            <small>{run.task.note}</small>
-                            <em>{taskLengthLabel(run.task)}</em>
-                            {run.task.movedFrom !== undefined && <mark>일정 변경</mark>}
-                          </button>
-                        ) : (
-                          <span
-                            key={run.task.title}
-                            className={`date-run ${day === run.to && run.endsHere ? 'is-end' : ''}`}
-                            aria-hidden="true"
-                          />
-                        ),
-                        fixed ? (
-                          <button
-                            key={`${run.task.title}-fixed`}
-                            type="button"
-                            className="date-confirmed"
-                            onClick={() => onTask(run.task, person)}
-                          >
-                            {fixed.label || '확정 일자'}
-                          </button>
-                        ) : null,
-                      ];
-                    })}
+                  {Array.from({ length: lanes }, (_, lane) => {
+                    const run = runs.find((item) => item.lane === lane && day >= item.from && day <= item.to);
+                    /* The lane is held open on the days it is empty, so the lanes below it stay put. */
+                    if (!run) return <span className="date-slot" key={lane} aria-hidden="true" />;
+
+                    const starts = day === run.from;
+                    const ends = day === run.to && run.endsHere;
+                    /* The band says which weeks the work covers; a filled day says which day of it
+                       somebody has to be somewhere. Both belong on the same lane, so the day the
+                       task is actually on is the band in the part's colour rather than a chip
+                       stacked under it. */
+                    const fixed = run.confirmed.get(isoDate(calendar.year, calendar.realMonth, day));
+                    const length = taskLengthLabel(run.task);
+                    return (
+                      <button
+                        key={lane}
+                        type="button"
+                        className={`date-task ${starts ? 'is-start' : ''} ${ends ? 'is-end' : ''} ${run.continued && starts ? 'is-continuation' : ''} ${run.fixed ? 'is-fixed' : ''} ${fixed ? 'is-confirmed' : ''}`}
+                        /* One stop per run per month: the day it opens carries the name for the
+                           keyboard, and the days that repeat it are there for the eye and the
+                           mouse. Thirty tab stops for one task would be the same task thirty
+                           times. */
+                        tabIndex={starts ? undefined : -1}
+                        disabled={!onTask}
+                        aria-label={`${run.task.title} · ${length}${fixed ? ` · ${fixed.label || '확정 일자'}` : ''} · 업무 상세 보기`}
+                        title={`${run.task.title} · ${length}${fixed ? ` · ${fixed.label || '확정 일자'}` : ''}`}
+                        onClick={onTask ? () => onTask(run.task, person) : undefined}
+                      >
+                        {starts && run.task.movedFrom !== undefined && <i aria-hidden="true">↻</i>}
+                        <b>{run.task.title}</b>
+                        {fixed ? <mark>{fixed.label || '확정'}</mark> : starts ? <em>{length}</em> : null}
+                      </button>
+                    );
+                  })}
                 </>
               )}
             </div>
@@ -178,22 +206,17 @@ function MonthGrid({
 
 export default function MonthCalendar({
   person,
-  team,
   monthIndex,
   setMonthIndex,
   onTask,
+  action,
 }: {
   person: Person;
-  team: Team;
   monthIndex: number;
   setMonthIndex: Dispatch<SetStateAction<number>>;
-  onTask: (task: Task, person: Person) => void;
+  onTask?: (task: Task, person: Person) => void;
+  action?: ReactNode;
 }) {
-  /* Asked of the span rather than of the week slots, so a task fixed to dates that spill past the
-     slots it was planned on still appears in the month those dates are actually in. */
-  const { days } = getCalendarDays(monthIndex);
-  const monthTasks = person.tasks.filter((task) => taskRun(task, monthIndex, days) !== null);
-
   return (
     /* The heading sits above the card, the way the year track's does. It used to
        be inside it, so two sections of the same page framed their titles
@@ -201,10 +224,14 @@ export default function MonthCalendar({
     <section className="month-section">
       <div className="section-bar">
         <h2 className="ui-h2">월간 일정</h2>
-        <MonthNav monthIndex={monthIndex} setMonthIndex={setMonthIndex} />
+        <div className="month-section-actions">
+          {action}
+          <MonthNav monthIndex={monthIndex} setMonthIndex={setMonthIndex} />
+        </div>
       </div>
-      <div className="monthly-layout calendar-card">
-        <MonthGrid monthIndex={monthIndex} team={team} person={person} monthTasks={monthTasks} onTask={onTask} />
+      <p className="calendar-scroll-hint"><span aria-hidden="true">↔</span> 달력을 좌우로 밀어 다른 날짜를 확인하세요.</p>
+      <div className="monthly-layout calendar-card" role="region" aria-label={`${months[monthIndex]} 월간 일정, 가로로 스크롤 가능`} tabIndex={0}>
+        <MonthGrid monthIndex={monthIndex} person={person} onTask={onTask} />
       </div>
     </section>
   );

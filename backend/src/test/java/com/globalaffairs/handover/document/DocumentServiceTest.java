@@ -253,6 +253,51 @@ class DocumentServiceTest {
     }
 
     @Test
+    void keepsApprovedUnitsAndTheirEntriesFrozenDuringCorrections() {
+        HandoverEntryRow approvedEntry = storedEntry("r1", "responsibility", "승인된 업무", "[]");
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "rejected", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(approvedEntry));
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "승인 단위", "[\"r1\"]", "approved", ""),
+                storedBundle("b2", "반려 단위", "[]", "rejected", "보완해 주세요.")));
+
+        assertThatThrownBy(() -> service.save(OWNER, "김지현", saveOf(
+                        List.of(entry("r1", "responsibility", "바꾼 업무")),
+                        List.of(
+                                new BundleInput("b1", "승인 단위", List.of("r1")),
+                                new BundleInput("b2", "반려 단위", List.of())))))
+                .hasMessage("승인된 담당업무 단위의 항목은 수정할 수 없습니다.")
+                .extracting(failure -> ((ApiException) failure).status())
+                .isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void letsOnlyARejectedUnitChangeWhileKeepingAnApprovedUnit() {
+        HandoverEntryRow approvedEntry = storedEntry("r1", "responsibility", "승인된 업무", "[]");
+        HandoverEntryRow rejectedEntry = new HandoverEntryRow(
+                OWNER, "r2", 1, "responsibility", "반려된 업무", "<p>본문</p>", "{}", "[]", "Pretendard", "16");
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "rejected", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(approvedEntry, rejectedEntry));
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "승인 단위", "[\"r1\"]", "approved", ""),
+                storedBundle("b2", "반려 단위", "[\"r2\"]", "rejected", "보완해 주세요.")));
+
+        DocumentResponse saved = service.save(OWNER, "김지현", saveOf(
+                List.of(
+                        entry("r1", "responsibility", "승인된 업무"),
+                        entry("r2", "responsibility", "수정한 업무")),
+                List.of(
+                        new BundleInput("b1", "승인 단위", List.of("r1")),
+                        new BundleInput("b2", "수정한 반려 단위", List.of("r2")))));
+
+        assertThat(saved.bundles().getFirst().decision()).isEqualTo("approved");
+        assertThat(saved.bundles().get(1).decision()).isEqualTo("rejected");
+        assertThat(saved.entries().get(1).title()).isEqualTo("수정한 업무");
+    }
+
+    @Test
     void refusesToSubmitWhileAnEntryIsStillUnassigned() {
         givenStored("draft",
                 storedEntry("r1", "responsibility", "체류 관리", "[]"),
@@ -270,18 +315,82 @@ class DocumentServiceTest {
     }
 
     @Test
-    void submissionStampsTheTimeAndClearsTheLastRoundsVerdicts() {
-        givenStored("rejected",
-                storedEntry("r1", "responsibility", "체류 관리", "[]"),
-                List.of(storedBundle("b1", "단위", "[\"r1\"]", "rejected", "보완이 필요합니다.")));
+    void submissionStampsTheTimeAndKeepsApprovedVerdicts() {
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "rejected", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedEntry("r1", "responsibility", "승인된 업무", "[]"),
+                new HandoverEntryRow(
+                        OWNER, "r2", 1, "responsibility", "반려된 업무", "<p>본문</p>", "{}", "[]", "Pretendard", "16")));
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "승인 단위", "[\"r1\"]", "approved", ""),
+                storedBundle("b2", "반려 단위", "[\"r2\"]", "rejected", "보완이 필요합니다.")));
 
         DocumentResponse submitted = service.submit(OWNER);
 
         assertThat(submitted.status()).isEqualTo("pending");
         assertThat(submitted.submittedAt()).isEqualTo("2026-08-29T01:02:03.456Z");
         assertThat(submitted.reviewedAt()).isNull();
-        assertThat(submitted.bundles().getFirst().decision()).isNull();
-        assertThat(submitted.bundles().getFirst().comment()).isEmpty();
+        assertThat(submitted.bundles().getFirst().decision()).isEqualTo("approved");
+        assertThat(submitted.bundles().get(1).decision()).isNull();
+        assertThat(submitted.bundles()).allSatisfy(bundle -> assertThat(bundle.comment()).isEmpty());
+    }
+
+    @Test
+    void aResubmissionKeepsTheRejectionItIsAnswering() {
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "rejected", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedEntry("r1", "responsibility", "체류 관리", "[]")));
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "보완 단위", "[\"r1\"]", "rejected", "연락처를 추가해 주세요.")));
+
+        DocumentResponse submitted = service.submit(OWNER);
+
+        DocumentResponse.Bundle returned = submitted.bundles().getFirst();
+        assertThat(returned.decision()).isNull();
+        assertThat(returned.comment()).isEmpty();
+        assertThat(returned.previousComment()).isEqualTo("연락처를 추가해 주세요.");
+    }
+
+    @Test
+    void anApprovedUnitCarriesNoOutstandingRequestIntoTheNextRound() {
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "rejected", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedEntry("r1", "responsibility", "체류 관리", "[]")));
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "승인 단위", "[\"r1\"]", "approved", "", "지난 요청")));
+
+        DocumentResponse submitted = service.submit(OWNER);
+
+        assertThat(submitted.bundles().getFirst().previousComment()).isEmpty();
+    }
+
+    @Test
+    void anUnansweredRequestSurvivesASecondCorrectionRound() {
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "rejected", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedEntry("r1", "responsibility", "체류 관리", "[]")));
+        /* a unit the author saved without the reviewer ruling on it again */
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "보완 단위", "[\"r1\"]", null, "", "연락처를 추가해 주세요.")));
+
+        DocumentResponse submitted = service.submit(OWNER);
+
+        assertThat(submitted.bundles().getFirst().previousComment()).isEqualTo("연락처를 추가해 주세요.");
+    }
+
+    @Test
+    void aCorrectionSaveKeepsTheRequestTheAuthorIsWorkingFrom() {
+        givenStored("rejected", null, List.of(
+                storedBundle("b1", "보완 단위", "[]", null, "", "연락처를 추가해 주세요.")));
+
+        DocumentResponse saved = service.save(OWNER, "김지현", saveOf(
+                List.of(), List.of(new BundleInput("b1", "고친 단위", List.of()))));
+
+        assertThat(saved.bundles().getFirst().previousComment()).isEqualTo("연락처를 추가해 주세요.");
     }
 
     @Test
@@ -325,6 +434,45 @@ class DocumentServiceTest {
 
         assertThat(reviewed.status()).isEqualTo("rejected");
         assertThat(reviewed.bundles().get(1).comment()).isEqualTo("연락처가 빠졌습니다.");
+    }
+
+    @Test
+    void aCorrectionReviewOnlyRechecksThePreviouslyRejectedUnits() {
+        givenStored("pending", null, List.of(
+                storedBundle("b1", "기존 승인 단위", "[]", "approved", ""),
+                storedBundle("b2", "보완 단위", "[]", null, "")));
+
+        DocumentResponse reviewed = service.review(OWNER, "파트장", List.of(
+                new DecisionInput("b2", "approved", "")));
+
+        assertThat(reviewed.status()).isEqualTo("approved");
+        assertThat(reviewed.bundles()).extracting(DocumentResponse.Bundle::decision)
+                .containsExactly("approved", "approved");
+    }
+
+    @Test
+    void aVerdictRetiresTheRequestItAnswers() {
+        givenStored("pending", null, List.of(
+                storedBundle("b1", "보완 단위", "[]", null, "", "연락처를 추가해 주세요.")));
+
+        DocumentResponse reviewed = service.review(OWNER, "파트장", List.of(
+                new DecisionInput("b1", "rejected", "이번에는 담당자도 적어 주세요.")));
+
+        DocumentResponse.Bundle bundle = reviewed.bundles().getFirst();
+        assertThat(bundle.comment()).isEqualTo("이번에는 담당자도 적어 주세요.");
+        assertThat(bundle.previousComment()).isEmpty();
+    }
+
+    @Test
+    void refusesToOverturnAnApprovalInALaterReview() {
+        givenStored("pending", null, List.of(
+                storedBundle("b1", "기존 승인 단위", "[]", "approved", ""),
+                storedBundle("b2", "보완 단위", "[]", null, "")));
+
+        assertThatThrownBy(() -> service.review(OWNER, "파트장", List.of(
+                        new DecisionInput("b1", "rejected", "다시 반려"),
+                        new DecisionInput("b2", "approved", ""))))
+                .hasMessage("이미 승인된 담당업무 단위는 검토 결과를 변경할 수 없습니다.");
     }
 
     @Test
@@ -398,6 +546,17 @@ class DocumentServiceTest {
 
     private static HandoverBundleRow storedBundle(
             String bundleId, String title, String entryIds, String decision, String comment) {
-        return new HandoverBundleRow(OWNER, bundleId, 0, title, entryIds, decision, comment);
+        return storedBundle(bundleId, title, entryIds, decision, comment, "");
+    }
+
+    private static HandoverBundleRow storedBundle(
+            String bundleId,
+            String title,
+            String entryIds,
+            String decision,
+            String comment,
+            String previousComment) {
+        return new HandoverBundleRow(
+                OWNER, bundleId, 0, title, entryIds, decision, comment, previousComment);
     }
 }

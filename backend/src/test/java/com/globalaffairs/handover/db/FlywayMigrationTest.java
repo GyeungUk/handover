@@ -76,7 +76,8 @@ class FlywayMigrationTest {
                 "V1__removed_members.sql", "V2__task_reschedules.sql", "V3__handover_documents.sql",
                 "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql",
                 "V7__account_onboarding_members.sql", "V8__custom_tasks.sql",
-                "V9__removed_tasks.sql", "V10__task_dates.sql", "V11__task_periods.sql");
+                "V9__removed_tasks.sql", "V10__task_dates.sql", "V11__task_periods.sql",
+                "V12__bundle_previous_comment.sql");
     }
 
     @Test

@@ -34,6 +34,17 @@
 
 * { box-sizing: border-box; }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
 
 body {
@@ -1217,12 +1228,18 @@ small, .caption { font-size: var(--t-caption); }
 
 /* monthly ------------------------------------------------------------------ */
 .month-section { margin-top: var(--s-4); }
-.monthly-layout { display: grid; grid-template-columns: minmax(520px, 1fr) 340px; align-items: start; }
-.monthly-calendar { padding: 0 var(--s-5) var(--s-5); border-right: 1px solid var(--line); }
+/* The grid is the whole card. It used to share the row with an agenda column that held one or two
+   entries and then three hundred pixels of nothing; the column is gone, so the month keeps the
+   width, and the rules for it live here rather than half here and half in an override further
+   down the file that quietly beat them. */
+.monthly-layout { display: block; }
+.monthly-calendar { width: 100%; padding: 0 var(--s-4) var(--s-4); }
 
-.weekday-row, .date-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.weekday-row, .date-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+/* `minmax(0, 1fr)` above, not `1fr`: a band is one nowrap line, so an auto minimum lets the day
+   with the longest task title widen its column and knock the week out of square. */
 .weekday-row {
-  height: 40px;
+  height: 36px;
   align-items: center;
   color: var(--ink-3);
   text-align: center;
@@ -1232,10 +1249,20 @@ small, .caption { font-size: var(--t-caption); }
 .weekday-row span:first-child { color: #b05353; }
 .weekday-row span:last-child  { color: var(--blue-600); }
 
+/* `--lanes` is the number of bands the busiest day of the month stacks; the grid sets it from its
+   own runs. Every cell prints every lane, empty ones included, which is what keeps a band level
+   across the week and stops a task starting on Wednesday from shoving Tuesday's task down. */
+.date-grid { --lane-h: 21px; --lane-gap: 3px; --cell-pad: 6px; }
 .date-cell {
   position: relative;
-  min-height: 74px;
-  padding: 7px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--lane-gap);
+  min-height: max(
+    clamp(72px, calc((100vh - 210px) / 6), 92px),
+    calc(34px + var(--lanes, 0) * (var(--lane-h) + var(--lane-gap)))
+  );
+  padding: 5px var(--cell-pad);
   border-top: 1px solid var(--line);
   border-right: 1px solid rgba(23, 26, 31, 0.05);
 }
@@ -1245,8 +1272,9 @@ small, .caption { font-size: var(--t-caption); }
 .date-cell.weekend { background: rgba(23, 44, 66, 0.022); }
 .date-cell.blank { background: rgba(23, 44, 66, 0.012); }
 .date-cell > .date-number {
-  width: 24px;
-  height: 24px;
+  flex: none;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   color: var(--ink-2);
@@ -1268,65 +1296,84 @@ small, .caption { font-size: var(--t-caption); }
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--team) 42%, transparent);
 }
 
+/* One day of one task, and the empty lane that holds a band's row open beneath it. Both run out to
+   the cell's edges, so the days of a run join into a single band across the week. */
+.date-task,
+.date-slot {
+  flex: none;
+  height: var(--lane-h);
+  width: calc(100% + var(--cell-pad) * 2);
+  margin-inline: calc(var(--cell-pad) * -1);
+}
+.date-slot { visibility: hidden; }
+/* Every day the run covers carries the task's name. Naming only the first day left the second week
+   of a three-week task, and the whole of a task that began last month, as an anonymous grey bar. */
 .date-task {
-  width: 100%;
-  margin-top: 5px;
-  padding: 5px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 var(--cell-pad);
   border: 0;
-  border-radius: 6px 2px 2px 6px;
-  border-left: 3px solid;
-  font-size: var(--t-caption);
-  font-weight: var(--fw-semi);
+  border-radius: 0;
+  background: var(--soft, color-mix(in srgb, var(--team) 12%, #fff));
+  color: var(--team);
+  font-size: 11px;
   text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
   transition: filter 0.15s var(--ease);
 }
-.date-task:hover { filter: brightness(0.955); }
-/* A task that runs on. The days after the start carry a spine at the chip's own
-   height, in the part's colour, so five days read as one thing crossing the
-   week — a pale block the size of the chip reads as five empty fields. */
-.date-task.is-open { border-radius: 6px 2px 2px 6px; }
-/* A run that began in an earlier month. The chip repeats so a month reads on
-   its own, and the flat left edge says the task did not start here. */
-.date-task.is-continuation { border-left-style: dashed; border-radius: 2px; }
-/* A task whose days are settled rather than planned. The solid edge is the whole of the marking:
-   the band already sits on the real dates, so anything louder would say it twice. */
-.date-task.is-fixed { border-left-width: 4px; }
-.date-run {
-  display: block;
-  height: 8px;
-  margin-top: 14px;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--team) 42%, #fff);
+.date-task > b {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--fw-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.date-run.is-end { border-radius: 0 4px 4px 0; }
+/* the length, on the day the run opens and nowhere else */
+.date-task > em {
+  flex: none;
+  color: color-mix(in srgb, currentColor 70%, transparent);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: var(--fw-semi);
+}
+.date-task > i { flex: none; font-size: 10px; font-style: normal; }
+.date-task:hover { filter: brightness(0.96); }
+.date-task:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 
+/* The two ends of the band are the only rounded corners it has, which is what says where the work
+   opens and where it stops rather than where the week does. */
+.date-task.is-start {
+  border-left: 3px solid currentColor;
+  padding-left: calc(var(--cell-pad) - 3px);
+  border-start-start-radius: 5px;
+  border-end-start-radius: 5px;
+}
+.date-task.is-end { border-start-end-radius: 5px; border-end-end-radius: 5px; }
+/* A run that began in an earlier month. The band repeats so a month reads on its own, and the
+   broken edge says the task did not start here. */
+.date-task.is-continuation { border-left-style: dashed; }
+/* A task whose days are settled rather than planned. The heavier edge is the whole of the marking:
+   the band already sits on the real dates, so anything louder would say it twice. */
+.date-task.is-fixed.is-start { border-left-width: 4px; padding-left: calc(var(--cell-pad) - 4px); }
 /* A day inside the run that is actually fixed — a group appointment, a deadline. The band answers
-   "which weeks"; this answers "which day", so it sits on the band instead of beside it. */
-.date-confirmed {
-  position: relative;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  margin-top: 3px;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: 4px;
-  background: var(--team);
-  color: #fff;
+   "which weeks"; the filled day answers "which day", so it is the band itself rather than a second
+   chip stacked under it. */
+.date-task.is-confirmed { background: var(--team); color: #fff; }
+.date-task > mark {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
   font-size: 10px;
   font-weight: var(--fw-bold);
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
   text-overflow: ellipsis;
-  cursor: pointer;
+  white-space: nowrap;
 }
-.date-confirmed:hover { filter: brightness(1.1); }
-.date-confirmed:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
 /* ---- the column beside the grid ---------------------------------------- */
 
@@ -2057,6 +2104,7 @@ small, .caption { font-size: var(--t-caption); }
   gap: var(--s-3);
   border-bottom: 1px solid var(--line);
 }
+.search-input:focus-within { box-shadow: inset 0 -2px 0 var(--blue-500); }
 .search-input > span { color: var(--grey-400); font-size: 20px; }
 .search-input input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font-size: var(--t-lg); }
 .search-input input::placeholder { color: var(--grey-400); }
@@ -2130,6 +2178,12 @@ small, .caption { font-size: var(--t-caption); }
   box-shadow: var(--sh-3);
   animation: modal-in 0.24s var(--ease);
 }
+.ui-modal.member-admin-modal { --modal-w: 860px; }
+.member-admin-modal .ui-modal-body { min-height: 0; padding: 0; overflow-y: auto; }
+.member-admin-modal .ui-modal-foot > span:first-child { color: var(--ink-3); font-size: 11px; }
+.member-confirm-copy { display: grid; justify-items: center; gap: var(--s-3); text-align: center; }
+.member-confirm-copy > p { margin: 0; color: var(--ink-2); font-size: var(--t-sm); line-height: 1.65; }
+.member-confirm-copy .member-admin-error { width: 100%; margin: 0; }
 .member-admin-head {
   padding: 28px 30px 22px;
   display: flex;
@@ -2822,6 +2876,13 @@ small, .caption { font-size: var(--t-caption); }
   border-bottom: 1px solid var(--line);
 }
 .ho-entry-list > article:last-child { border-bottom: 0; }
+.ho-entry-list > article.approved-fixed { background: #f7faf8; }
+.ho-entry-list > article.approved-fixed .ho-entry-number { background: #e7f3ec; color: #2f7659; }
+.ho-entry-list > article.approved-fixed .ho-entry-actions { opacity: 1; }
+.ho-entry-list > article.approved-fixed .ho-entry-actions button:disabled { cursor: not-allowed; opacity: .4; }
+/* The counterpart to the green lock: what came back is the only thing left to rewrite. */
+.ho-entry-list > article.needs-fix { background: #fdf7f8; }
+.ho-entry-list > article.needs-fix .ho-entry-number { background: #f7e6e9; color: #9b3e4c; }
 .ho-entry-number { padding-top: 3px; color: var(--category); font-size: 11.5px; font-weight: 750; letter-spacing: .06em; }
 .ho-entry-list h4 { margin: 0; font-size: 15.5px; letter-spacing: -.02em; }
 .ho-entry-list p { max-width: 760px; margin: 7px 0 10px; color: var(--ink-2); font-size: 13px; line-height: 1.7; }
@@ -2839,6 +2900,8 @@ small, .caption { font-size: var(--t-caption); }
 .ho-entry-property-row > span b { color: var(--ink-3); font-weight: 600; }
 .ho-entry-property-row > span.has-table, .ho-entry-property-row > span.has-file { border-color: color-mix(in srgb, var(--category) 25%, transparent); background: var(--category-soft); color: var(--category); }
 .ho-linked { padding: 5px 10px; border-radius: var(--r-pill); background: var(--category-soft); color: var(--category); font-size: 13px; font-weight: 650; }
+.ho-linked.approved { background: #e7f3ec; color: #2f7659; }
+.ho-linked.returned { background: #fbe9ec; color: #9b3e4c; }
 .ho-entry-actions { display: flex; gap: 6px; opacity: 0; transition: opacity .2s var(--ease); }
 .ho-entry-list article:hover .ho-entry-actions, .ho-entry-list article:focus-within .ho-entry-actions { opacity: 1; }
 .ho-entry-actions button { padding: 7px 11px; border-radius: var(--r-pill); color: var(--ink-3); font-size: 13px; font-weight: 600; transition: background .2s var(--ease), color .2s var(--ease); }
@@ -2942,6 +3005,7 @@ small, .caption { font-size: var(--t-caption); }
 .ho-editor-toolbar button.table-button { width: auto; padding: 0 8px; display: flex; gap: 5px; border: 1px solid #cdd6df; background: #fff; color: var(--ho-blue); font-size: 13px; font-weight: 650; }
 .ho-editor-toolbar button.table-button span { font-size: 14px; }
 .ho-rich-editor { min-height: 190px; max-height: 320px; padding: 18px 20px; overflow: auto; outline: 0; line-height: 1.75; word-break: break-word; }
+.ho-rich-editor:focus-visible { outline: 2px solid var(--blue-500); outline-offset: -2px; }
 .ho-rich-editor:empty::before { content: attr(data-placeholder); color: #a8adb3; pointer-events: none; }
 .ho-rich-editor p { margin: 0 0 9px; }
 .ho-rich-editor ul, .ho-rich-editor ol { margin: 8px 0; padding-left: 23px; }
@@ -2986,6 +3050,18 @@ small, .caption { font-size: var(--t-caption); }
 .ho-compose-summary > p { margin-left: auto; color: var(--ink-3); font-size: 13px; }
 .ho-bundle-list { margin-top: 14px; display: grid; gap: 12px; }
 .ho-bundle { border: 1px solid var(--line); border-radius: 14px; background: #fff; overflow: hidden; }
+.ho-bundle.approved-fixed { border-color: #bcdccc; background: #f8fbf9; }
+.ho-bundle.approved-fixed .ho-bundle-index { background: #34745b; }
+.ho-fixed-badge, .ho-return-badge { padding: 5px 9px; border-radius: 999px; background: #e7f3ec; color: #2f7659; font-size: 12px; white-space: nowrap; }
+.ho-bundle.needs-fix { border-color: #e6c3ca; background: #fdf8f9; }
+.ho-bundle.needs-fix .ho-bundle-index { background: #9b3e4c; }
+.ho-return-badge { background: #fbe9ec; color: #9b3e4c; }
+/* Inside a unit the comment is the instruction for the edit below it, not a footnote to a verdict. */
+.ho-bundle .ho-manager-comment { margin: 0 18px 16px; border-left-color: #c07a86; background: #fdf3f5; }
+.ho-bundle .ho-manager-comment span { color: #9b3e4c; }
+/* The request a resubmission is answering, read beside the correction rather than from memory. */
+.ho-manager-comment.previous { margin-top: 16px; border-left-color: #a8b3c2; background: var(--surface-2); }
+.ho-manager-comment.previous span { color: var(--ink-3); }
 .ho-bundle.expanded { border-color: rgba(49, 90, 131,.3); box-shadow: var(--sh-2); }
 .ho-bundle-head { min-height: 78px; padding: 14px 18px; display: flex; align-items: center; gap: 14px; }
 .ho-bundle-index { width: 43px; height: 43px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 10px; background: var(--ho-navy); color: #fff; font-size: 10px; font-weight: 750; }
@@ -3147,6 +3223,10 @@ small, .caption { font-size: var(--t-caption); }
 .ho-manager-decision label span { color: #4f7db9; }
 .ho-manager-decision textarea { width: 100%; margin-top: 5px; padding: 9px 10px; border: 1px solid #b8c9df; border-radius: 7px; outline: 0; background: #fff; color: var(--ink); font: inherit; font-size: 13px; resize: vertical; }
 .ho-manager-decision textarea:focus { border-color: #4f7db9; box-shadow: 0 0 0 3px rgba(79, 125, 185,.1); }
+.ho-manager-fixed { padding: 14px 17px; display: flex; align-items: center; gap: 10px; border-top: 1px solid #cfe3d8; background: #f2f8f5; color: #2f7659; }
+.ho-manager-fixed > span { width: 27px; height: 27px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #dceee4; font-weight: 750; }
+.ho-manager-fixed p { margin: 0; font-size: 13px; line-height: 1.45; }
+.ho-manager-fixed b { display: block; color: #285f49; }
 .ho-manager-comment { margin: 0 17px 16px; padding: 12px 14px; border-left: 3px solid #4f7db9; border-radius: 0 8px 8px 0; background: #f3f8ff; }
 .ho-manager-comment span { color: #3e669b; font-size: 13px; font-weight: 750; }
 .ho-manager-comment p { margin: 3px 0 0; color: #4e5f76; font-size: 13px; }
@@ -3611,7 +3691,45 @@ small, .caption { font-size: var(--t-caption); }
 .section-bar .ui-h2 { margin: 0; }
 
 /* New calendar task ------------------------------------------------------- */
+.create-task-modal { --modal-w: 1180px; }
+.create-task-modal .ui-modal-body { padding-inline: 0; }
+.create-task-workspace {
+  display: grid;
+  grid-template-columns: minmax(330px, 0.78fr) minmax(500px, 1.22fr);
+  align-items: start;
+  min-height: 0;
+}
 .create-task-form { display: grid; gap: var(--s-5); }
+.create-task-workspace > .create-task-form { padding: 0 var(--s-7) var(--s-6); }
+.create-target-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.create-target-mode button {
+  display: grid;
+  gap: 2px;
+  min-height: 58px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r-md) - 3px);
+  color: var(--ink-3);
+  text-align: left;
+  cursor: pointer;
+}
+.create-target-mode button b { color: inherit; font-size: var(--t-sm); font-weight: var(--fw-semi); }
+.create-target-mode button small { font-size: 11px; }
+.create-target-mode button.is-on {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--blue-700);
+  box-shadow: var(--sh-1);
+}
+.create-target-mode button:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 1px; }
+.create-target-mode button:disabled { cursor: default; opacity: .6; }
 .create-task-period {
   display: grid;
   grid-template-columns: 1.25fr 1fr 1fr;
@@ -3662,12 +3780,237 @@ small, .caption { font-size: var(--t-caption); }
 .create-task-preview b { display: block; color: var(--ink); font-size: var(--t-sm); font-weight: var(--fw-semi); }
 .create-task-preview small { display: block; margin-top: 3px; color: var(--ink-3); font-size: var(--t-caption); }
 
+.create-task-foot-note { color: var(--ink-3); font-size: var(--t-caption); }
+.create-schedule-preview {
+  min-width: 0;
+  padding: 0 var(--s-7) var(--s-7);
+  border-left: 1px solid var(--line-soft);
+}
+.create-preview-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: var(--s-4);
+}
+.create-target-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #fff;
+  font-size: var(--t-sm);
+  font-weight: var(--fw-bold);
+}
+.create-preview-person b { display: block; color: var(--ink); font-size: var(--t-sm); }
+.create-preview-person small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
+.create-preview-section,
+.create-team-preview {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.create-preview-title {
+  min-height: 54px;
+  padding: 11px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--soft) 42%, #fff);
+}
+.create-preview-title span { display: block; color: var(--team); font-size: 10px; font-weight: var(--fw-bold); letter-spacing: .08em; }
+.create-preview-title b { display: block; margin-top: 2px; color: var(--ink); font-size: var(--t-sm); }
+.create-preview-title > small { color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+.create-year-months {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  height: 25px;
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-4);
+  font-size: 9px;
+  text-align: center;
+}
+.create-year-months span:nth-child(even) { background: rgba(25, 55, 85, .025); }
+.create-year-rows { padding: 8px 0 10px; }
+.create-year-row {
+  position: relative;
+  height: 28px;
+  background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(8.333% - 1px), var(--line-soft) calc(8.333% - 1px), var(--line-soft) 8.333%);
+}
+.create-year-row > span {
+  position: absolute;
+  left: var(--left);
+  top: 3px;
+  width: max(var(--width), 68px);
+  max-width: calc(100% - var(--left));
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--soft);
+  color: var(--team);
+  white-space: nowrap;
+}
+.create-year-row > span b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; }
+.create-year-row > span small { margin-left: auto; font-size: 9px; opacity: .78; }
+.create-year-row.is-draft > span {
+  border: 1px dashed var(--team);
+  background: color-mix(in srgb, var(--soft) 68%, #fff);
+  box-shadow: 0 0 0 2px #fff;
+}
+.create-preview-month { margin-top: var(--s-4); }
+.create-preview-month .month-section { margin: 0; }
+.create-preview-month .section-bar { margin: 0 0 8px; }
+.create-preview-month .section-bar .ui-h2 { font-size: var(--t-sm); }
+.create-preview-month .monthly-calendar { width: 100%; min-width: 0; padding: 0 8px 8px; }
+.create-preview-month .weekday-row { height: 25px; font-size: 10px; }
+.create-preview-month .date-grid { --lane-h: 16px; --lane-gap: 2px; --cell-pad: 3px; }
+.create-preview-month .date-cell {
+  min-height: max(49px, calc(25px + var(--lanes, 0) * (var(--lane-h) + var(--lane-gap))));
+  padding-top: 3px;
+}
+.create-preview-month .date-cell > .date-number { width: 17px; height: 17px; font-size: 9px; }
+.create-preview-month .date-task { gap: 2px; padding-inline: 3px; font-size: 9px; cursor: default; }
+.create-preview-month .date-task em,
+.create-preview-month .date-task mark { display: none; }
+.create-preview-month .calendar-card { box-shadow: none; }
+.create-team-months {
+  display: grid;
+  grid-template-columns: 144px minmax(0, 1fr);
+  align-items: center;
+  min-height: 31px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-4);
+  font-size: 9px;
+}
+.create-team-months > span { font-weight: var(--fw-semi); }
+.create-team-months > div { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); text-align: center; }
+.create-team-months i { font-style: normal; }
+.create-team-targets { display: grid; gap: 0; padding: 0 14px; }
+.create-team-targets > article { padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
+.create-team-targets > article:last-child { border-bottom: 0; }
+.create-team-person-open {
+  width: calc(100% + 12px);
+  min-height: 48px;
+  margin: -6px -6px 6px;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 9px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.create-team-person-open:hover { background: color-mix(in srgb, var(--soft) 54%, #fff); }
+.create-team-person-open:focus-visible { outline: 2px solid var(--team); outline-offset: 1px; }
+.create-team-person-open > p { flex: 1 1 auto; min-width: 0; }
+.create-team-person-open > span:last-child { flex: 0 0 auto; color: var(--team); font-size: 10px; font-weight: var(--fw-semi); }
+.create-team-person-open > span:last-child i { margin-left: 2px; font-size: 15px; font-style: normal; vertical-align: -1px; }
+.create-team-targets p { margin: 0; }
+.create-team-targets p b { display: block; color: var(--ink); font-size: var(--t-sm); }
+.create-team-targets p small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
+.create-person-schedules { display: grid; gap: 4px; }
+.create-person-schedules > div { display: grid; grid-template-columns: 144px minmax(0, 1fr); align-items: center; min-height: 27px; }
+.create-person-schedules > div > span { min-width: 0; padding-right: 10px; }
+.create-person-schedules > div > span b,
+.create-person-schedules > div > span small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.create-person-schedules > div > span b { color: var(--ink-2); font-size: 10px; font-weight: var(--fw-semi); }
+.create-person-schedules > div > span small { margin-top: 1px; color: var(--ink-4); font-size: 9px; }
+.create-person-schedules > div > i {
+  position: relative;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: repeating-linear-gradient(to right, var(--surface-2) 0, var(--surface-2) calc(8.333% - 1px), var(--line) calc(8.333% - 1px), var(--line) 8.333%);
+}
+.create-person-schedules em { position: absolute; top: 7px; height: 10px; min-width: 6px; border-radius: 4px; opacity: .62; }
+.create-person-schedules .is-draft { margin-bottom: 3px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.create-person-schedules .is-draft > span b { color: var(--team); }
+.create-person-schedules .is-draft em { top: 5px; height: 14px; border: 1px dashed color-mix(in srgb, var(--team) 80%, #000); opacity: 1; }
+.create-team-note { margin: 0; padding: 12px 14px; border-top: 1px solid var(--line-soft); background: var(--surface-2); color: var(--ink-3); font-size: 11px; line-height: 1.55; }
+.create-team-note b { color: var(--ink-2); }
+.create-focused-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.create-focused-nav button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: var(--fw-semi);
+  cursor: pointer;
+}
+.create-focused-nav button:hover { border-color: var(--team); color: var(--team); background: var(--soft); }
+.create-focused-nav button:focus-visible { outline: 2px solid var(--team); outline-offset: 2px; }
+.create-focused-nav button span { margin-right: 4px; }
+.create-focused-nav small { color: var(--ink-4); font-size: 10px; }
+.create-focused-person .create-preview-person { margin-bottom: 12px; }
+.create-focused-person .create-preview-section { box-shadow: 0 4px 12px rgba(14, 54, 88, .05); }
+.create-preview-empty { margin: var(--s-8); color: var(--ink-3); font-size: var(--t-sm); text-align: center; }
+.create-preview-toggle { display: none; }
+.month-section-actions { display: flex; align-items: center; gap: var(--s-2); }
+
 @media (max-width: 560px) {
   .create-task-period { grid-template-columns: 1fr 1fr; }
   .create-task-period > .ui-field:last-child { grid-column: 1 / -1; }
   .topbar-actions { gap: 6px; }
   .brand > span:last-child { display: none; }
   .icon-button.search-compact { display: none; }
+}
+
+@media (max-width: 920px) {
+  .create-task-workspace { grid-template-columns: minmax(0, 1fr); }
+  .create-schedule-preview { padding-top: var(--s-6); border-top: 1px solid var(--line-soft); border-left: 0; }
+}
+
+@media (max-width: 600px) {
+  .create-task-workspace > .create-task-form,
+  .create-schedule-preview { padding-inline: var(--s-5); }
+  .create-task-foot-note { display: none; }
+  .create-target-mode { grid-template-columns: 1fr; }
+  .create-year-row > span small { display: none; }
+  .create-team-months { grid-template-columns: 100px minmax(0, 1fr); padding-inline: 10px; }
+  .create-team-targets { padding-inline: 10px; }
+  .create-person-schedules > div { grid-template-columns: 100px minmax(0, 1fr); }
+  .create-team-months i { font-size: 8px; }
+  .create-preview-toggle {
+    min-height: 58px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    background: var(--blue-50);
+    color: var(--ink-2);
+    text-align: left;
+  }
+  .create-preview-toggle span { display: grid; gap: 2px; }
+  .create-preview-toggle b { color: var(--ink); font-size: var(--t-sm); }
+  .create-preview-toggle small { color: var(--ink-3); font-size: 11px; }
+  .create-preview-toggle i { flex: none; color: var(--blue-700); font-size: 11px; font-style: normal; font-weight: var(--fw-bold); }
+  .create-preview-toggle:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 2px; }
+  .create-schedule-preview:not(.is-open) { display: none; }
+  .month-section-actions { gap: 4px; }
+  .month-section-actions .ui-btn { padding-inline: 10px; }
 }
 
 /* ==========================================================================
@@ -3861,9 +4204,10 @@ small, .caption { font-size: var(--t-caption); }
   .workspace-stats > .ui-stat + .ui-stat { padding-left: var(--s-5); }
   .section-bar { margin: var(--s-10) 0 var(--s-4); flex-wrap: wrap; }
   .handover-link b { display: none; }
-  .handover-link { width: var(--h-sm); padding: 0; justify-content: center; }
-  .add-task-button { width: var(--h-sm); padding: 0; }
+  .handover-link { width: 44px; height: 44px; flex: 0 0 44px; padding: 0; justify-content: center; }
+  .add-task-button { width: 44px; height: 44px; flex: 0 0 44px; padding: 0; }
   .add-task-button b { display: none; }
+  .profile { min-width: 44px; min-height: 44px; }
   .profile-copy, .chevron { display: none; }
 }
 
@@ -3873,7 +4217,6 @@ small, .caption { font-size: var(--t-caption); }
      row and the month view stay where they are — the `min-width: 1000px` that
      used to sit on all of them dragged the entire layout across the screen to
      read one row of bars. */
-  .monthly-layout { grid-template-columns: minmax(0, 1fr) 300px; }
   .ho-hero { padding-left: 30px; padding-right: 30px; }
   .ho-content { width: calc(100% - 60px); }
   .ho-bundle-body, .ho-read-columns { grid-template-columns: repeat(2, 1fr); }
@@ -3913,8 +4256,7 @@ small, .caption { font-size: var(--t-caption); }
   .org-line { flex: 0 0 1px; height: 40px; min-height: 0; margin: 0; }
   .org-rail p { margin: 0; }
   .person-hero { margin: -24px -20px 20px; padding: 24px 20px 26px; }
-  .monthly-layout { grid-template-columns: minmax(0, 1fr); }
-  .monthly-calendar { min-width: 0; border-right: 0; }
+  .monthly-calendar { min-width: 0; }
   .month-agenda { border-top: 1px solid var(--line); }
   .modal-backdrop { padding: 14px; }
   .task-modal .ui-modal-title h2 { font-size: var(--t-h2); }
@@ -4940,14 +5282,24 @@ small, .caption { font-size: var(--t-caption); }
 }
 .current-work-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 .current-work-list li {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: var(--s-3);
-  align-items: center;
-  padding: var(--s-4) 0;
   border-bottom: 1px solid var(--line-soft);
 }
 .current-work-list li:last-child { border-bottom: 0; }
+.current-work-list li > button {
+  width: 100%;
+  min-height: 68px;
+  padding: var(--s-4) var(--s-2);
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: var(--s-3);
+  align-items: center;
+  border-radius: var(--r-sm);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.current-work-list li > button:hover { background: var(--surface); }
+.current-work-list li > button:focus-visible { outline: 2px solid var(--blue-500); outline-offset: -2px; }
 .current-work-avatar {
   width: 36px;
   height: 36px;
@@ -4959,7 +5311,7 @@ small, .caption { font-size: var(--t-caption); }
   font-size: var(--t-sm);
   font-weight: var(--fw-bold);
 }
-.current-work-list li > div { min-width: 0; }
+.current-work-list li > button > div { min-width: 0; }
 .current-work-list p { display: flex; align-items: baseline; gap: var(--s-2); margin: 0 0 3px; }
 .current-work-list p strong { color: var(--ink); font-size: var(--t-sm); }
 .current-work-list p small {
@@ -4970,7 +5322,7 @@ small, .caption { font-size: var(--t-caption); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.current-work-list li > div > b {
+.current-work-list li > button > div > b {
   display: block;
   overflow: hidden;
   color: var(--ink-2);
@@ -4979,6 +5331,7 @@ small, .caption { font-size: var(--t-caption); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.current-work-open { color: var(--blue-600); font-size: var(--t-lg); }
 .current-work-empty { margin: var(--s-8) 0; color: var(--ink-3); font-size: var(--t-sm); text-align: center; }
 
 .site-footer { padding: var(--s-10) 0; background: var(--blue-900); }
@@ -5063,11 +5416,11 @@ small, .caption { font-size: var(--t-caption); }
 
 .team-page .task-bar.is-inside .task-bar-label,
 .person-page .task-bar.is-inside .task-bar-label {
-  inset: 7px 15px 12px;
+  inset: 5px 10px 8px;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
-  gap: 3px;
+  gap: 1px;
 }
 
 .team-page .task-bar-label > b,
@@ -5096,68 +5449,6 @@ small, .caption { font-size: var(--t-caption); }
   top: 0;
   right: 0;
 }
-
-/* Personal month view: keep one whole month inside a normal laptop viewport.
-   The task modal already carries the full note, so the grid itself prioritises
-   title and duration instead of turning every occupied day into a large card. */
-.monthly-layout { display: block; }
-.monthly-calendar {
-  width: 100%;
-  padding: 0 var(--s-4) var(--s-4);
-  border-right: 0;
-}
-.weekday-row { height: 36px; }
-.date-cell {
-  min-height: clamp(72px, calc((100vh - 190px) / 6), 92px);
-  padding: 5px 6px;
-}
-.date-cell > .date-number {
-  width: 22px;
-  height: 22px;
-}
-.date-task {
-  position: relative;
-  display: block;
-  min-height: 42px;
-  margin-top: 2px;
-  padding: 6px 27px 6px 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  line-height: 1.25;
-}
-.date-task b {
-  display: block;
-  overflow: hidden;
-  color: inherit;
-  font-size: 11px;
-  font-weight: var(--fw-bold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.date-task small {
-  display: none;
-}
-.date-task em {
-  position: absolute;
-  top: 6px;
-  right: 7px;
-  color: color-mix(in srgb, currentColor 72%, #fff);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: var(--fw-semi);
-}
-.date-task mark {
-  display: block;
-  width: max-content;
-  margin-top: 4px;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.7);
-  color: inherit;
-  font-size: 10px;
-  font-weight: var(--fw-semi);
-}
-.date-run { margin-top: 28px; }
 
 @media (max-width: 1120px) {
   .hero { min-height: 0; padding: var(--s-12) 0 var(--s-16); }
@@ -5209,7 +5500,7 @@ small, .caption { font-size: var(--t-caption); }
 @media (max-width: 560px) {
   .brand > span:last-child { display: none; }
   .topbar-actions { gap: 6px; }
-  .icon-button.search-compact { display: none; }
+  .icon-button.search-compact { display: grid; }
 }
 
 @media (max-width: 480px) {
@@ -5222,8 +5513,48 @@ small, .caption { font-size: var(--t-caption); }
      cascade. The calendar scrolls inside its own card; the page never does. */
   .monthly-layout { overflow-x: auto; overscroll-behavior-inline: contain; }
   .monthly-calendar { width: 720px; min-width: 720px; padding: 0 10px 12px; }
-  .date-cell { min-height: 76px; padding: 5px; }
-  .date-cell > .date-number { width: 22px; height: 22px; font-size: 11px; }
-  .date-task { min-height: 42px; padding-left: 7px; }
-  .date-run { margin-top: 28px; }
+  /* The bands bleed to the cell's edges, so the padding they cancel is a variable rather than the
+     6px written into each of them. */
+  .date-grid { --cell-pad: 5px; }
+  .date-cell { min-height: max(76px, calc(34px + var(--lanes, 0) * (var(--lane-h) + var(--lane-gap)))); }
+  .date-cell > .date-number { font-size: 11px; }
+}
+
+.calendar-scroll-hint { display: none; }
+@media (max-width: 480px) {
+  .calendar-scroll-hint {
+    margin: calc(var(--s-2) * -1) 0 var(--s-3);
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    color: var(--ink-3);
+    font-size: var(--t-caption);
+  }
+  .calendar-scroll-hint span { color: var(--blue-600); font-size: var(--t-body); }
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 10000;
+  top: var(--s-3);
+  left: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-sm);
+  background: var(--blue-900);
+  color: #fff;
+  font-size: var(--t-sm);
+  font-weight: var(--fw-bold);
+  transform: translateY(calc(-100% - var(--s-5)));
+}
+.skip-link:focus { transform: translateY(0); }
+
+@media (min-width: 769px) and (max-height: 820px) {
+  .auth-page { padding-top: var(--s-4); }
+  .auth-column { padding: var(--s-4) 0 var(--s-5); gap: var(--s-3); }
+  .auth-intro { gap: var(--s-2); }
+  .auth-intro .ui-display { font-size: 30px; }
+  .auth-card-head { padding: var(--s-6) var(--s-7) var(--s-4); }
+  .ui-stack.auth-card-body { gap: var(--s-4); padding: 0 var(--s-7) var(--s-6); }
+  .auth-footnote { display: none; }
+  .auth-footer { height: 44px; }
 }

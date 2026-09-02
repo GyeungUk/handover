@@ -40,6 +40,10 @@ public class HandoverBundleRow {
     @Column(name = "comment", nullable = false)
     private String comment;
 
+    /** The rejection this unit was resubmitted against; empty once a new verdict answers it. */
+    @Column(name = "previous_comment", nullable = false)
+    private String previousComment;
+
     protected HandoverBundleRow() {
         // for JPA
     }
@@ -51,7 +55,8 @@ public class HandoverBundleRow {
             String title,
             String entryIds,
             String decision,
-            String comment) {
+            String comment,
+            String previousComment) {
         this.ownerEmail = ownerEmail;
         this.bundleId = bundleId;
         this.position = position;
@@ -59,6 +64,7 @@ public class HandoverBundleRow {
         this.entryIds = entryIds;
         this.decision = decision;
         this.comment = comment;
+        this.previousComment = previousComment;
     }
 
     public Long getId() {
@@ -91,5 +97,9 @@ public class HandoverBundleRow {
 
     public String getComment() {
         return comment;
+    }
+
+    public String getPreviousComment() {
+        return previousComment;
     }
 }
