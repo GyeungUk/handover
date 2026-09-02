@@ -4,13 +4,16 @@ import { useEffect, useState } from 'react';
 import WorkspaceClient, { type SessionUser } from '../WorkspaceClient';
 import {
   WEEKS_IN_YEAR,
+  academicYearBounds,
   seedTeams,
-  taskDateRange,
   taskKey,
+  taskSpan,
   weekLabel,
+  weekOfDate,
   type Person,
   type Task,
   type TaskDate,
+  type TaskPeriod,
   type Team,
 } from '../org-data';
 import {
@@ -29,6 +32,13 @@ import type { ScheduleChange } from '../workspace/types';
 type PreviewMember = Person & { teamId: string };
 type PreviewTask = Person['tasks'][number] & { personId: string };
 type PreviewTaskDate = TaskDate & { taskKey: string };
+type PreviewTaskPeriod = TaskPeriod & {
+  taskKey: string;
+  personId: string;
+  taskTitle: string;
+  startWeek: number;
+  duration: number;
+};
 type ChecklistKey = 'result-report' | 'schedule-share' | 'contact-refresh';
 type ChecklistItem = {
   key: ChecklistKey;
@@ -85,11 +95,19 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
   const scheduleChanges: ScheduleChange[] = [];
   const checklists = new Map<string, ChecklistItem[]>();
   const taskDates: PreviewTaskDate[] = [];
+  const taskPeriods: PreviewTaskPeriod[] = [];
   let nextTaskDateId = 1;
+
+  /* The slots a fixed period lands on, derived the same way the server derives them so the preview
+     places a date-fixed task on the year track where the real workspace would. */
+  const describePeriod = (period: Omit<PreviewTaskPeriod, 'startWeek' | 'duration'>): PreviewTaskPeriod => {
+    const startWeek = weekOfDate(period.startsOn);
+    return { ...period, startWeek, duration: Math.max(1, weekOfDate(period.endsOn) - startWeek + 1) };
+  };
   let handoverDocument: HandoverDocument | null = null;
 
-  /* The task as the workspace currently shows it, so a preview date is bounded by the moved span
-     the same way the server bounds a real one. */
+  /* The task as the workspace currently shows it, so a preview date is bounded by the moved span —
+     or by the fixed period where there is one — the same way the server bounds a real one. */
   const currentTask = (personId: string, taskTitle: string): Task | null => {
     const key = taskKey(personId, taskTitle);
     const found = customTasks.find((task) => task.personId === personId && task.title === taskTitle)
@@ -98,7 +116,15 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
         : seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle));
     if (!found) return null;
     const moved = [...scheduleChanges].reverse().find((change) => change.taskKey === key);
-    return moved ? { ...found, start: moved.toStart } : found;
+    const shown = moved ? { ...found, start: moved.toStart } : found;
+    const fixed = taskPeriods.find((period) => period.taskKey === key);
+    if (!fixed) return shown;
+    return {
+      ...shown,
+      start: fixed.startWeek,
+      duration: fixed.duration,
+      period: { startsOn: fixed.startsOn, endsOn: fixed.endsOn, setBy: fixed.setBy },
+    };
   };
 
   const checklistFor = (personId: string, taskTitle: string) => {
@@ -193,6 +219,8 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       for (let index = taskDates.length - 1; index >= 0; index -= 1) {
         if (taskDates[index].taskKey === key) taskDates.splice(index, 1);
       }
+      const fixed = taskPeriods.findIndex((period) => period.taskKey === key);
+      if (fixed >= 0) taskPeriods.splice(fixed, 1);
       return json({ ok: true });
     }
     if (url.pathname === '/api/tasks' && method === 'POST') {
@@ -201,6 +229,8 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       const start = Number(body.start);
       const duration = Number(body.duration);
       const note = String(body.note ?? '').trim();
+      const fixedStart = String(body.startsOn ?? '').trim();
+      const fixedEnd = String(body.endsOn ?? '').trim();
       const personExists = Boolean(seedPerson(personId)) || customMembers.some((member) => member.id === personId);
       const duplicate = (seedPerson(personId)?.person.tasks.some((task) => task.title === title)
           && !removedTaskKeys.includes(taskKey(personId, title)))
@@ -210,6 +240,25 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       }
       if (duplicate) return json({ error: '같은 담당자에게 동일한 이름의 일정이 이미 있습니다.' }, 409);
       const task: PreviewTask = { personId, title, start, duration, note };
+      if (fixedStart && fixedEnd) {
+        if (fixedEnd < fixedStart) return json({ error: '종료일이 시작일보다 빠를 수 없습니다.' }, 400);
+        if (fixedStart < academicYearBounds.from || fixedEnd > academicYearBounds.to) {
+          return json({ error: `확정 기간은 학년도(${academicYearBounds.from} ~ ${academicYearBounds.to}) 안에 있어야 합니다.` }, 400);
+        }
+        const period = describePeriod({
+          taskKey: taskKey(personId, title),
+          personId,
+          taskTitle: title,
+          startsOn: fixedStart,
+          endsOn: fixedEnd,
+          setBy: user.displayName,
+        });
+        /* The slots follow the dates rather than whatever the form last had selected, so the two
+           halves of a date-fixed task cannot be created disagreeing about which month it is in. */
+        task.start = period.startWeek;
+        task.duration = period.duration;
+        taskPeriods.push(period);
+      }
       customTasks.push(task);
       return json({ task }, 201);
     }
@@ -226,6 +275,9 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
           : seedPerson(personId)?.person.tasks.find((task) => task.title === taskTitle));
       if (!found || !Number.isInteger(toStart) || !reason) return json({ error: '유효한 일정과 변경 사유가 필요합니다.' }, 400);
       const key = taskKey(personId, taskTitle);
+      if (taskPeriods.some((period) => period.taskKey === key)) {
+        return json({ error: '날짜가 확정된 업무입니다. 확정 기간을 수정하거나 해제한 뒤 변경해 주세요.' }, 400);
+      }
       const previous = [...scheduleChanges].reverse().find((change) => change.taskKey === key);
       const change: ScheduleChange = {
         taskKey: key,
@@ -256,7 +308,7 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
         .map((entry) => ({ date: String(entry.date ?? '').trim(), label: String(entry.label ?? '').trim() }));
       const task = currentTask(personId, taskTitle);
       if (!task) return json({ error: '존재하지 않는 업무입니다.' }, 400);
-      const range = taskDateRange(task);
+      const range = taskSpan(task);
       const key = taskKey(personId, taskTitle);
       const seen = new Set<string>();
       for (const entry of entries) {
@@ -288,6 +340,39 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
       const index = taskDates.findIndex((entry) => entry.id === Number(body.id));
       if (index < 0) return json({ error: '존재하지 않는 일자입니다.' }, 404);
       taskDates.splice(index, 1);
+      return json({ ok: true });
+    }
+
+    if (url.pathname === '/api/task-periods' && method === 'GET') return json({ periods: taskPeriods });
+    if (url.pathname === '/api/task-periods' && method === 'PUT') {
+      const personId = String(body.personId ?? '').trim();
+      const taskTitle = String(body.taskTitle ?? '').trim();
+      const startsOn = String(body.startsOn ?? '').trim();
+      const endsOn = String(body.endsOn ?? '').trim();
+      if (!currentTask(personId, taskTitle)) return json({ error: '존재하지 않는 업무입니다.' }, 400);
+      if (!startsOn || !endsOn) return json({ error: '확정 기간의 시작일과 종료일을 모두 선택해 주세요.' }, 400);
+      if (endsOn < startsOn) return json({ error: '종료일이 시작일보다 빠를 수 없습니다.' }, 400);
+      if (startsOn < academicYearBounds.from || endsOn > academicYearBounds.to) {
+        return json({ error: `확정 기간은 학년도(${academicYearBounds.from} ~ ${academicYearBounds.to}) 안에 있어야 합니다.` }, 400);
+      }
+      const key = taskKey(personId, taskTitle);
+      /* A day already recorded outside the new period would be one the month grid can no longer
+         mark, so the move is refused and the day at fault is named. */
+      const stranded = taskDates.find((date) => date.taskKey === key && (date.date < startsOn || date.date > endsOn));
+      if (stranded) {
+        return json({ error: `이미 등록된 확정 일자 ${stranded.date}이(가) 새 기간을 벗어납니다. 해당 일자를 먼저 정리해 주세요.` }, 400);
+      }
+      const period = describePeriod({ taskKey: key, personId, taskTitle, startsOn, endsOn, setBy: user.displayName });
+      const existing = taskPeriods.findIndex((saved) => saved.taskKey === key);
+      if (existing >= 0) taskPeriods.splice(existing, 1, period);
+      else taskPeriods.push(period);
+      return json({ period });
+    }
+    if (url.pathname === '/api/task-periods' && method === 'DELETE') {
+      const key = taskKey(String(body.personId ?? '').trim(), String(body.taskTitle ?? '').trim());
+      const existing = taskPeriods.findIndex((period) => period.taskKey === key);
+      if (existing < 0) return json({ error: '확정된 기간이 없는 업무입니다.' }, 404);
+      taskPeriods.splice(existing, 1);
       return json({ ok: true });
     }
 

@@ -2,11 +2,21 @@
 
 import { useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Modal, Text } from '../../ui';
-import { WEEKS_IN_YEAR, months, weekLabel, type Person, type Task, type Team } from '../../org-data';
-import type { AddTaskDate, AddTaskDates, DeleteTask, RemoveTaskDate, Reschedule, ScheduleChange } from '../types';
+import { WEEKS_IN_YEAR, months, taskDateLabel, taskLengthLabel, weekLabel, type Person, type Task, type Team } from '../../org-data';
+import type {
+  AddTaskDate,
+  AddTaskDates,
+  ClearTaskPeriod,
+  DeleteTask,
+  RemoveTaskDate,
+  Reschedule,
+  ScheduleChange,
+  SetTaskPeriod,
+} from '../types';
 import { RescheduleForm, RescheduleHistory } from './RescheduleForm';
 import TaskChecklist from './TaskChecklist';
 import TaskDates from './TaskDates';
+import TaskPeriodSection from './TaskPeriod';
 
 /**
  * Where this task sits in the year.
@@ -62,6 +72,8 @@ export default function TaskModal({
   onAddDate,
   onAddDates,
   onRemoveDate,
+  onSetPeriod,
+  onClearPeriod,
   onClose,
 }: {
   task: Task;
@@ -73,6 +85,8 @@ export default function TaskModal({
   onAddDate: AddTaskDate;
   onAddDates: AddTaskDates;
   onRemoveDate: RemoveTaskDate;
+  onSetPeriod: SetTaskPeriod;
+  onClearPeriod: ClearTaskPeriod;
   onClose: () => void;
 }) {
   const startMonth = months[Math.floor(task.start / 4)];
@@ -130,10 +144,16 @@ export default function TaskModal({
 
         <section className="task-when">
           <div className="task-when-head">
-            <div><small>시작</small><b>{startMonth} {(task.start % 4) + 1}주</b></div>
+            <div>
+              <small>시작</small>
+              <b>{task.period ? taskDateLabel(task.period.startsOn) : `${startMonth} ${(task.start % 4) + 1}주`}</b>
+            </div>
             <i aria-hidden="true">→</i>
-            <div><small>종료</small><b>{endMonth} {(endWeek % 4) + 1}주</b></div>
-            <span className="task-when-length">{task.duration}주간</span>
+            <div>
+              <small>종료</small>
+              <b>{task.period ? taskDateLabel(task.period.endsOn) : `${endMonth} ${(endWeek % 4) + 1}주`}</b>
+            </div>
+            <span className="task-when-length">{taskLengthLabel(task)}간</span>
           </div>
           <YearPosition task={task} />
           {task.movedFrom !== undefined && (
@@ -147,6 +167,10 @@ export default function TaskModal({
           <h3>업무 개요</h3>
           <Text>{task.note}</Text>
         </section>
+
+        {/* Before the confirmed days, because it answers the question they are recorded inside of:
+            is this task's period a plan or a fact? */}
+        <TaskPeriodSection task={task} person={person} onSet={onSetPeriod} onClear={onClearPeriod} />
 
         <TaskDates task={task} person={person} onAdd={onAddDate} onAddMany={onAddDates} onRemove={onRemoveDate} />
 

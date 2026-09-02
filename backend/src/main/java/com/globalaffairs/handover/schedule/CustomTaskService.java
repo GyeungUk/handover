@@ -1,10 +1,13 @@
 package com.globalaffairs.handover.schedule;
 
+import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.member.CustomMemberRepository;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -16,8 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Deletion has to cover two kinds of task. One authored here is a row, so it goes; one from the
  * shipped seed plan is not, so its key is written to {@code removed_tasks} and every reader skips
- * it from then on. Either way the task's reschedule trail, saved checks and confirmed dates go
- * with it — leaving them behind would resurrect the task the moment somebody re-used its name.
+ * it from then on. Either way the task's reschedule trail, saved checks, confirmed dates and fixed
+ * period go with it — leaving them behind would resurrect the task the moment somebody re-used its
+ * name.
  */
 @Service
 public class CustomTaskService {
@@ -30,8 +34,10 @@ public class CustomTaskService {
     private final TaskRescheduleRepository reschedules;
     private final TaskChecklistItemRepository checklistItems;
     private final TaskDateRepository taskDates;
+    private final TaskPeriodService taskPeriods;
     private final CustomMemberRepository customMembers;
     private final OrgData orgData;
+    private final AcademicCalendar calendar;
     private final Clock clock;
 
     public CustomTaskService(
@@ -40,16 +46,20 @@ public class CustomTaskService {
             TaskRescheduleRepository reschedules,
             TaskChecklistItemRepository checklistItems,
             TaskDateRepository taskDates,
+            TaskPeriodService taskPeriods,
             CustomMemberRepository customMembers,
             OrgData orgData,
+            AcademicCalendar calendar,
             Clock clock) {
         this.repository = repository;
         this.removedTasks = removedTasks;
         this.reschedules = reschedules;
         this.checklistItems = checklistItems;
         this.taskDates = taskDates;
+        this.taskPeriods = taskPeriods;
         this.customMembers = customMembers;
         this.orgData = orgData;
+        this.calendar = calendar;
         this.clock = clock;
     }
 
@@ -66,9 +76,25 @@ public class CustomTaskService {
         return removedTasks.findAllByOrderByTaskKeyAsc().stream().map(RemovedTask::getTaskKey).toList();
     }
 
+    /**
+     * Creates a task, either planned in week slots or fixed to real dates.
+     *
+     * <p>A task given dates still gets a week span, derived from them: the year views lay every task
+     * out on the 48-week track and the row itself is constrained to the year, so there is no such
+     * thing as a task without a slot. What the dates buy is the period record alongside it, which
+     * then outranks the slots wherever days are drawn. Both are written in one transaction — a task
+     * that appeared on the wrong days until a second request landed would be worse than no task.
+     */
     @Transactional
     public CustomTaskResponse create(
-            String personId, String title, Integer start, Integer duration, String note, String createdBy) {
+            String personId,
+            String title,
+            Integer start,
+            Integer duration,
+            String note,
+            String startsOn,
+            String endsOn,
+            String createdBy) {
         String normalizedPersonId = personId == null ? "" : personId.trim();
         String normalizedTitle = title == null ? "" : title.trim();
         String normalizedNote = note == null ? "" : note.trim();
@@ -85,6 +111,22 @@ public class CustomTaskService {
         }
         if (normalizedNote.length() > NOTE_MAX) {
             throw ApiException.badRequest("업무 설명은 %d자 이내로 입력해 주세요.".formatted(NOTE_MAX));
+        }
+        boolean fixed = startsOn != null && !startsOn.isBlank() && endsOn != null && !endsOn.isBlank();
+        if (fixed) {
+            /* The slots follow the dates rather than whatever the form last had selected, so the two
+               halves of a date-fixed task cannot be created disagreeing about which month it is in. */
+            LocalDate opens = parseDate(startsOn);
+            LocalDate closes = parseDate(endsOn);
+            if (closes.isBefore(opens)) {
+                throw ApiException.badRequest("종료일이 시작일보다 빠를 수 없습니다.");
+            }
+            if (!calendar.holds(opens) || !calendar.holds(closes)) {
+                throw ApiException.badRequest("확정 기간은 %s(%s ~ %s) 안에 있어야 합니다."
+                        .formatted(calendar.baseYearLabel(), calendar.startsOn(), calendar.endsBefore().minusDays(1)));
+            }
+            start = calendar.weekOf(opens);
+            duration = Math.max(1, calendar.weekOf(closes) - start + 1);
         }
         if (start == null || duration == null || start < 0 || duration < 1 || start + duration > OrgData.WEEKS_IN_YEAR) {
             throw ApiException.badRequest("일정 기간이 학년도 안에 있어야 합니다.");
@@ -108,16 +150,28 @@ public class CustomTaskService {
                     normalizedNote,
                     createdBy,
                     Instant.now(clock)));
+            if (fixed) {
+                taskPeriods.set(normalizedPersonId, normalizedTitle, startsOn, endsOn, createdBy);
+            }
             return CustomTaskResponse.from(saved);
         } catch (DataIntegrityViolationException raced) {
             throw ApiException.conflict("같은 담당자에게 동일한 이름의 일정이 이미 있습니다.");
         }
     }
 
+    private LocalDate parseDate(String date) {
+        try {
+            return LocalDate.parse(date.trim());
+        } catch (DateTimeParseException malformed) {
+            throw ApiException.badRequest("확정 기간의 시작일과 종료일을 모두 선택해 주세요.");
+        }
+    }
+
     /**
      * Removes one task from the calendar for everyone, along with its reschedule trail, its saved
-     * checks and its confirmed dates. Deleting a task that is already gone is a 404 rather than a silent success, so
-     * two people clicking delete on the same task do not both see it work.
+     * checks, its confirmed dates and its fixed period. Deleting a task that is already gone is a 404
+     * rather than a silent success, so two people clicking delete on the same task do not both see it
+     * work.
      */
     @Transactional
     public void delete(String personId, String title, String removedBy) {
@@ -142,5 +196,6 @@ public class CustomTaskService {
         reschedules.deleteByTaskKey(key);
         checklistItems.deleteByTaskKey(key);
         taskDates.deleteByTaskKey(key);
+        taskPeriods.deleteFor(key);
     }
 }

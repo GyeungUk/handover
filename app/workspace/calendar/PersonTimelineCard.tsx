@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { Avatar } from '../../ui';
-import { WEEKS_IN_YEAR, months, weekLabel, type Person, type Task } from '../../org-data';
+import { WEEKS_IN_YEAR, months, taskLengthLabel, taskStartLabel, type Person, type Task } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -90,8 +90,8 @@ export default function PersonTimelineCard({
           const body = (
             <>
               <span className="when">
-                {weekLabel(task.start)}
-                <em>{task.duration}주</em>
+                {taskStartLabel(task)}
+                <em>{taskLengthLabel(task)}</em>
               </span>
               <span className="what">
                 <b>{task.title}</b>

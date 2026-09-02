@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, Dispatch, SetStateAction } from 'react';
-import { SLOTS_PER_MONTH, calendarMonth, isoDate, type Person, type Task, type Team } from '../../org-data';
+import { calendarMonth, dateParts, isoDate, taskLengthLabel, taskSpan, type Person, type Task, type Team } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -35,28 +35,32 @@ export function getCalendarDays(monthIndex: number) {
 }
 
 /**
- * The days of `monthIndex` a task runs across.
+ * The days of `monthIndex` a task runs across, or `null` when it does not reach the month.
  *
- * The model holds week slots rather than dates, four to a month, so slot n is
- * days 7n+1 to 7n+7 and the month's last slot keeps whatever days are left
- * over. This used to be worked out partly from the task's position in the
- * month's list, which meant adding one task moved the days of the others, and
- * the length was the duration in weeks drawn as that many days — a two-week
- * task covered two. Both are a function of the task and the month alone now.
+ * This used to be worked out partly from the task's position in the month's list, which meant
+ * adding one task moved the days of the others, and the length was the duration in weeks drawn as
+ * that many days — a two-week task covered two. It is a function of the task and the month alone
+ * now, and of only one thing about the task: the span it covers. A task planned in week slots and
+ * one fixed to real dates are the same shape by the time they get here, so the grid draws both
+ * from the same arithmetic instead of carrying a second code path for the date-fixed kind.
+ *
+ * ISO dates compare correctly as strings, which is what clips the span to the month.
  */
 function taskRun(task: Task, monthIndex: number, daysInMonth: number) {
-  const monthStart = monthIndex * SLOTS_PER_MONTH;
-  const monthEnd = monthStart + SLOTS_PER_MONTH - 1;
-  const endSlot = task.start + task.duration - 1;
-  const first = Math.max(task.start, monthStart) - monthStart;
-  const last = Math.min(endSlot, monthEnd) - monthStart;
+  const { year, month } = calendarMonth(monthIndex);
+  const span = taskSpan(task);
+  const opensOn = isoDate(year, month, 1);
+  const closesOn = isoDate(year, month, daysInMonth);
+  if (span.to < opensOn || span.from > closesOn) return null;
   return {
-    from: first * 7 + 1,
-    to: last === SLOTS_PER_MONTH - 1 ? daysInMonth : (last + 1) * 7,
+    from: span.from > opensOn ? dateParts(span.from).day : 1,
+    to: span.to < closesOn ? dateParts(span.to).day : daysInMonth,
     /** false while the task carries on past this month, which the run's end shows */
-    endsHere: endSlot <= monthEnd,
+    endsHere: span.to <= closesOn,
     /** the chip repeats in every month the task runs through, from the 1st */
-    continued: task.start < monthStart,
+    continued: span.from < opensOn,
+    /** a fixed period is drawn as itself rather than as the weeks it happens to touch */
+    fixed: span.fixed,
   };
 }
 
@@ -95,12 +99,15 @@ function MonthGrid({
 }) {
   const today = useToday();
   const calendar = getCalendarDays(monthIndex);
-  const runs = monthTasks.map((task) => ({
-    task,
-    ...taskRun(task, monthIndex, calendar.days),
-    /* The days inside the run that are actually fixed, looked up by the cell's own ISO date. */
-    confirmed: new Map((task.dates ?? []).map((entry) => [entry.date, entry] as const)),
-  }));
+  const runs = monthTasks.flatMap((task) => {
+    const run = taskRun(task, monthIndex, calendar.days);
+    return run ? [{
+      task,
+      ...run,
+      /* The days inside the run that are actually fixed, looked up by the cell's own ISO date. */
+      confirmed: new Map((task.dates ?? []).map((entry) => [entry.date, entry] as const)),
+    }] : [];
+  });
 
   return (
     <div className="monthly-calendar">
@@ -131,13 +138,13 @@ function MonthGrid({
                           <button
                             key={run.task.title}
                             type="button"
-                            className={`date-task ${run.to > run.from ? 'is-open' : ''} ${run.continued ? 'is-continuation' : ''}`}
+                            className={`date-task ${run.to > run.from ? 'is-open' : ''} ${run.continued ? 'is-continuation' : ''} ${run.fixed ? 'is-fixed' : ''}`}
                             style={{ background: team.soft, color: team.color } as CSSProperties}
                             onClick={() => onTask(run.task, person)}
                           >
                             <b>{run.task.title}</b>
                             <small>{run.task.note}</small>
-                            <em>{run.task.duration}주</em>
+                            <em>{taskLengthLabel(run.task)}</em>
                             {run.task.movedFrom !== undefined && <mark>일정 변경</mark>}
                           </button>
                         ) : (
@@ -182,11 +189,10 @@ export default function MonthCalendar({
   setMonthIndex: Dispatch<SetStateAction<number>>;
   onTask: (task: Task, person: Person) => void;
 }) {
-  const monthTasks = person.tasks.filter(
-    (task) =>
-      Math.floor(task.start / SLOTS_PER_MONTH) <= monthIndex
-      && Math.floor((task.start + task.duration - 1) / SLOTS_PER_MONTH) >= monthIndex,
-  );
+  /* Asked of the span rather than of the week slots, so a task fixed to dates that spill past the
+     slots it was planned on still appears in the month those dates are actually in. */
+  const { days } = getCalendarDays(monthIndex);
+  const monthTasks = person.tasks.filter((task) => taskRun(task, monthIndex, days) !== null);
 
   return (
     /* The heading sits above the card, the way the year track's does. It used to

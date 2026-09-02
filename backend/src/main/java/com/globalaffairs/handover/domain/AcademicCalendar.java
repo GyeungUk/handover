@@ -77,6 +77,28 @@ public class AcademicCalendar {
         return startsOn().plusYears(1);
     }
 
+    /** Whether a real date falls inside the academic year the workspace covers. */
+    public boolean holds(LocalDate date) {
+        return date != null && !date.isBefore(startsOn()) && date.isBefore(endsBefore());
+    }
+
+    /**
+     * The week slot a real date sits in. Only defined for a date the year {@link #holds}.
+     *
+     * <p>This is the inverse of {@link #weekSlotStart}, and the one place a fixed period is turned
+     * back into a position on the 48-week track — the year views lay every task out on that track
+     * whether its days are settled or not, so a task with a period still has to have a slot.
+     */
+    public int weekOf(LocalDate date) {
+        int month = Math.floorMod(date.getMonthValue() - orgData.startMonth(), 12);
+        return month * OrgData.SLOTS_PER_MONTH + Math.min(OrgData.SLOTS_PER_MONTH - 1, (date.getDayOfMonth() - 1) / 7);
+    }
+
+    /** The days a task's week slots stand for, both ends inclusive. */
+    public DateSpan weekSpan(int start, int duration) {
+        return new DateSpan(weekSlotStart(start), weekSlotEnd(start + duration - 1));
+    }
+
     /**
      * The first calendar date a week slot stands for.
      *
@@ -112,9 +134,8 @@ public class AcademicCalendar {
         if (now.isBefore(startsOn()) || !now.isBefore(endsBefore())) {
             return Today.NONE;
         }
-        int month = Math.floorMod(now.getMonthValue() - orgData.startMonth(), 12);
-        int weekOfMonth = Math.min(3, (now.getDayOfMonth() - 1) / 7);
-        return new Today(month * 4 + weekOfMonth, month, now.getDayOfMonth());
+        return new Today(
+                weekOf(now), Math.floorMod(now.getMonthValue() - orgData.startMonth(), 12), now.getDayOfMonth());
     }
 
     public List<AcademicYear> years() {

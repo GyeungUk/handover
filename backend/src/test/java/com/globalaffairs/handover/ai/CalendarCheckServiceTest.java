@@ -11,7 +11,13 @@ import com.globalaffairs.handover.ai.dto.AlignmentResponse;
 import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.HandoverSchema;
 import com.globalaffairs.handover.domain.OrgData;
+import com.globalaffairs.handover.member.CustomMemberRepository;
+import com.globalaffairs.handover.member.CustomTeamRepository;
+import com.globalaffairs.handover.schedule.CustomTaskRepository;
+import com.globalaffairs.handover.schedule.RemovedTaskRepository;
+import com.globalaffairs.handover.schedule.TaskPeriodRepository;
 import com.globalaffairs.handover.schedule.TaskRescheduleRepository;
+import com.globalaffairs.handover.schedule.WorkspacePlan;
 import com.globalaffairs.handover.web.ApiException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,7 +42,22 @@ class CalendarCheckServiceTest {
     private TaskRescheduleRepository repository;
 
     @Mock
+    private TaskPeriodRepository periods;
+
+    @Mock
     private OpenAiClient openAiClient;
+
+    @Mock
+    private CustomTaskRepository customTasks;
+
+    @Mock
+    private RemovedTaskRepository removedTasks;
+
+    @Mock
+    private CustomMemberRepository customMembers;
+
+    @Mock
+    private CustomTeamRepository customTeams;
 
     private CalendarCheckService service;
 
@@ -47,11 +68,15 @@ class CalendarCheckServiceTest {
         AcademicCalendar calendar = new AcademicCalendar(objectMapper, orgData);
         service = new CalendarCheckService(
                 orgData,
+                new WorkspacePlan(orgData, customTasks, removedTasks, customMembers, customTeams),
                 calendar,
                 repository,
+                periods,
                 openAiClient,
                 new AiResources(objectMapper, schema, calendar));
         when(repository.findByPersonIdOrderByIdAsc(anyString())).thenReturn(List.of());
+        when(customTasks.findByPersonIdOrderByStartAscIdAsc(anyString())).thenReturn(List.of());
+        when(removedTasks.existsById(anyString())).thenReturn(false);
     }
 
     private void modelAnswers(String json) {

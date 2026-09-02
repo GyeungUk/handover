@@ -6,10 +6,14 @@ import com.globalaffairs.handover.ai.dto.PersonSummary;
 import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.AcademicYear;
 import com.globalaffairs.handover.domain.CalendarShift;
+import com.globalaffairs.handover.domain.DateSpan;
 import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.domain.Task;
+import com.globalaffairs.handover.schedule.TaskPeriod;
+import com.globalaffairs.handover.schedule.TaskPeriodRepository;
 import com.globalaffairs.handover.schedule.TaskReschedule;
 import com.globalaffairs.handover.schedule.TaskRescheduleRepository;
+import com.globalaffairs.handover.schedule.WorkspacePlan;
 import com.globalaffairs.handover.web.ApiException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -39,27 +43,33 @@ public class CalendarCheckService {
     private static final List<String> REVIEW_ORDER = List.of("shift", "review", "keep");
 
     private final OrgData orgData;
+    private final WorkspacePlan plan;
     private final AcademicCalendar calendar;
     private final TaskRescheduleRepository repository;
+    private final TaskPeriodRepository periods;
     private final OpenAiClient openAiClient;
     private final AiResources resources;
 
     public CalendarCheckService(
             OrgData orgData,
+            WorkspacePlan plan,
             AcademicCalendar calendar,
             TaskRescheduleRepository repository,
+            TaskPeriodRepository periods,
             OpenAiClient openAiClient,
             AiResources resources) {
         this.orgData = orgData;
+        this.plan = plan;
         this.calendar = calendar;
         this.repository = repository;
+        this.periods = periods;
         this.openAiClient = openAiClient;
         this.resources = resources;
     }
 
     @Transactional(readOnly = true)
     public AlignmentResponse check(String personId, Integer year) {
-        OrgData.PersonRef found = orgData.findPerson(personId)
+        WorkspacePlan.Profile person = plan.profile(personId)
                 .orElseThrow(() -> ApiException.badRequest("담당자를 찾을 수 없습니다."));
 
         AcademicYear target = calendar.findYear(year)
@@ -72,7 +82,20 @@ public class CalendarCheckService {
         Map<String, CalendarShift> shiftByName = shifts.stream()
                 .collect(Collectors.toMap(CalendarShift::name, shift -> shift, (first, second) -> first));
 
-        List<Task> tasks = currentTasks(found.person().tasks(), repository.findByPersonIdOrderByIdAsc(personId));
+        /* The plan the workspace draws: seed tasks minus the deleted ones, plus the authored ones.
+           Proposing a move for a task that is no longer on the calendar only ever ends in the
+           reschedule endpoint refusing it. */
+        List<Task> tasks = currentTasks(plan.tasks(personId), repository.findByPersonIdOrderByIdAsc(personId));
+
+        /* A task whose days are settled has nothing to align: the alignment moves week slots, and
+           this task's slots are already only a shadow of the dates that outrank them. It is left out
+           of what the model is asked about and comes back as a `keep` naming the period, so the
+           review still accounts for every task on the calendar. */
+        Map<String, DateSpan> fixedByTitle = new LinkedHashMap<>();
+        for (TaskPeriod period : periods.findByPersonIdOrderByStartsOnAsc(personId)) {
+            fixedByTitle.put(period.getTaskTitle(), new DateSpan(period.getStartsOn(), period.getEndsOn()));
+        }
+        List<Task> movable = tasks.stream().filter(task -> !fixedByTitle.containsKey(task.title())).toList();
 
         JsonNode answer = null;
         String notice = "";
@@ -83,7 +106,7 @@ public class CalendarCheckService {
                     "calendar_alignment",
                     resources.schema("calendar-check"),
                     resources.prompt("calendar-check"),
-                    buildUserContent(found, toYear, shifts, tasks));
+                    buildUserContent(person, toYear, shifts, movable));
         } catch (ApiException failure) {
             if (failure.status() != HttpStatus.BAD_GATEWAY && failure.status() != HttpStatus.SERVICE_UNAVAILABLE) {
                 throw failure;
@@ -92,11 +115,13 @@ public class CalendarCheckService {
         }
 
         return new AlignmentResponse(
-                new PersonSummary(found.person().id(), found.person().name(), found.person().role(), found.team().title()),
+                new PersonSummary(person.id(), person.name(), person.role(), person.teamTitle()),
                 calendar.baseYear(),
                 toYear,
                 shifts,
-                answer == null ? defaultItems(tasks) : readItems(answer, tasks, anchorNames, shiftByName),
+                answer == null
+                        ? defaultItems(tasks, fixedByTitle)
+                        : readItems(answer, tasks, fixedByTitle, anchorNames, shiftByName),
                 calendar.alignmentActionLabels(),
                 notice);
     }
@@ -115,9 +140,9 @@ public class CalendarCheckService {
     }
 
     private String buildUserContent(
-            OrgData.PersonRef found, int toYear, List<CalendarShift> shifts, List<Task> tasks) {
+            WorkspacePlan.Profile person, int toYear, List<CalendarShift> shifts, List<Task> tasks) {
         List<String> lines = new ArrayList<>();
-        lines.add("담당자: %s (%s · %s)".formatted(found.person().name(), found.team().title(), found.person().role()));
+        lines.add("담당자: %s (%s · %s)".formatted(person.name(), person.teamTitle(), person.role()));
         lines.add("학사일정 비교: %d학년도 → %d학년도".formatted(calendar.baseYear(), toYear));
         lines.add("");
         lines.add("학사일정 비교표:");
@@ -134,7 +159,11 @@ public class CalendarCheckService {
     }
 
     private List<AlignmentResponse.AlignmentItem> readItems(
-            JsonNode answer, List<Task> tasks, Set<String> anchorNames, Map<String, CalendarShift> shiftByName) {
+            JsonNode answer,
+            List<Task> tasks,
+            Map<String, DateSpan> fixedByTitle,
+            Set<String> anchorNames,
+            Map<String, CalendarShift> shiftByName) {
         Map<String, Task> byTitle = tasks.stream()
                 .collect(Collectors.toMap(Task::title, task -> task, (first, second) -> first, LinkedHashMap::new));
         Map<String, AlignmentResponse.AlignmentItem> decided = new LinkedHashMap<>();
@@ -142,7 +171,7 @@ public class CalendarCheckService {
         for (JsonNode item : answer.path("items")) {
             Task task = byTitle.get(item.path("taskTitle").asText("").trim());
             /* a proposal about a task we did not send, or a second one about the same task, is dropped */
-            if (task == null || decided.containsKey(task.title())) {
+            if (task == null || decided.containsKey(task.title()) || fixedByTitle.containsKey(task.title())) {
                 continue;
             }
 
@@ -199,19 +228,8 @@ public class CalendarCheckService {
             if (decided.containsKey(task.title())) {
                 continue;
             }
-            decided.put(task.title(), new AlignmentResponse.AlignmentItem(
-                    "align-" + decided.size(),
-                    task.title(),
-                    "keep",
-                    task.start(),
-                    task.start(),
-                    orgData.weekLabel(task.start()),
-                    orgData.weekLabel(task.start()),
-                    "",
-                    "",
-                    0,
-                    "학사일정 변동의 영향이 확인되지 않아 현재 일정을 유지합니다.",
-                    ""));
+            decided.put(task.title(), keeping(task, decided.size(), fixedByTitle.get(task.title()),
+                    "학사일정 변동의 영향이 확인되지 않아 현재 일정을 유지합니다."));
         }
 
         return decided.values().stream()
@@ -223,23 +241,35 @@ public class CalendarCheckService {
     }
 
     /** A network-independent, conservative result: the published calendar still compares normally. */
-    private List<AlignmentResponse.AlignmentItem> defaultItems(List<Task> tasks) {
+    private List<AlignmentResponse.AlignmentItem> defaultItems(List<Task> tasks, Map<String, DateSpan> fixedByTitle) {
         List<AlignmentResponse.AlignmentItem> items = new ArrayList<>();
         for (Task task : tasks) {
-            items.add(new AlignmentResponse.AlignmentItem(
-                    "align-" + items.size(),
-                    task.title(),
-                    "keep",
-                    task.start(),
-                    task.start(),
-                    orgData.weekLabel(task.start()),
-                    orgData.weekLabel(task.start()),
-                    "",
-                    "",
-                    0,
-                    "외부 분석 없이 확인 가능한 학사일정 변동만 비교하여 현재 일정을 유지합니다.",
-                    ""));
+            items.add(keeping(task, items.size(), fixedByTitle.get(task.title()),
+                    "외부 분석 없이 확인 가능한 학사일정 변동만 비교하여 현재 일정을 유지합니다."));
         }
         return List.copyOf(items);
+    }
+
+    /**
+     * A task that is staying where it is, and why.
+     *
+     * <p>A date-fixed task says so instead of citing the calendar comparison: the reader is deciding
+     * whether to adopt a move, and "그 업무는 이미 날짜가 잡혀 있다" is the reason there is none.
+     */
+    private AlignmentResponse.AlignmentItem keeping(Task task, int index, DateSpan fixed, String reason) {
+        String label = fixed == null ? orgData.weekLabel(task.start()) : fixed.label();
+        return new AlignmentResponse.AlignmentItem(
+                "align-" + index,
+                task.title(),
+                "keep",
+                task.start(),
+                task.start(),
+                label,
+                label,
+                "",
+                "",
+                0,
+                fixed == null ? reason : "날짜가 확정된 업무(%s)이므로 학사일정 정렬 대상에서 제외합니다.".formatted(fixed.label()),
+                "");
     }
 }

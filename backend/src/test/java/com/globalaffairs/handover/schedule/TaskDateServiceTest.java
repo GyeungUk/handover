@@ -3,6 +3,7 @@ package com.globalaffairs.handover.schedule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,6 +11,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.OrgData;
+import com.globalaffairs.handover.member.CustomMemberRepository;
+import com.globalaffairs.handover.member.CustomTeamRepository;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
@@ -42,19 +45,29 @@ class TaskDateServiceTest {
     @Mock
     private RemovedTaskRepository removedTasks;
 
+    @Mock
+    private TaskPeriodRepository taskPeriods;
+
     private TaskDateService service;
 
     @BeforeEach
     void setUp() {
-        OrgData orgData = new OrgData(new ObjectMapper());
+        ObjectMapper objectMapper = new ObjectMapper();
+        OrgData orgData = new OrgData(objectMapper);
+        AcademicCalendar calendar = new AcademicCalendar(objectMapper, orgData);
+        Clock clock = Clock.fixed(Instant.parse("2026-08-31T03:00:00Z"), ZoneOffset.UTC);
+        WorkspacePlan plan = new WorkspacePlan(
+                orgData,
+                customTasks,
+                removedTasks,
+                mock(CustomMemberRepository.class),
+                mock(CustomTeamRepository.class));
         service = new TaskDateService(
                 repository,
                 reschedules,
-                customTasks,
-                removedTasks,
-                orgData,
-                new AcademicCalendar(new ObjectMapper(), orgData),
-                Clock.fixed(Instant.parse("2026-08-31T03:00:00Z"), ZoneOffset.UTC));
+                new TaskPeriodService(taskPeriods, repository, plan, calendar, clock),
+                plan,
+                clock);
     }
 
     @Test

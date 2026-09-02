@@ -2,9 +2,20 @@
 
 import { useState, type FormEvent } from 'react';
 import { Button, Field, Input, Modal, Select, Textarea } from '../../ui';
-import { months, type Task, type Team } from '../../org-data';
+import { academicYearBounds, academicYearLabel, months, taskDateLabel, type Task, type Team } from '../../org-data';
 
-export type CreatedTask = Task & { personId: string };
+/**
+ * A task as this form submits it.
+ *
+ * `start`/`duration` are always sent — every task needs a slot on the 48-week track, and the form
+ * has one selected either way. `startsOn`/`endsOn` are what make the task date-fixed: when they are
+ * present the server derives the slots from them instead, so the two halves cannot be created
+ * disagreeing about which month the task is in.
+ */
+export type CreatedTask = Task & { personId: string; startsOn?: string; endsOn?: string };
+
+/** Which of the two a task is planned in. Most work is weeks; work with settled days is dates. */
+type PlanMode = 'weeks' | 'dates';
 
 export default function CreateTaskModal({
   teams,
@@ -23,11 +34,16 @@ export default function CreateTaskModal({
   const [month, setMonth] = useState(0);
   const [week, setWeek] = useState(0);
   const [duration, setDuration] = useState(1);
+  const [mode, setMode] = useState<PlanMode>('weeks');
+  const [startsOn, setStartsOn] = useState('');
+  const [endsOn, setEndsOn] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const start = month * 4 + week;
   const maxDuration = 48 - start;
+  const datesReady = Boolean(startsOn && endsOn && endsOn >= startsOn);
+  const ready = Boolean(personId) && Boolean(title.trim()) && (mode === 'dates' ? datesReady : duration <= maxDuration);
 
   const selectedPerson = (() => {
     for (const team of teams) {
@@ -39,11 +55,18 @@ export default function CreateTaskModal({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!personId || !title.trim() || saving) return;
+    if (!ready || saving) return;
     setSaving(true);
     setError('');
     try {
-      await onCreate({ personId, title: title.trim(), start, duration, note: note.trim() });
+      await onCreate({
+        personId,
+        title: title.trim(),
+        start,
+        duration,
+        note: note.trim(),
+        ...(mode === 'dates' ? { startsOn, endsOn } : {}),
+      });
       onClose();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : '일정을 추가하지 못했습니다. 잠시 후 다시 시도해 주세요.');
@@ -69,7 +92,7 @@ export default function CreateTaskModal({
           form="create-task-form"
           busy={saving}
           busyLabel="추가하는 중…"
-          disabled={!personId || !title.trim() || duration > maxDuration}
+          disabled={!ready}
         >
           일정 추가
         </Button>
@@ -104,6 +127,63 @@ export default function CreateTaskModal({
           )}
         </Field>
 
+        {/* Weeks first, because most work is genuinely planned that way and offering dates as the
+            default would invite a made-up precision into every new task. */}
+        <div className="create-task-mode" role="group" aria-label="일정 계획 방식">
+          <button
+            type="button"
+            className={mode === 'weeks' ? 'is-on' : ''}
+            onClick={() => { setMode('weeks'); setError(''); }}
+            disabled={saving}
+            aria-pressed={mode === 'weeks'}
+          >
+            <b>주 단위로 계획</b>
+            <small>아직 날짜가 정해지지 않은 업무</small>
+          </button>
+          <button
+            type="button"
+            className={mode === 'dates' ? 'is-on' : ''}
+            onClick={() => { setMode('dates'); setError(''); }}
+            disabled={saving}
+            aria-pressed={mode === 'dates'}
+          >
+            <b>날짜로 확정</b>
+            <small>시작·종료일이 정해진 업무</small>
+          </button>
+        </div>
+
+        {mode === 'dates' ? (
+          <div className="create-task-period is-dates" aria-label="확정 기간">
+            <Field label="시작일" required>
+              {(id) => (
+                <Input
+                  id={id}
+                  type="date"
+                  value={startsOn}
+                  min={academicYearBounds.from}
+                  max={academicYearBounds.to}
+                  onChange={(event) => { setStartsOn(event.target.value); setError(''); }}
+                  disabled={saving}
+                  required
+                />
+              )}
+            </Field>
+            <Field label="종료일" required>
+              {(id) => (
+                <Input
+                  id={id}
+                  type="date"
+                  value={endsOn}
+                  min={startsOn || academicYearBounds.from}
+                  max={academicYearBounds.to}
+                  onChange={(event) => { setEndsOn(event.target.value); setError(''); }}
+                  disabled={saving}
+                  required
+                />
+              )}
+            </Field>
+          </div>
+        ) : (
         <div className="create-task-period" aria-label="일정 기간">
           <Field label="시작 월" required>
             {(id) => (
@@ -128,12 +208,21 @@ export default function CreateTaskModal({
             )}
           </Field>
         </div>
+        )}
 
         <div className="create-task-preview">
           <span aria-hidden="true" style={{ background: selectedPerson?.team.color }} />
           <div>
-            <b>{selectedPerson?.person.name ?? '담당자'} · {months[month]} {week + 1}주부터 {duration}주</b>
-            <small>2026학년도 연간 일정에 등록됩니다.</small>
+            <b>
+              {selectedPerson?.person.name ?? '담당자'} · {mode === 'dates'
+                ? (datesReady ? `${taskDateLabel(startsOn)} ~ ${taskDateLabel(endsOn)}` : '시작일과 종료일을 선택해 주세요')
+                : `${months[month]} ${week + 1}주부터 ${duration}주`}
+            </b>
+            <small>
+              {mode === 'dates'
+                ? `${academicYearLabel} 연간 일정에 확정 기간으로 등록됩니다.`
+                : `${academicYearLabel} 연간 일정에 등록됩니다.`}
+            </small>
           </div>
         </div>
 

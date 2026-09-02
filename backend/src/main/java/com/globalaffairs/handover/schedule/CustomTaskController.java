@@ -24,7 +24,18 @@ public class CustomTaskController {
         this.service = service;
     }
 
-    public record CreateTaskRequest(String personId, String title, Integer start, Integer duration, String note) {}
+    /**
+     * A new task. {@code start}/{@code duration} plan it in week slots; {@code startsOn}/{@code
+     * endsOn} fix it to real dates instead and the slots are then derived from them.
+     */
+    public record CreateTaskRequest(
+            String personId,
+            String title,
+            Integer start,
+            Integer duration,
+            String note,
+            String startsOn,
+            String endsOn) {}
 
     public record DeleteTaskRequest(String personId, String taskTitle) {}
 
@@ -44,9 +55,17 @@ public class CustomTaskController {
     public ResponseEntity<Map<String, CustomTaskResponse>> create(
             AuthenticatedUser user, @RequestBody(required = false) CreateTaskRequest request) {
         AuthenticatedUser current = Access.requireRegistered(user);
-        CreateTaskRequest body = request == null ? new CreateTaskRequest(null, null, null, null, null) : request;
+        CreateTaskRequest body =
+                request == null ? new CreateTaskRequest(null, null, null, null, null, null, null) : request;
         CustomTaskResponse task = service.create(
-                body.personId(), body.title(), body.start(), body.duration(), body.note(), current.displayName());
+                body.personId(),
+                body.title(),
+                body.start(),
+                body.duration(),
+                body.note(),
+                body.startsOn(),
+                body.endsOn(),
+                current.displayName());
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("task", task));
     }
 

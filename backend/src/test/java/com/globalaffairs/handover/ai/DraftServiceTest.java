@@ -14,8 +14,14 @@ import com.globalaffairs.handover.ai.dto.DraftResponse;
 import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.HandoverSchema;
 import com.globalaffairs.handover.domain.OrgData;
+import com.globalaffairs.handover.member.CustomMemberRepository;
+import com.globalaffairs.handover.member.CustomTeamRepository;
+import com.globalaffairs.handover.schedule.CustomTaskRepository;
+import com.globalaffairs.handover.schedule.RemovedTaskRepository;
 import com.globalaffairs.handover.schedule.TaskReschedule;
+import com.globalaffairs.handover.schedule.TaskPeriodRepository;
 import com.globalaffairs.handover.schedule.TaskRescheduleRepository;
+import com.globalaffairs.handover.schedule.WorkspacePlan;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
@@ -48,7 +54,22 @@ class DraftServiceTest {
     private TaskRescheduleRepository repository;
 
     @Mock
+    private TaskPeriodRepository periods;
+
+    @Mock
     private OpenAiClient openAiClient;
+
+    @Mock
+    private CustomTaskRepository customTasks;
+
+    @Mock
+    private RemovedTaskRepository removedTasks;
+
+    @Mock
+    private CustomMemberRepository customMembers;
+
+    @Mock
+    private CustomTeamRepository customTeams;
 
     private DraftService service;
 
@@ -59,9 +80,11 @@ class DraftServiceTest {
         AcademicCalendar calendar = new AcademicCalendar(objectMapper, orgData);
         service = new DraftService(
                 orgData,
+                new WorkspacePlan(orgData, customTasks, removedTasks, customMembers, customTeams),
                 schema,
                 calendar,
                 repository,
+                periods,
                 openAiClient,
                 new AiResources(objectMapper, schema, calendar),
                 new AiSupport(schema),
@@ -103,9 +126,11 @@ class DraftServiceTest {
         AcademicCalendar calendar = new AcademicCalendar(objectMapper, orgData);
         DraftService outsideYear = new DraftService(
                 orgData,
+                new WorkspacePlan(orgData, customTasks, removedTasks, customMembers, customTeams),
                 schema,
                 calendar,
                 repository,
+                periods,
                 openAiClient,
                 new AiResources(objectMapper, schema, calendar),
                 new AiSupport(schema),

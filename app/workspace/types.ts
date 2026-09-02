@@ -33,3 +33,14 @@ export type AddTaskDates = (
 
 /** Removing one confirmed day. Rejects by throwing. */
 export type RemoveTaskDate = (id: number) => Promise<void>;
+
+/**
+ * Fixing a task to real dates, or moving the dates it is already fixed to.
+ *
+ * One call for both, because they are the same statement: these are the days this runs on. Rejects
+ * by throwing — a period that would strand a confirmed day is refused rather than silently kept.
+ */
+export type SetTaskPeriod = (personId: string, taskTitle: string, startsOn: string, endsOn: string) => Promise<void>;
+
+/** Returning a task to the week slots it was always planned on. Rejects by throwing. */
+export type ClearTaskPeriod = (personId: string, taskTitle: string) => Promise<void>;

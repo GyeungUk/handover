@@ -114,7 +114,7 @@ export default function TaskChecklist({ task, person }: { task: Task; person: Pe
   const percent = Math.round((completedCount / CHECKS.length) * 100);
 
   return (
-    <section className={`task-checklist${open ? ' is-open' : ''}`} aria-busy={loading}>
+    <section className={`task-checklist${open ? ' is-open' : ''}`} aria-busy={open && loading}>
       <button
         className="task-checklist-toggle"
         type="button"

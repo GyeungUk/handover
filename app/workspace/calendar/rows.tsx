@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { WEEKS_IN_YEAR, weekLabel, type Person, type Task, type Team } from '../../org-data';
+import { WEEKS_IN_YEAR, taskLengthLabel, taskStartLabel, weekLabel, type Person, type Task, type Team } from '../../org-data';
 import { WeekGrid } from './WeekRuler';
 
 /** Merge a person's overlapping tasks into continuous busy stretches. */
@@ -155,7 +155,7 @@ export function PersonTaskRow({
             <span className="task-bar-label">
               {task.movedFrom !== undefined && <i className="moved-flag" aria-hidden="true">↻</i>}
               <b>{task.title}</b>
-              <span>{weekLabel(task.start)} · {task.duration}주</span>
+              <span>{taskStartLabel(task)} · {taskLengthLabel(task)}</span>
             </span>
           </button>
         ))}

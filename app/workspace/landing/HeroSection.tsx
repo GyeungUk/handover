@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { Button, Container, Figure } from '../../ui';
-import { months } from '../../org-data';
+import { academicYearLabel, academicYearRangeLabel, months } from '../../org-data';
 import { useToday } from '../context';
 
 /**
@@ -37,7 +37,7 @@ export default function HeroSection({
         <div className="hero-copy">
           <p className="hero-pill">
             <span aria-hidden="true" />
-            2026학년도 · 교직원 업무 포털
+            {academicYearLabel} · 교직원 업무 포털
           </p>
           <h1 className="hero-title">
             국제처 업무의 흐름을
@@ -69,11 +69,11 @@ export default function HeroSection({
           </dl>
         </div>
 
-        <aside className="hero-preview" aria-label="2026학년도 업무 밀도 미리보기">
+        <aside className="hero-preview" aria-label={`${academicYearLabel} 업무 밀도 미리보기`}>
           <header>
             <div>
               <span>연간 업무 현황</span>
-              <strong>2026. 03 — 2027. 02</strong>
+              <strong>{academicYearRangeLabel}</strong>
             </div>
             <em><i aria-hidden="true" /> 운영 중</em>
           </header>

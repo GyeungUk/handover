@@ -18,6 +18,12 @@ function formatChangedAt(value: string) {
  *
  * The reason is required and the form says so before you type rather than after
  * you submit — a move without one is unreadable to whoever inherits the trail.
+ *
+ * A task fixed to real dates is not moved from here at all. Its week slots are
+ * derived from those dates, so a move written against them would be overruled
+ * the moment the calendar redrew it, and the server rejects one for the same
+ * reason. Which of the two is true — the dates or the new weeks — is the
+ * author's call, so the form points at the period rather than guessing.
  */
 export function RescheduleForm({ task, person, onReschedule }: { task: Task; person: Person; onReschedule: Reschedule }) {
   const originalStart = task.movedFrom ?? task.start;
@@ -47,6 +53,15 @@ export function RescheduleForm({ task, person, onReschedule }: { task: Task; per
       setSaving(false);
     }
   };
+
+  if (task.period) {
+    return (
+      <p className="reschedule-locked">
+        날짜가 확정된 일정은 주 단위로 변경할 수 없습니다. 위 <b>확정 기간</b>에서 날짜를 수정하거나,
+        주 단위로 되돌린 뒤 변경해 주세요.
+      </p>
+    );
+  }
 
   if (!open) {
     return (

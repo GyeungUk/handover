@@ -76,7 +76,7 @@ class FlywayMigrationTest {
                 "V1__removed_members.sql", "V2__task_reschedules.sql", "V3__handover_documents.sql",
                 "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql",
                 "V7__account_onboarding_members.sql", "V8__custom_tasks.sql",
-                "V9__removed_tasks.sql", "V10__task_dates.sql");
+                "V9__removed_tasks.sql", "V10__task_dates.sql", "V11__task_periods.sql");
     }
 
     @Test
@@ -99,7 +99,8 @@ class FlywayMigrationTest {
                         "task_checklist_items",
                         "custom_tasks",
                         "removed_tasks",
-                        "task_dates");
+                        "task_dates",
+                        "task_periods");
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'task_reschedules'", String.class))
                 .contains("task_reschedules_pkey", "task_reschedules_task_key_idx", "task_reschedules_person_id_idx");
@@ -123,6 +124,9 @@ class FlywayMigrationTest {
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'task_dates'", String.class))
                 .contains("task_dates_pkey", "task_dates_task_key_date_key", "task_dates_person_id_idx");
+        assertThat(jdbc.queryForList(
+                        "SELECT indexname FROM pg_indexes WHERE tablename = 'task_periods'", String.class))
+                .contains("task_periods_pkey", "task_periods_person_id_idx");
     }
 
     @Test

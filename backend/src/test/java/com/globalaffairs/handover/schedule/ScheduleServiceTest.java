@@ -3,6 +3,7 @@ package com.globalaffairs.handover.schedule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,6 +11,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.OrgData;
+import com.globalaffairs.handover.member.CustomMemberRepository;
+import com.globalaffairs.handover.member.CustomTeamRepository;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
@@ -41,6 +44,9 @@ class ScheduleServiceTest {
     @Mock
     private RemovedTaskRepository removedTasks;
 
+    @Mock
+    private TaskPeriodRepository periods;
+
     private ScheduleService service;
 
     @BeforeEach
@@ -49,9 +55,13 @@ class ScheduleServiceTest {
         OrgData orgData = new OrgData(objectMapper);
         service = new ScheduleService(
                 repository,
-                customTasks,
-                removedTasks,
-                orgData,
+                periods,
+                new WorkspacePlan(
+                        orgData,
+                        customTasks,
+                        removedTasks,
+                        mock(CustomMemberRepository.class),
+                        mock(CustomTeamRepository.class)),
                 new AcademicCalendar(objectMapper, orgData),
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }

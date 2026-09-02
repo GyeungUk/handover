@@ -9,8 +9,12 @@ import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.domain.Task;
 import com.globalaffairs.handover.domain.TaskPhase;
 import com.globalaffairs.handover.domain.Today;
+import com.globalaffairs.handover.domain.DateSpan;
+import com.globalaffairs.handover.schedule.TaskPeriod;
+import com.globalaffairs.handover.schedule.TaskPeriodRepository;
 import com.globalaffairs.handover.schedule.TaskReschedule;
 import com.globalaffairs.handover.schedule.TaskRescheduleRepository;
+import com.globalaffairs.handover.schedule.WorkspacePlan;
 import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -40,9 +44,11 @@ public class DraftService {
 
     private final Set<String> inferableKeys;
     private final OrgData orgData;
+    private final WorkspacePlan plan;
     private final HandoverSchema schema;
     private final AcademicCalendar calendar;
     private final TaskRescheduleRepository repository;
+    private final TaskPeriodRepository periods;
     private final OpenAiClient openAiClient;
     private final AiResources resources;
     private final AiSupport support;
@@ -51,9 +57,11 @@ public class DraftService {
 
     public DraftService(
             OrgData orgData,
+            WorkspacePlan plan,
             HandoverSchema schema,
             AcademicCalendar calendar,
             TaskRescheduleRepository repository,
+            TaskPeriodRepository periods,
             OpenAiClient openAiClient,
             AiResources resources,
             AiSupport support,
@@ -61,10 +69,12 @@ public class DraftService {
             DraftProperties properties,
             Clock clock) {
         this.orgData = orgData;
+        this.plan = plan;
         this.schema = schema;
         this.calendar = calendar;
         this.inferableKeys = Set.copyOf(properties.inferablePropertyKeys());
         this.repository = repository;
+        this.periods = periods;
         this.openAiClient = openAiClient;
         this.resources = resources;
         this.support = support;
@@ -76,7 +86,7 @@ public class DraftService {
     public DraftResponse draft(String personId) {
         openAiClient.requireConfigured(NOT_CONFIGURED);
 
-        OrgData.PersonRef found = orgData.findPerson(personId)
+        WorkspacePlan.Profile person = plan.profile(personId)
                 .orElseThrow(() -> ApiException.badRequest("담당자를 찾을 수 없습니다."));
 
         Today today = calendar.locateToday(LocalDate.now(clock));
@@ -85,14 +95,17 @@ public class DraftService {
                     "%s 기간에만 초안을 만들 수 있습니다.".formatted(calendar.baseYearLabel()));
         }
 
+        /* The plan the workspace draws, not the shipped seed one: tasks deleted here are gone and
+           tasks authored here are part of the job the next person inherits. */
+        List<Task> tasks = plan.tasks(personId);
         List<TaskReschedule> moves = repository.findByPersonIdOrderByIdAsc(personId);
-        List<Map<String, Object>> facts = buildFacts(found.person().tasks(), moves, today.week());
+        List<Map<String, Object>> facts = buildFacts(tasks, moves, periodsOf(personId), today.week());
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("담당자", Map.of(
-                "이름", found.person().name(),
-                "역할", found.person().role(),
-                "소속파트", found.team().title()));
+                "이름", person.name(),
+                "역할", person.role(),
+                "소속파트", person.teamTitle()));
         payload.put("오늘", orgData.weekLabel(today.week()));
         payload.put("허용속성", support.allowedProperties(inferableKeys::contains));
         payload.put("필수출력개수", Map.of(
@@ -109,10 +122,10 @@ public class DraftService {
                 resources.prompt("draft"),
                 json.pretty(payload));
 
-        Set<String> taskNames = found.person().tasks().stream().map(Task::title).collect(java.util.stream.Collectors.toSet());
+        Set<String> taskNames = tasks.stream().map(Task::title).collect(java.util.stream.Collectors.toSet());
 
         return new DraftResponse(
-                new PersonSummary(found.person().id(), found.person().name(), found.person().role(), found.team().title()),
+                new PersonSummary(person.id(), person.name(), person.role(), person.teamTitle()),
                 orgData.weekLabel(today.week()),
                 readDrafts(answer, taskNames, eligiblePairs(facts)));
     }
@@ -134,7 +147,17 @@ public class DraftService {
     private record TaskWithTrail(Task task, List<TaskReschedule> trail) {}
 
     /** What the model is allowed to say about one task. Assembled from records only. */
-    private List<Map<String, Object>> buildFacts(List<Task> tasks, List<TaskReschedule> moves, int todayWeek) {
+    /** The fixed periods of one person's tasks, by task title. */
+    private Map<String, DateSpan> periodsOf(String personId) {
+        Map<String, DateSpan> spans = new LinkedHashMap<>();
+        for (TaskPeriod period : periods.findByPersonIdOrderByStartsOnAsc(personId)) {
+            spans.put(period.getTaskTitle(), new DateSpan(period.getStartsOn(), period.getEndsOn()));
+        }
+        return spans;
+    }
+
+    private List<Map<String, Object>> buildFacts(
+            List<Task> tasks, List<TaskReschedule> moves, Map<String, DateSpan> periodsByTitle, int todayWeek) {
         List<Map<String, Object>> facts = new ArrayList<>();
         for (TaskWithTrail entry : effectiveTasks(tasks, moves)) {
             Task task = entry.task();
@@ -142,7 +165,13 @@ public class DraftService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("업무", task.title());
             item.put("설명", task.note());
-            item.put("기간", orgData.taskPeriodLabel(task));
+            /* A task whose days are settled is handed over as those days: telling the next person
+               "9월 3주" when the office fixed 9월 14일 is the exact thing the period exists to stop. */
+            DateSpan fixed = periodsByTitle.get(task.title());
+            item.put("기간", fixed == null ? orgData.taskPeriodLabel(task) : fixed.label());
+            if (fixed != null) {
+                item.put("날짜확정", true);
+            }
             item.put("진행상태", switch (phase) {
                 case DONE -> "완료";
                 case ACTIVE -> "진행 중";

@@ -18,6 +18,22 @@ export type TaskDate = {
   createdAt: string;
 };
 
+/**
+ * The real dates a task runs on, when its days are actually settled.
+ *
+ * The plan is kept in week slots because most of it is genuinely that vague — "8월 2주부터 5주간"
+ * is the honest statement of a campaign nobody scheduled to the day. Work whose days really are
+ * settled is the other case, and calling it vague is its own kind of wrong: the next person
+ * inherits "9월 3주" when what happened was 9월 14일부터 9월 18일까지. A task in that state carries
+ * a period, and the period outranks the slots wherever days are drawn.
+ */
+export type TaskPeriod = {
+  /** `YYYY-MM-DD`, both ends inclusive */
+  startsOn: string;
+  endsOn: string;
+  setBy: string;
+};
+
 export type Task = {
   title: string;
   start: number;
@@ -27,6 +43,8 @@ export type Task = {
   movedFrom?: number;
   /** confirmed days inside the period, oldest first; absent until somebody records one */
   dates?: TaskDate[];
+  /** the real dates the task runs on; absent while it is planned in week slots alone */
+  period?: TaskPeriod;
 };
 export type Person = { id: string; name: string; role: string; initial: string; tasks: Task[] };
 export type Team = { id: string; title: string; short: string; english: string; description: string; color: string; soft: string; mark: string; people: Person[] };
@@ -46,6 +64,15 @@ export const ACADEMIC_YEAR_START = 2026;
 
 /** The calendar month the year opens on, read from the first month label ("3월" -> 3). */
 const START_MONTH = Number(months[0].replace(/[^0-9]/g, ''));
+
+/** "2026학년도" — how the academic year is named wherever a user reads it. */
+export const academicYearLabel = `${ACADEMIC_YEAR_START}학년도`;
+
+/** "2026. 03 — 2027. 02" — the window the year covers, both ends inclusive. */
+export const academicYearRangeLabel = [
+  `${ACADEMIC_YEAR_START}. ${String(START_MONTH).padStart(2, '0')}`,
+  `${ACADEMIC_YEAR_START + 1}. ${String(((START_MONTH + 10) % 12) + 1).padStart(2, '0')}`,
+].join(' — ');
 
 export const seedTeams: Team[] = [
   {
@@ -158,7 +185,8 @@ export function findSeedTask(personId: string, title: string) {
 }
 
 /** "3월 2주" — the label used everywhere a week slot is shown to a user */
-export const weekLabel = (week: number) => `${months[Math.floor(week / 4)]} ${(week % 4) + 1}주`;
+export const weekLabel = (week: number) =>
+  `${months[Math.floor(week / SLOTS_PER_MONTH)]} ${(week % SLOTS_PER_MONTH) + 1}주`;
 
 export type Today = { week: number | null; month: number | null; day: number | null };
 export const noToday: Today = { week: null, month: null, day: null };
@@ -206,13 +234,46 @@ export function weekSlotDays(week: number) {
 export const isoDate = (year: number, month: number, day: number) =>
   `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-/** The first and last dates a task covers, as the `min` and `max` a date input is bounded by. */
-export function taskDateRange(task: Task) {
+/**
+ * The first and last date the academic year covers, as the `min` and `max` a date input takes.
+ *
+ * Day 0 of a month is the last day of the one before it, so the year closes the day before it
+ * would open again — which keeps February's length out of this. The server bounds a fixed period
+ * by the same window and says so when it rejects one.
+ */
+export const academicYearBounds = {
+  from: isoDate(ACADEMIC_YEAR_START, START_MONTH, 1),
+  to: isoDate(
+    ACADEMIC_YEAR_START + 1,
+    START_MONTH === 1 ? 12 : START_MONTH - 1,
+    new Date(ACADEMIC_YEAR_START + 1, START_MONTH - 1, 0).getDate(),
+  ),
+};
+
+/** The calendar parts of an ISO date, read off the string rather than through `Date`'s timezone. */
+export function dateParts(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  return { year, month, day };
+}
+
+/**
+ * The first and last date a task covers, both ends inclusive.
+ *
+ * A task's days come from one of two places. Most are planned in week slots, and their days are
+ * the ones those slots stand for — derived, and moved wholesale when the academic year shifts. A
+ * task whose days are settled carries a fixed period instead and covers those dates exactly.
+ * Everything needing a window — the band the month grid draws, the days a confirmed date may fall
+ * on — asks here rather than re-deriving one from week slots, so the two kinds of task are the
+ * same shape to every reader. `DateSpan` on the server is this function's counterpart.
+ */
+export function taskSpan(task: Task) {
+  if (task.period) return { from: task.period.startsOn, to: task.period.endsOn, fixed: true };
   const opens = weekSlotDays(task.start);
   const closes = weekSlotDays(task.start + task.duration - 1);
   return {
     from: isoDate(opens.year, opens.month, opens.from),
     to: isoDate(closes.year, closes.month, closes.to),
+    fixed: false,
   };
 }
 
@@ -222,6 +283,40 @@ export function taskDateLabel(date: string) {
   if (!year || !month || !day) return date;
   const weekday = ['일', '월', '화', '수', '목', '금', '토'][new Date(year, month - 1, day).getDay()];
   return `${month}월 ${day}일 (${weekday})`;
+}
+
+/**
+ * The week slot a date falls in — the inverse of `weekSlotDays`.
+ *
+ * Days 1-7 of a month are its slot 0 and so on, with the last slot keeping whatever the month has
+ * left over, which is why the day is clamped rather than divided outright. The server's
+ * `AcademicCalendar.weekOf` is the same arithmetic; a date-fixed task is placed on the year track
+ * with it, so the two have to agree.
+ */
+export function weekOfDate(date: string) {
+  const { year, month, day } = dateParts(date);
+  const monthIndex = (year - ACADEMIC_YEAR_START) * 12 + (month - START_MONTH);
+  return monthIndex * SLOTS_PER_MONTH + Math.min(SLOTS_PER_MONTH - 1, Math.floor((day - 1) / 7));
+}
+
+/** "8월 12일 ~ 9월 3일" for a fixed period, "8월 2주 ~ 9월 2주" for one planned in weeks. */
+export function taskSpanLabel(task: Task) {
+  if (!task.period) return taskPeriodLabel(task);
+  const opens = dateParts(task.period.startsOn);
+  const closes = dateParts(task.period.endsOn);
+  return `${opens.month}월 ${opens.day}일 ~ ${closes.month}월 ${closes.day}일`;
+}
+
+/** "9월 14일 (월)" or "9월 3주" — where a task starts, in the unit it is actually planned in. */
+export function taskStartLabel(task: Task) {
+  return task.period ? taskDateLabel(task.period.startsOn) : weekLabel(task.start);
+}
+
+/** "5주" or "12일" — how long a task runs, in the unit it is actually planned in. */
+export function taskLengthLabel(task: Task) {
+  if (!task.period) return `${task.duration}주`;
+  const days = Math.round((Date.parse(task.period.endsOn) - Date.parse(task.period.startsOn)) / 86_400_000) + 1;
+  return `${days}일`;
 }
 
 export type TaskPhase = 'done' | 'active' | 'upcoming';

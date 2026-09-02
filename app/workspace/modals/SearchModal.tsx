@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type CSSProperties } from 'react';
 import { Avatar, Empty, Modal, Row, RowGroup, Text } from '../../ui';
-import { weekLabel, type Person, type Task, type Team } from '../../org-data';
+import { taskLengthLabel, taskStartLabel, type Person, type Task, type Team } from '../../org-data';
 import { useTeams } from '../context';
 
 type Hit =
@@ -93,7 +93,7 @@ export default function SearchModal({
               title={hit.task.title}
               sub={`${hit.person.name} · ${hit.team.title}`}
               leading={<span className="search-task-mark" style={{ '--team': hit.team.color } as CSSProperties} aria-hidden="true" />}
-              trailing={<em className="search-task-when">{weekLabel(hit.task.start)} · {hit.task.duration}주</em>}
+              trailing={<em className="search-task-when">{taskStartLabel(hit.task)} · {taskLengthLabel(hit.task)}</em>}
               chevron="→"
               onClick={() => onPerson(hit.team.id, hit.person.id)}
               ariaLabel={`${hit.task.title} 업무를 맡은 ${hit.person.name} 담당자 페이지 열기`}

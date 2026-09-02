@@ -13,7 +13,7 @@ import SearchModal from './workspace/modals/SearchModal';
 import CreateTaskModal, { type CreatedTask } from './workspace/modals/CreateTaskModal';
 import { OrgContext, TodayContext, useResolvedToday } from './workspace/context';
 import type { ScheduleChange } from './workspace/types';
-import { seedTeams, taskKey, type Person, type Task, type TaskDate, type Team } from './org-data';
+import { seedTeams, taskKey, type Person, type Task, type TaskDate, type TaskPeriod, type Team } from './org-data';
 import { academicYears, alignmentActionLabels, baseAcademicYear, shiftLabel, type AlignmentItem, type AlignmentResponse } from './academic-calendar';
 
 type View = { type: 'home' } | { type: 'handover' } | { type: 'all' } | { type: 'team'; teamId: string } | { type: 'person'; teamId: string; personId: string };
@@ -26,6 +26,20 @@ type CustomMember = Person & { teamId: string };
 type CustomTask = Task & { personId: string };
 /** A confirmed date as the server files it: the task key travels with it, the task does not. */
 type StoredTaskDate = TaskDate & { taskKey: string };
+/**
+ * A fixed period as the server files it.
+ *
+ * `startWeek` and `duration` are the slots the dates land on, resolved once on the server so the
+ * year track can place a date-fixed task without re-deriving the mapping here. The dates stay the
+ * record; the slots are only how such a task appears on a week-shaped view.
+ */
+type StoredTaskPeriod = TaskPeriod & {
+  taskKey: string;
+  personId: string;
+  taskTitle: string;
+  startWeek: number;
+  duration: number;
+};
 type OrgResponse = { removedMemberIds: string[]; customMembers?: CustomMember[] };
 
 /**
@@ -322,6 +336,8 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   const [removedTaskKeys, setRemovedTaskKeys] = useState<string[]>([]);
   /* every confirmed day, flat; `datesByTask` files them under the task that owns them */
   const [taskDates, setTaskDates] = useState<StoredTaskDate[]>([]);
+  /* every task whose days are settled; the rest of the plan stays in week slots */
+  const [taskPeriods, setTaskPeriods] = useState<StoredTaskPeriod[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersLoadError, setMembersLoadError] = useState('');
   const [taskFocus, setTaskFocus] = useState<{ personId: string; taskTitle: string } | null>(null);
@@ -348,6 +364,11 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     }
     return map;
   }, [taskDates]);
+
+  const periodsByTask = useMemo(
+    () => new Map(taskPeriods.map((period) => [period.taskKey, period] as const)),
+    [taskPeriods],
+  );
 
   const allTeams = useMemo(() => {
     /* Deleting only ever hides a *seed* task — one authored here is deleted as a row and is simply
@@ -392,10 +413,22 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
         const current = trail?.[trail.length - 1]?.toStart;
         const moved = current === undefined || current === task.start ? task : { ...task, start: current, movedFrom: task.start };
         const dates = datesByTask.get(key);
-        return dates ? { ...moved, dates } : moved;
+        const dated = dates ? { ...moved, dates } : moved;
+        /* Last, and it overrules the move: a task fixed to dates sits on the slots those dates fall
+           in, whatever the trail last said. The ghost of an older move goes with it — there is no
+           week it was moved from that means anything once the days are the record. */
+        const period = periodsByTask.get(key);
+        if (!period) return dated;
+        return {
+          ...dated,
+          start: period.startWeek,
+          duration: period.duration,
+          movedFrom: undefined,
+          period: { startsOn: period.startsOn, endsOn: period.endsOn, setBy: period.setBy },
+        };
       }).sort((first, second) => first.start - second.start),
     })),
-  })), [allTeams, removedMemberIds, historyByTask, datesByTask]);
+  })), [allTeams, removedMemberIds, historyByTask, datesByTask, periodsByTask]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -451,6 +484,22 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     }
     const saved = payload.task;
     setCustomTasks((current) => [...current, saved]);
+    /* A task created with dates comes back as a task, not as a period — but the server derived its
+       slots from those dates and they are on `saved`, so the period is recorded from what was sent
+       rather than by re-fetching the whole set to learn what we already know. */
+    if (input.startsOn && input.endsOn) {
+      const created: StoredTaskPeriod = {
+        taskKey: taskKey(saved.personId, saved.title),
+        personId: saved.personId,
+        taskTitle: saved.title,
+        startsOn: input.startsOn,
+        endsOn: input.endsOn,
+        startWeek: saved.start,
+        duration: saved.duration,
+        setBy: currentUser.displayName,
+      };
+      setTaskPeriods((current) => [...current, created]);
+    }
     const team = teams.find((item) => item.people.some((person) => person.id === saved.personId));
     if (team) setView({ type: 'person', teamId: team.id, personId: saved.personId });
   };
@@ -477,6 +526,7 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     else setRemovedTaskKeys((current) => current.includes(key) ? current : [...current, key]);
     setScheduleChanges((current) => current.filter((change) => change.taskKey !== key));
     setTaskDates((current) => current.filter((date) => date.taskKey !== key));
+    setTaskPeriods((current) => current.filter((period) => period.taskKey !== key));
     setTaskFocus(null);
   };
 
@@ -492,15 +542,26 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     return () => controller.abort();
   }, []);
 
-  /* The whole set at once: the month grid marks days across every task on screen, not one task. */
+  /* The whole set at once: the month grid marks days across every task on screen, not one task.
+     The periods come with them because a task's days are drawn from whichever of the two it has,
+     and a grid that had the confirmed dates but not yet the period would draw the wrong band. */
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/task-dates', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('확정 일자를 불러오지 못했습니다.');
-        return response.json() as Promise<{ dates: StoredTaskDate[] }>;
+    Promise.all([
+      fetch('/api/task-dates', { signal: controller.signal }),
+      fetch('/api/task-periods', { signal: controller.signal }),
+    ])
+      .then(async ([datesResponse, periodsResponse]) => {
+        if (!datesResponse.ok || !periodsResponse.ok) throw new Error('확정 일자를 불러오지 못했습니다.');
+        return Promise.all([
+          datesResponse.json() as Promise<{ dates?: StoredTaskDate[] }>,
+          periodsResponse.json() as Promise<{ periods?: StoredTaskPeriod[] }>,
+        ]);
       })
-      .then((data) => setTaskDates(data.dates ?? []))
+      .then(([dateData, periodData]) => {
+        setTaskDates(dateData.dates ?? []);
+        setTaskPeriods(periodData.periods ?? []);
+      })
       .catch(() => {});
     return () => controller.abort();
   }, []);
@@ -542,6 +603,40 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
       throw new Error(payload?.error ?? '확정 일자를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
     }
     setTaskDates((current) => current.filter((date) => date.id !== id));
+  };
+
+  /**
+   * Fixes a task to real dates, or moves the dates it is already fixed to.
+   *
+   * The reply carries the week slots the server derived from the dates, so the year track re-places
+   * the task from the same arithmetic the month grid draws it with rather than from a second guess
+   * made here. Idempotent by task, which is why setting and moving are one call.
+   */
+  const setTaskPeriod = async (personId: string, taskTitle: string, startsOn: string, endsOn: string) => {
+    const response = await fetch('/api/task-periods', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personId, taskTitle, startsOn, endsOn }),
+    });
+    const payload = await response.json().catch(() => null) as { period?: StoredTaskPeriod; error?: string } | null;
+    if (!response.ok || !payload?.period) throw new Error(payload?.error ?? '확정 기간을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    const saved = payload.period;
+    setTaskPeriods((current) => [...current.filter((period) => period.taskKey !== saved.taskKey), saved]);
+  };
+
+  /* Returning a task to its week slots. They never stopped being the task's own — the period only
+     outranked them — so dropping it locally is the whole of the change. */
+  const clearTaskPeriod = async (personId: string, taskTitle: string) => {
+    const response = await fetch('/api/task-periods', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personId, taskTitle }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error ?? '확정 기간을 해제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    setTaskPeriods((current) => current.filter((period) => period.taskKey !== taskKey(personId, taskTitle)));
   };
 
   const removeMember = async (personId: string, teamId: string) => {
@@ -604,6 +699,6 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     {taskCreateOpen && <CreateTaskModal teams={teams} initialPersonId={selectedPerson?.id} onCreate={createTask} onClose={() => setTaskCreateOpen(false)} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal allTeams={allTeams} removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onCreateTeam={createTeam} onCreateMember={createMember} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}
-    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onAddDate={addTaskDate} onAddDates={addTaskDates} onRemoveDate={removeTaskDate} onClose={() => setTaskFocus(null)} />}
+    {taskDetail && <TaskModal {...taskDetail} history={historyByTask.get(taskKey(taskDetail.person.id, taskDetail.task.title)) ?? []} onReschedule={rescheduleTask} onDelete={deleteTask} onAddDate={addTaskDate} onAddDates={addTaskDates} onRemoveDate={removeTaskDate} onSetPeriod={setTaskPeriod} onClearPeriod={clearTaskPeriod} onClose={() => setTaskFocus(null)} />}
   </div></TodayContext.Provider></OrgContext.Provider>;
 }

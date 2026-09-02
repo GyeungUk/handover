@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from 'react';
 import { Button, Field, Input, Textarea } from '../../ui';
-import { taskDateLabel, taskDateRange, weekLabel, type Person, type Task } from '../../org-data';
+import { taskDateLabel, taskSpan, taskSpanLabel, type Person, type Task } from '../../org-data';
 import type { AddTaskDate, AddTaskDates, RemoveTaskDate } from '../types';
 import { parsePastedDates } from './task-date-paste';
 
@@ -14,8 +14,9 @@ import { parsePastedDates } from './task-date-paste';
  * office fixed the 20th, the application closed on the 3rd. Those days are recorded against the
  * task rather than in someone's notebook, which is the whole point of the handover.
  *
- * The date input is bounded by the period, so the only days offered are days the month grid can
- * actually mark. The server enforces the same window; this only saves a round trip to hear it.
+ * The date input is bounded by the task's span — the days its week slots stand for, or its fixed
+ * period when it has one — so the only days offered are days the month grid can actually mark. The
+ * server enforces the same window; this only saves a round trip to hear it.
  *
  * A year's dates rarely arrive one at a time, though — they arrive as a circular or a spreadsheet
  * column — so the same section takes a pasted block, reads every line back before anything is
@@ -36,7 +37,7 @@ export default function TaskDates({
 }) {
   /* Both feed the read-back memo below, so they have to be stable across renders themselves. */
   const dates = useMemo(() => task.dates ?? [], [task.dates]);
-  const range = useMemo(() => taskDateRange(task), [task]);
+  const range = useMemo(() => taskSpan(task), [task]);
   const [adding, setAdding] = useState(false);
   const [pasting, setPasting] = useState(false);
   const [date, setDate] = useState('');
@@ -105,7 +106,7 @@ export default function TaskDates({
       <header className="task-dates-head">
         <div>
           <h3>확정 일자</h3>
-          <small>{weekLabel(task.start)} ~ {weekLabel(task.start + task.duration - 1)} 안에서 선택합니다.</small>
+          <small>{taskSpanLabel(task)} 안에서 선택합니다.</small>
         </div>
         {!adding && !pasting && (
           <div className="task-dates-add">

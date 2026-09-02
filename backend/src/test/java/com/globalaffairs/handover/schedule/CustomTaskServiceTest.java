@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.globalaffairs.handover.domain.AcademicCalendar;
 import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.member.CustomMemberRepository;
 import com.globalaffairs.handover.web.ApiException;
@@ -41,20 +42,27 @@ class CustomTaskServiceTest {
     private TaskDateRepository taskDates;
 
     @Mock
+    private TaskPeriodService taskPeriods;
+
+    @Mock
     private CustomMemberRepository customMembers;
 
     private CustomTaskService service;
 
     @BeforeEach
     void setUp() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        OrgData orgData = new OrgData(objectMapper);
         service = new CustomTaskService(
                 repository,
                 removedTasks,
                 reschedules,
                 checklistItems,
                 taskDates,
+                taskPeriods,
                 customMembers,
-                new OrgData(new ObjectMapper()),
+                orgData,
+                new AcademicCalendar(objectMapper, orgData),
                 Clock.fixed(Instant.parse("2026-08-31T03:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -63,7 +71,7 @@ class CustomTaskServiceTest {
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         CustomTaskResponse task = service.create(
-                "minseo", "  출입국 정기 점검  ", 12, 3, "  대상자 명단 확인  ", "김지현");
+                "minseo", "  출입국 정기 점검  ", 12, 3, "  대상자 명단 확인  ", null, null, "김지현");
 
         assertThat(task.personId()).isEqualTo("minseo");
         assertThat(task.title()).isEqualTo("출입국 정기 점검");
@@ -74,7 +82,7 @@ class CustomTaskServiceTest {
 
     @Test
     void refusesAPeriodThatRunsPastTheAcademicYear() {
-        assertThatThrownBy(() -> service.create("minseo", "연말 업무", 47, 2, "", "김지현"))
+        assertThatThrownBy(() -> service.create("minseo", "연말 업무", 47, 2, "", null, null, "김지현"))
                 .isInstanceOf(ApiException.class)
                 .hasMessage("일정 기간이 학년도 안에 있어야 합니다.");
         verify(repository, never()).saveAndFlush(any());
@@ -83,7 +91,7 @@ class CustomTaskServiceTest {
     @Test
     void refusesATitleAlreadyInTheSeedPlan() {
         assertThatThrownBy(() -> service.create(
-                        "minseo", "비자 연장 집중기간", 20, 2, "", "김지현"))
+                        "minseo", "비자 연장 집중기간", 20, 2, "", null, null, "김지현"))
                 .isInstanceOf(ApiException.class)
                 .hasMessage("같은 담당자에게 동일한 이름의 일정이 이미 있습니다.");
     }
@@ -94,7 +102,7 @@ class CustomTaskServiceTest {
         when(repository.existsByPersonIdAndTitle("minseo", "비자 연장 집중기간")).thenReturn(false);
         when(repository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CustomTaskResponse task = service.create("minseo", "비자 연장 집중기간", 20, 2, "", "김지현");
+        CustomTaskResponse task = service.create("minseo", "비자 연장 집중기간", 20, 2, "", null, null, "김지현");
 
         assertThat(task.start()).isEqualTo(20);
     }

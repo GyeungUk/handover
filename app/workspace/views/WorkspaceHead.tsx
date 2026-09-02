@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { Container, H1, Text } from '../../ui';
+import { academicYearLabel, academicYearRangeLabel } from '../../org-data';
 
 /**
  * The year the workspace is showing.
@@ -11,10 +12,10 @@ import { Container, H1, Text } from '../../ui';
  * greyed controls that could never do anything, which reads as a screen that is
  * broken rather than as one that is complete. The scope is a statement now.
  */
-export function CalendarScope({ label = '2026. 03 — 2027. 02' }: { label?: string }) {
+export function CalendarScope({ label = academicYearRangeLabel }: { label?: string }) {
   return (
     <div className="calendar-scope">
-      <span className="calendar-scope-label">2026학년도</span>
+      <span className="calendar-scope-label">{academicYearLabel}</span>
       <strong>{label}</strong>
       <span className="today-chip">이번 주</span>
     </div>

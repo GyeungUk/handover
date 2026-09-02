@@ -2,13 +2,16 @@
 
 import { useState, type CSSProperties } from 'react';
 import type { DraftItem, DraftResponse } from '../../handover-schema';
-import { seedTeams } from '../../org-data';
 import { categories } from '../categories';
 import { Button, Modal } from '../../ui';
+import { useTeams } from '../../workspace/context';
 
 /** Turns a person's calendar into proposed entries. Nothing is saved until the author adopts it. */
 export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: DraftItem) => void; onClose: () => void }) {
-  const [personId, setPersonId] = useState(seedTeams[0].people[0].id);
+  /* The live org chart, not the shipped seed one: a person who signed up here is a real owner of
+     real work, and one who was taken off the chart is not someone to draft a handover for. */
+  const teams = useTeams();
+  const [personId, setPersonId] = useState(teams.find((team) => team.people.length)?.people[0].id ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<DraftResponse | null>(null);
@@ -60,8 +63,8 @@ export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: Draft
     </>}
   >
       <div className="ho-draft-controls">
-        <label><span>담당자</span><select value={personId} onChange={(event) => setPersonId(event.target.value)} disabled={loading}>{seedTeams.map((team) => <optgroup label={team.title} key={team.id}>{team.people.map((person) => <option value={person.id} key={person.id}>{person.name} · {person.role}</option>)}</optgroup>)}</select></label>
-        <button type="button" onClick={generate} disabled={loading}>{loading ? '상세 초안 만드는 중…' : result ? '다시 만들기' : '상세 초안 만들기'}</button>
+        <label><span>담당자</span><select value={personId} onChange={(event) => setPersonId(event.target.value)} disabled={loading}>{teams.filter((team) => team.people.length).map((team) => <optgroup label={team.title} key={team.id}>{team.people.map((person) => <option value={person.id} key={person.id}>{person.name} · {person.role}</option>)}</optgroup>)}</select></label>
+        <button type="button" onClick={generate} disabled={loading || !personId}>{loading ? '상세 초안 만드는 중…' : result ? '다시 만들기' : '상세 초안 만들기'}</button>
       </div>
 
       {loading && <div className="ho-draft-loading"><i /><i /><i /><p>연간 일정과 일정 변경 이력을 정리하고 있습니다.</p></div>}

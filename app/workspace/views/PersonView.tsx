@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Card, Container, Stat } from '../../ui';
-import { months, weekLabel, type Person, type Task, type Team } from '../../org-data';
+import { academicYearLabel, months, taskLengthLabel, taskStartLabel, weekLabel, SLOTS_PER_MONTH, type Person, type Task, type Team } from '../../org-data';
 import { CalendarBody, WeekGrid, WeekHeader } from '../calendar/WeekRuler';
 import { layoutTasks } from '../calendar/rows';
 import PersonTimelineCard, { MonthStrip } from '../calendar/PersonTimelineCard';
@@ -37,7 +37,7 @@ function AnnualTrack({
       <div className="task-timeline large-track">
         <WeekGrid />
         {placed.map(({ task, lane, inside, flipped, displayStart, displayDuration }) => {
-          const taskMonth = Math.floor(task.start / 4);
+          const taskMonth = Math.floor(task.start / SLOTS_PER_MONTH);
           return (
             <button
               className={`task-bar ${inside ? 'is-inside' : 'is-beside'} ${flipped ? 'is-flipped' : ''} ${taskMonth === monthIndex ? 'is-active' : ''} ${task.movedFrom !== undefined ? 'is-moved' : ''}`}
@@ -57,7 +57,7 @@ function AnnualTrack({
               <span className="task-bar-label">
                 {task.movedFrom !== undefined && <i className="moved-flag" aria-hidden="true">↻</i>}
                 <b>{task.title}</b>
-                <span>{months[taskMonth]} · {task.duration}주</span>
+                <span>{task.period ? taskStartLabel(task) : months[taskMonth]} · {taskLengthLabel(task)}</span>
               </span>
             </button>
           );
@@ -95,7 +95,13 @@ export default function PersonView({
   const today = useToday();
   const [monthIndex, setMonthIndex] = useState(0);
   const didSetCurrentMonth = useRef(false);
-  const nextTask = person.tasks[0];
+  /* The next one relative to today, not the first of the year — `person.tasks` is sorted by start
+     week, so taking [0] labelled a March task "다음 일정" all the way through February. Outside the
+     academic year there is no "today" to be after, and the year's first task is the honest answer. */
+  const todayWeek = today.week;
+  const nextTask = (todayWeek === null
+    ? undefined
+    : person.tasks.find((task) => task.start + task.duration > todayWeek)) ?? person.tasks[0];
   const busyWeeks = person.tasks.reduce((sum, task) => sum + task.duration, 0);
 
   /* `today` resolves after hydration. Open the personal calendar on that month
@@ -121,7 +127,7 @@ export default function PersonView({
             {person.name}
           </span>
         }
-        description={`${team.title} · 2026학년도 업무 캘린더`}
+        description={`${team.title} · ${academicYearLabel} 업무 캘린더`}
       >
         <Badge tone="blue">{person.role}</Badge>
       </WorkspaceHead>
@@ -131,7 +137,7 @@ export default function PersonView({
           <Stat label="주요 업무" value={person.tasks.length} unit="건" />
           <Stat
             label="다음 일정"
-            value={nextTask ? months[Math.floor(nextTask.start / 4)] : '—'}
+            value={nextTask ? months[Math.floor(nextTask.start / SLOTS_PER_MONTH)] : '—'}
             hint={nextTask?.title ?? '등록된 일정 없음'}
           />
         </SummaryBar>

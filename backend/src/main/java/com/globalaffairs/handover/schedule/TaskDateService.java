@@ -1,6 +1,6 @@
 package com.globalaffairs.handover.schedule;
 
-import com.globalaffairs.handover.domain.AcademicCalendar;
+import com.globalaffairs.handover.domain.DateSpan;
 import com.globalaffairs.handover.domain.OrgData;
 import com.globalaffairs.handover.domain.Task;
 import com.globalaffairs.handover.web.ApiException;
@@ -11,7 +11,6 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -25,8 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
  * it, so a date outside the band would be recorded and then never shown. Rejecting it names the
  * window instead, which is also the cheapest way to catch the wrong month being typed.
  *
- * <p>The span is the task's <em>current</em> one, reschedules included, for the same reason: the
- * band the workspace draws is the moved one.
+ * <p>The span is the task's <em>current</em> one for the same reason: the band the workspace draws
+ * is the moved one, and it is the fixed period when the task has one rather than the days its week
+ * slots would otherwise stand for. {@link TaskPeriodService#spanOf} answers both cases, so this
+ * service never has to know which kind of task it is holding.
  */
 @Service
 public class TaskDateService {
@@ -38,26 +39,20 @@ public class TaskDateService {
 
     private final TaskDateRepository repository;
     private final TaskRescheduleRepository reschedules;
-    private final CustomTaskRepository customTasks;
-    private final RemovedTaskRepository removedTasks;
-    private final OrgData orgData;
-    private final AcademicCalendar calendar;
+    private final TaskPeriodService periods;
+    private final WorkspacePlan plan;
     private final Clock clock;
 
     public TaskDateService(
             TaskDateRepository repository,
             TaskRescheduleRepository reschedules,
-            CustomTaskRepository customTasks,
-            RemovedTaskRepository removedTasks,
-            OrgData orgData,
-            AcademicCalendar calendar,
+            TaskPeriodService periods,
+            WorkspacePlan plan,
             Clock clock) {
         this.repository = repository;
         this.reschedules = reschedules;
-        this.customTasks = customTasks;
-        this.removedTasks = removedTasks;
-        this.orgData = orgData;
-        this.calendar = calendar;
+        this.periods = periods;
+        this.plan = plan;
         this.clock = clock;
     }
 
@@ -97,8 +92,8 @@ public class TaskDateService {
             throw ApiException.badRequest("확정 일자를 선택해 주세요.");
         }
 
-        LocalDate opensOn = calendar.weekSlotStart(task.start());
-        LocalDate closesOn = calendar.weekSlotEnd(task.start() + task.duration() - 1);
+        LocalDate opensOn = task.span().from();
+        LocalDate closesOn = task.span().to();
         long room = PER_TASK_MAX - repository.countByTaskKey(task.key());
         if (entries.size() > room) {
             throw ApiException.badRequest("한 업무에 등록할 수 있는 일자는 %d개까지입니다.".formatted(PER_TASK_MAX));
@@ -111,7 +106,7 @@ public class TaskDateService {
         boolean batch = entries.size() > 1;
         for (NewDate entry : entries) {
             LocalDate confirmed = parseDate(entry.date());
-            if (confirmed.isBefore(opensOn) || confirmed.isAfter(closesOn)) {
+            if (!task.span().covers(confirmed)) {
                 throw ApiException.badRequest(
                         "확정 일자는 업무 기간(%s ~ %s) 안에서 선택해 주세요.".formatted(opensOn, closesOn));
             }
@@ -157,22 +152,19 @@ public class TaskDateService {
         }
     }
 
-    /** The task's identity and the span it currently occupies, reschedules applied. */
-    private record TaskRef(String key, int start, int duration) {}
+    /** The task's identity and the days it currently covers, reschedule and fixed period applied. */
+    private record TaskRef(String key, DateSpan span) {}
 
     private TaskRef requireTask(String personId, String taskTitle) {
         if (personId == null || personId.isBlank() || taskTitle == null || taskTitle.isBlank()) {
             throw ApiException.badRequest("유효한 업무 정보가 필요합니다.");
         }
         String key = OrgData.taskKey(personId.trim(), taskTitle.trim());
-        Task task = customTasks.findByPersonIdAndTitle(personId.trim(), taskTitle.trim()).map(CustomTask::asTask)
-                .or(() -> removedTasks.existsById(key)
-                        ? Optional.empty()
-                        : orgData.findSeedTask(personId.trim(), taskTitle.trim()))
+        Task task = plan.findTask(personId, taskTitle)
                 .orElseThrow(() -> ApiException.badRequest("존재하지 않는 업무입니다."));
         int start = reschedules.findFirstByTaskKeyOrderByIdDesc(key)
                 .map(TaskReschedule::getToStart)
                 .orElse(task.start());
-        return new TaskRef(key, start, task.duration());
+        return new TaskRef(key, periods.spanOf(key, start, task.duration()));
     }
 }

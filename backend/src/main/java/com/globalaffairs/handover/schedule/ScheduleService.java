@@ -7,7 +7,6 @@ import com.globalaffairs.handover.web.ApiException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,23 +17,20 @@ public class ScheduleService {
     private static final int REASON_MAX = 300;
 
     private final TaskRescheduleRepository repository;
-    private final CustomTaskRepository customTasks;
-    private final RemovedTaskRepository removedTasks;
-    private final OrgData orgData;
+    private final TaskPeriodRepository periods;
+    private final WorkspacePlan plan;
     private final AcademicCalendar calendar;
     private final Clock clock;
 
     public ScheduleService(
             TaskRescheduleRepository repository,
-            CustomTaskRepository customTasks,
-            RemovedTaskRepository removedTasks,
-            OrgData orgData,
+            TaskPeriodRepository periods,
+            WorkspacePlan plan,
             AcademicCalendar calendar,
             Clock clock) {
         this.repository = repository;
-        this.customTasks = customTasks;
-        this.removedTasks = removedTasks;
-        this.orgData = orgData;
+        this.periods = periods;
+        this.plan = plan;
         this.calendar = calendar;
         this.clock = clock;
     }
@@ -55,12 +51,16 @@ public class ScheduleService {
             throw ApiException.badRequest("유효한 업무 정보가 필요합니다.");
         }
 
-        /* A task authored here wins over a seed task of the same name — that name is only free to
-           re-use because the seed one was deleted, and a deleted seed task is not movable. */
         String key = OrgData.taskKey(personId, taskTitle);
-        Task seedTask = customTasks.findByPersonIdAndTitle(personId, taskTitle).map(CustomTask::asTask)
-                .or(() -> removedTasks.existsById(key) ? Optional.empty() : orgData.findSeedTask(personId, taskTitle))
+        Task seedTask = plan.findTask(personId, taskTitle)
                 .orElseThrow(() -> ApiException.badRequest("존재하지 않는 업무입니다."));
+
+        /* Moving a task by week slot says nothing about a task whose days are already settled, and
+           whatever it said would be overruled by the period the moment the calendar redrew it. The
+           author has to decide which of the two is true, so the period is named rather than moved. */
+        if (periods.existsById(key)) {
+            throw ApiException.badRequest("날짜가 확정된 업무입니다. 확정 기간을 수정하거나 해제한 뒤 변경해 주세요.");
+        }
 
         if (toStart == null || toStart < 0 || toStart + seedTask.duration() > OrgData.WEEKS_IN_YEAR) {
             /* The year is named from the calendar data, so the message follows a year roll-over. */
