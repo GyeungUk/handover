@@ -71,7 +71,8 @@ public class AnnualService {
     public record IncomingEntry(
             String id, String category, String title, String text, Map<String, String> properties) {}
 
-    private record Document(String id, String category, String title, String body, Map<String, String> properties) {}
+    private record Document(
+            String id, String category, String title, String body, String openQuestions, Map<String, String> properties) {}
 
     public AnnualResponse renew(List<IncomingEntry> entries, Integer year) {
         openAiClient.requireConfigured(NOT_CONFIGURED);
@@ -98,12 +99,18 @@ public class AnnualService {
         }
 
         List<Document> documents = candidates.stream()
-                .map(entry -> new Document(
-                        entry.id(),
-                        entry.category(),
-                        AiSupport.truncate(entry.title(), INCOMING_TITLE_MAX),
-                        AiSupport.normalize(entry.text()),
-                        entry.properties() == null ? Map.of() : entry.properties()))
+                .map(entry -> {
+                    /* Last year's unanswered questions are not last year's content: carried into
+                       the body they come back as a paragraph reading "확인이 필요한 내용: …?". */
+                    AiSupport.EntryText split = AiSupport.splitOpenQuestions(entry.text());
+                    return new Document(
+                            entry.id(),
+                            entry.category(),
+                            AiSupport.truncate(entry.title(), INCOMING_TITLE_MAX),
+                            split.body(),
+                            split.openQuestions(),
+                            entry.properties() == null ? Map.of() : entry.properties());
+                })
                 .toList();
 
         if (documents.isEmpty()) {
@@ -131,7 +138,8 @@ public class AnnualService {
                 "제목: " + entry.title(),
                 "속성: " + json.compact(entry.properties()),
                 "본문: " + entry.body(),
-                "</항목>")));
+                entry.openQuestions().isEmpty() ? "" : "작성자확인요청: " + entry.openQuestions(),
+                "</항목>").replace("\n\n", "\n")));
         return String.join("\n", lines);
     }
 
@@ -159,12 +167,13 @@ public class AnnualService {
 
             String evidenceEntryId = item.path("evidenceEntryId").asText("").trim();
             Document evidenceSource = byId.get(evidenceEntryId);
-            String evidenceQuote = AiSupport.normalize(item.path("evidenceQuote").asText(""));
             if (evidenceSource == null || (!"new".equals(action) && !evidenceSource.id().equals(source.id()))) {
                 continue;
             }
-            if (evidenceQuote.isEmpty()
-                    || !AiSupport.normalize(evidenceSource.title() + " " + evidenceSource.body()).contains(evidenceQuote)) {
+            String evidenceQuote = AiSupport.groundedQuote(
+                    item.path("evidenceQuote").asText(""),
+                    AiSupport.normalize(evidenceSource.title() + " " + evidenceSource.body()));
+            if (evidenceQuote.isEmpty()) {
                 continue;
             }
 
@@ -200,8 +209,12 @@ public class AnnualService {
                     "new".equals(action) ? null : source.id(),
                     source == null ? "" : source.title(),
                     category,
-                    AiSupport.clip(title, TITLE_MAX),
-                    AiSupport.detailHtml(paragraphs, archived ? List.of() : questions),
+                    AiSupport.clip(AiSupport.stripExtractionMarkup(title), TITLE_MAX),
+                    /* An entry imported last year can carry the converter's markers; carrying them
+                       into next year's draft is not a fact worth preserving. */
+                    AiSupport.detailHtml(
+                            paragraphs.stream().map(AiSupport::stripExtractionMarkup).toList(),
+                            archived ? List.of() : questions),
                     support.cleanProperties(category, ModelJson.propertyPairs(item.path("properties"))),
                     item.path("reason").asText("").trim(),
                     archived ? List.of() : questions));

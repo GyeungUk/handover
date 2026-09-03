@@ -22,15 +22,18 @@ export default function AppHeader({
   onManageMembers,
   compact = false,
   handoverActive = false,
+  handoverBackLabel = '캘린더로 돌아가기',
 }: {
   user: SessionUser;
   onHome: () => void;
+  /** Opens the handover screen, and on that screen goes back where it was opened from. */
   onHandover: () => void;
   onSearch: () => void;
   onAddTask: () => void;
   onManageMembers: () => void;
   compact?: boolean;
   handoverActive?: boolean;
+  handoverBackLabel?: string;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -128,9 +131,18 @@ export default function AppHeader({
             <b>일정 추가</b>
           </button>
 
-          <button className={`handover-link ${handoverActive ? 'active' : ''}`} type="button" onClick={onHandover} aria-label="인수인계 작성" title="인수인계 작성">
-            <span aria-hidden="true">↗</span>
-            <b>인수인계 작성</b>
+          {/* The one slot for the handover screen: the way in, and on that screen the way back.
+              Narrow layouts hide the label and leave only the glyph, so the glyph turns around
+              too — an unchanged ↗ would be the only thing a phone user saw. */}
+          <button
+            className={`handover-link ${handoverActive ? 'active' : ''}`}
+            type="button"
+            onClick={onHandover}
+            aria-label={handoverActive ? handoverBackLabel : '인수인계 작성'}
+            title={handoverActive ? handoverBackLabel : '인수인계 작성'}
+          >
+            <span aria-hidden="true">{handoverActive ? '←' : '↗'}</span>
+            <b>{handoverActive ? handoverBackLabel : '인수인계 작성'}</b>
           </button>
 
           <div className="profile-wrap" ref={wrap}>

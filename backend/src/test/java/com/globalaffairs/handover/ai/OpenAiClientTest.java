@@ -31,9 +31,9 @@ class OpenAiClientTest {
     private String chatUrl;
 
     @Test
-    void defaultsToHighestReasoningAcceptedByLunaChatCompletions() {
+    void defaultsToTheMeasuredReasoningLevelThatCompletesRealDocuments() {
         OpenAiProperties properties = new OpenAiProperties("key", null, null, null);
-        assertThat(properties.reasoningEffort()).isEqualTo("xhigh");
+        assertThat(properties.reasoningEffort()).isEqualTo("medium");
     }
 
     @AfterEach

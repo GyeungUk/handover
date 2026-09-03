@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
-import { calendarMonth, dateParts, isoDate, months, taskLengthLabel, taskSpan, type Person, type Task, type TaskDate } from '../../org-data';
+import { calendarMonth, confirmedDays, dateParts, isoDate, months, taskLengthLabel, taskSpan, type Person, type Task, type TaskDate } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -36,24 +36,44 @@ export function getCalendarDays(monthIndex: number) {
 }
 
 /**
- * The days of `monthIndex` a task runs across, or `null` when it does not reach the month.
+ * The stretches of `monthIndex` a task is drawn on, empty when it does not reach the month.
  *
- * This used to be worked out partly from the task's position in the month's list, which meant
- * adding one task moved the days of the others, and the length was the duration in weeks drawn as
- * that many days — a two-week task covered two. It is a function of the task and the month alone
- * now, and of only one thing about the task: the span it covers. A task planned in week slots and
- * one fixed to real dates are the same shape by the time they get here, so the grid draws both
- * from the same arithmetic instead of carrying a second code path for the date-fixed kind.
+ * Which days those are depends on one thing: whether anybody has settled a day of it. A task
+ * planned in week slots covers the days its slots stand for, as one band, and so does a task fixed
+ * to a period — they are the same shape by the time they get here, so the grid draws both from the
+ * same arithmetic instead of carrying a second code path for the date-fixed kind.
  *
- * ISO dates compare correctly as strings, which is what clips the span to the month.
+ * A task with confirmed days covers those days and nothing else. The loose window behind it was
+ * only ever a guess about where the day would fall, and once the day is known, drawing the guess
+ * across five weeks of the grid says the work runs for five weeks when it runs for a morning. The
+ * window still exists — it is what bounds the next day anybody records — but it is no longer what
+ * the month shows.
+ *
+ * ISO dates compare correctly as strings, which is what clips a span to the month.
  */
-function taskRun(task: Task, monthIndex: number, daysInMonth: number) {
+function taskRuns(task: Task, monthIndex: number, daysInMonth: number) {
   const { year, month } = calendarMonth(monthIndex);
-  const span = taskSpan(task);
   const opensOn = isoDate(year, month, 1);
   const closesOn = isoDate(year, month, daysInMonth);
-  if (span.to < opensOn || span.from > closesOn) return null;
-  return {
+  const span = taskSpan(task);
+  const settled = confirmedDays(task);
+
+  if (settled.length) {
+    return settled
+      .filter((day) => day.date >= opensOn && day.date <= closesOn)
+      .map((day) => ({
+        from: dateParts(day.date).day,
+        to: dateParts(day.date).day,
+        endsHere: true,
+        continued: false,
+        fixed: span.fixed,
+        /** the day itself, which is what this run is */
+        confirmed: day as TaskDate | undefined,
+      }));
+  }
+
+  if (span.to < opensOn || span.from > closesOn) return [];
+  return [{
     from: span.from > opensOn ? dateParts(span.from).day : 1,
     to: span.to < closesOn ? dateParts(span.to).day : daysInMonth,
     /** false while the task carries on past this month, which the run's end shows */
@@ -62,13 +82,12 @@ function taskRun(task: Task, monthIndex: number, daysInMonth: number) {
     continued: span.from < opensOn,
     /** a fixed period is drawn as itself rather than as the weeks it happens to touch */
     fixed: span.fixed,
-  };
+    confirmed: undefined as TaskDate | undefined,
+  }];
 }
 
-type MonthRun = NonNullable<ReturnType<typeof taskRun>> & {
+type MonthRun = ReturnType<typeof taskRuns>[number] & {
   task: Task;
-  /** the days inside the run that are actually fixed, looked up by the day's own ISO date */
-  confirmed: Map<string, TaskDate>;
   /** the row the run keeps in every cell it touches */
   lane: number;
 };
@@ -80,29 +99,29 @@ type MonthRun = NonNullable<ReturnType<typeof taskRun>> & {
  * so a run drawn on lane 1 is at the same height on every day it covers and the day it starts is
  * level with the day it ends. Longest-first packing means the run that spans the week takes the top
  * lane and the short ones settle underneath it, rather than the order of `person.tasks` deciding.
+ *
+ * A lane is claimed by the task rather than by each of its runs, so the several confirmed days of
+ * one task stay on one line across the month instead of scattering down the cell.
  */
 function monthRuns(tasks: Task[], monthIndex: number, daysInMonth: number): MonthRun[] {
-  const runs = tasks.flatMap((task) => {
-    const run = taskRun(task, monthIndex, daysInMonth);
-    return run
-      ? [{
-        ...run,
-        task,
-        confirmed: new Map((task.dates ?? []).map((entry) => [entry.date, entry] as const)),
-        lane: 0,
-      }]
-      : [];
-  });
-  runs.sort((a, b) => a.from - b.from || (b.to - b.from) - (a.to - a.from) || a.task.title.localeCompare(b.task.title));
+  const drawn = tasks
+    .map((task) => ({ task, runs: taskRuns(task, monthIndex, daysInMonth) }))
+    .filter((entry) => entry.runs.length)
+    .map((entry) => ({
+      ...entry,
+      from: Math.min(...entry.runs.map((run) => run.from)),
+      to: Math.max(...entry.runs.map((run) => run.to)),
+    }));
+  drawn.sort((a, b) => a.from - b.from || (b.to - b.from) - (a.to - a.from) || a.task.title.localeCompare(b.task.title));
 
-  /* The last day each lane is taken up to; a run goes in the first lane free by the day it opens. */
+  /* The last day each lane is taken up to; a task goes in the first lane free by the day it opens. */
   const takenTo: number[] = [];
-  for (const run of runs) {
-    const free = takenTo.findIndex((day) => day < run.from);
-    run.lane = free === -1 ? takenTo.length : free;
-    takenTo[run.lane] = run.to;
-  }
-  return runs;
+  return drawn.flatMap(({ task, runs, from, to }) => {
+    const free = takenTo.findIndex((day) => day < from);
+    const lane = free === -1 ? takenTo.length : free;
+    takenTo[lane] = to;
+    return runs.map((run) => ({ ...run, task, lane }));
+  });
 }
 
 function MonthNav({ monthIndex, setMonthIndex }: { monthIndex: number; setMonthIndex: Dispatch<SetStateAction<number>> }) {
@@ -171,7 +190,7 @@ function MonthGrid({
                        somebody has to be somewhere. Both belong on the same lane, so the day the
                        task is actually on is the band in the part's colour rather than a chip
                        stacked under it. */
-                    const fixed = run.confirmed.get(isoDate(calendar.year, calendar.realMonth, day));
+                    const fixed = run.confirmed;
                     const length = taskLengthLabel(run.task);
                     return (
                       <button

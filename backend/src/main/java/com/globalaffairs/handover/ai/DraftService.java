@@ -245,8 +245,9 @@ public class DraftService {
             drafts.add(new DraftResponse.DraftItem(
                     "draft-" + drafts.size(),
                     category,
-                    AiSupport.clip(title, TITLE_MAX),
-                    AiSupport.detailHtml(paragraphs, questions),
+                    AiSupport.clip(AiSupport.stripExtractionMarkup(title), TITLE_MAX),
+                    AiSupport.detailHtml(
+                            paragraphs.stream().map(AiSupport::stripExtractionMarkup).toList(), questions),
                     support.cleanProperties(category, ModelJson.propertyPairs(item.path("properties")), inferableKeys::contains),
                     "record".equals(item.path("basis").asText("")) ? "record" : "inferred",
                     questions,

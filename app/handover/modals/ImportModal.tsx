@@ -19,6 +19,10 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
 
   const reset = () => { setResult(null); setAdopted([]); setError(''); };
 
+  /** "원문을 그대로 옮긴 항목 4건 · 근거를 확인하지 못한 항목 2건" */
+  const skippedNote = (skipped: ImportResponse['skipped']) =>
+    (skipped ?? []).map((entry) => `${entry.reason} ${entry.count}건`).join(' · ');
+
   const takeFile = async (file: File | null | undefined) => {
     if (!file) return;
     setReading(true);
@@ -47,8 +51,13 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
       });
       const data = await response.json() as ImportResponse & { error?: string };
       if (!response.ok) setError(data.error ?? '자동 분류에 실패했습니다.');
-      else if (!data.items.length) setError('네 개 섹션에 넣을 만한 내용을 찾지 못했습니다. 자료를 확인해 주세요.');
-      else setResult(data);
+      else if (!data.items.length) {
+        /* Naming what was thrown away beats "찾지 못했습니다" when a deck yields only pasted text. */
+        const note = skippedNote(data.skipped);
+        setError(note
+          ? `제안된 내용이 모두 걸러졌습니다: ${note}. 발표자료처럼 표·그림 위주의 문서라면 설명 문장이 있는 부분을 붙여넣어 다시 시도해 주세요.`
+          : '네 개 섹션에 넣을 만한 내용을 찾지 못했습니다. 자료를 확인해 주세요.');
+      } else setResult(data);
     } catch {
       setError('네트워크 오류로 분류하지 못했습니다.');
     } finally {
@@ -113,6 +122,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
       {result && <>
         <div className="ho-import-summary">
           <p><b>{result.fileName}</b> · {result.charCount.toLocaleString()}자에서 {result.items.length}건을 정리했습니다.</p>
+          {skippedNote(result.skipped) && <p className="ho-import-skipped">초안에 넣지 않은 제안: {skippedNote(result.skipped)}</p>}
           <div className="ho-import-counts">{categories.map((category) => {
             const count = result.items.filter((item) => item.category === category.id).length;
             return <span key={category.id} className={count ? '' : 'empty'} style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties}><i />{category.short}<b>{count}</b></span>;

@@ -84,9 +84,11 @@ handover:
   openai:
     api-key: ${OPENAI_API_KEY:}
     base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1/chat/completions}
-    # none | low | medium | high | xhigh. Highest value accepted by Luna Chat Completions.
-    reasoning-effort: ${OPENAI_REASONING_EFFORT:xhigh}
-    timeout: ${OPENAI_TIMEOUT:120s}
+    # none | low | medium | high | xhigh. Medium completed the measured documents reliably.
+    reasoning-effort: ${OPENAI_REASONING_EFFORT:medium}
+    # One call per document part. A part of a real document takes minutes at xhigh, not seconds,
+    # and the 120s this used to allow expired mid-answer on every file worth importing.
+    timeout: ${OPENAI_TIMEOUT:280s}
 
 logging:
   level:

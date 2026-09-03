@@ -19,8 +19,22 @@ type WorkspaceTab = 'write' | 'compose' | 'review';
 /** The shape every AI proposal boils down to before it becomes a real entry. */
 type AdoptableItem = { category: HandoverCategory; title: string; detail: string; properties: Record<string, string> };
 
+/** Every timestamp on this screen is read at a glance, so it is shown as a date, never as an instant. */
+const onDate = (value: string | null) => value
+  ? new Date(value).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  : '';
 
-export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () => void; currentUser: { email: string } }) {
+const onDateTime = (value: string | null) => value
+  ? new Date(value).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  : '';
+
+
+export default function HandoverWorkspace({ onHome, origin, currentUser }: {
+  onHome: () => void;
+  /** The calendar this screen was opened from, when there was one, as a breadcrumb crumb. */
+  origin?: { label: string; onOpen: () => void } | null;
+  currentUser: { email: string };
+}) {
   const [tab, setTab] = useState<WorkspaceTab>('write');
   const [activeCategory, setActiveCategory] = useState<HandoverCategory>('responsibility');
   const [entries, setEntries] = useState(initialEntries);
@@ -46,7 +60,10 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
-  const [pendingDocuments, setPendingDocuments] = useState<HandoverDocumentSummary[]>([]);
+  const [submittedDocuments, setSubmittedDocuments] = useState<HandoverDocumentSummary[]>([]);
+  const [queueFilter, setQueueFilter] = useState<'all' | WorkflowStatus>('pending');
+  const [reviewedAt, setReviewedAt] = useState<string | null>(null);
+  const [reviewedBy, setReviewedBy] = useState<string | null>(null);
   const [viewedOwnerEmail, setViewedOwnerEmail] = useState(currentUser.email.toLowerCase());
   const [fixedApprovedBundleIds, setFixedApprovedBundleIds] = useState<Set<string>>(() => new Set());
   const savedSnapshot = useRef<string | null>(null);
@@ -83,16 +100,25 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
   /* A correction round can only change what came back, so a finding on a frozen entry is a dead
    * end: the button under it opens an editor the author is not allowed to save. */
   const checkableEntries = status === 'rejected' ? entries.filter((entry) => !approvedEntryIds.has(entry.id)) : entries;
+  /* The part leader's list is every submission, so the queue is the part of it still waiting. */
+  const pendingDocuments = submittedDocuments.filter((item) => item.status === 'pending');
+  const queueDocuments = queueFilter === 'all' ? submittedDocuments : submittedDocuments.filter((item) => item.status === queueFilter);
+  const queueFilters: Array<{ id: 'all' | WorkflowStatus; label: string }> = [
+    { id: 'pending', label: '검토 대기' },
+    { id: 'rejected', label: '반려' },
+    { id: 'approved', label: '승인 완료' },
+    { id: 'all', label: '전체' },
+  ];
 
   /* Both author steps carry this: the rule only makes sense where the locked controls are. */
   const rejectBanner = status === 'rejected' && <div className="ho-reject-banner"><span>!</span><div><b>반려된 업무 단위만 다시 작성할 수 있습니다.</b><p>{fixedBundleCount > 0
     ? `승인된 ${fixedBundleCount}개 단위와 그 안의 항목은 승인 상태로 고정되고, 반려된 ${returnedBundles.length}개 단위만 수정됩니다.`
     : `${returnedBundles.length}개 단위가 모두 보완 대상입니다. 단위별 코멘트를 확인하고 다시 작성해 주세요.`}</p></div><button type="button" onClick={() => setTab('review')}>검토 의견 보기</button></div>;
 
-  const flash = (message: string) => {
+  const flash = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(''), 2400);
-  };
+  }, []);
 
   const applyDocument = useCallback((document: HandoverDocument) => {
     const safeEntries = document.entries.map((entry) => ({ ...entry, detail: sanitizeRichHtml(entry.detail) }));
@@ -102,6 +128,8 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
     setStatus(document.status);
     setOwnerName(document.ownerName);
     setSubmittedAt(document.submittedAt);
+    setReviewedAt(document.reviewedAt);
+    setReviewedBy(document.reviewedBy);
     setSavedAt(document.updatedAt);
     annualCycleReady.current = document.status !== 'approved';
     savedSnapshot.current = snapshotOf(safeEntries, document.bundles);
@@ -149,7 +177,7 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
       const data = await response.json() as {
         document?: HandoverDocument | null;
         viewerRole?: 'admin' | 'member';
-        pendingDocuments?: HandoverDocumentSummary[];
+        submittedDocuments?: HandoverDocumentSummary[];
         error?: string;
       };
       if (!response.ok) {
@@ -158,7 +186,7 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
         return null;
       }
       setViewerRole(data.viewerRole ?? 'member');
-      setPendingDocuments(data.pendingDocuments ?? []);
+      setSubmittedDocuments(data.submittedDocuments ?? []);
       setViewedOwnerEmail((ownerEmail ?? currentUser.email).toLowerCase());
       if (data.document) {
         applyDocument(data.document);
@@ -169,6 +197,8 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
         setStatus('draft');
         setOwnerName('');
         setSubmittedAt(null);
+        setReviewedAt(null);
+        setReviewedBy(null);
         setSavedAt(null);
         savedSnapshot.current = snapshotOf([], []);
         setSaveState('saved');
@@ -188,6 +218,41 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
     const timer = window.setTimeout(() => { void readDocument(); }, 0);
     return () => window.clearTimeout(timer);
   }, [readDocument, loadAttempt]);
+
+  /**
+   * A waiting author watches for the verdict.
+   *
+   * The decision is made in the part leader's browser, so this screen only learns about it by
+   * asking again: when the tab comes back to the front, and on a slow beat while it stays open. It
+   * runs only while the author's own document is pending — nothing is editable then, so replacing
+   * the state cannot lose an edit, and the moment the verdict lands the screen unlocks itself for
+   * the correction round.
+   */
+  useEffect(() => {
+    if (!loaded || role !== 'author' || !isOwnDocument || status !== 'pending') return;
+    let checking = false;
+    const check = async () => {
+      if (checking || window.document.visibilityState === 'hidden') return;
+      checking = true;
+      try {
+        const data = await readDocument();
+        const verdict = data?.document?.status;
+        if (verdict === 'approved') flash('파트장이 인수인계서를 승인했습니다.');
+        else if (verdict === 'rejected') flash('파트장이 보완을 요청했습니다. 반려된 단위를 다시 작성해 주세요.');
+      } finally {
+        checking = false;
+      }
+    };
+    const onReturn = () => { void check(); };
+    const timer = window.setInterval(onReturn, 20000);
+    window.addEventListener('focus', onReturn);
+    window.document.addEventListener('visibilitychange', onReturn);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onReturn);
+      window.document.removeEventListener('visibilitychange', onReturn);
+    };
+  }, [loaded, role, isOwnDocument, status, readDocument, flash]);
 
   /* Autosave. A submitted document is frozen, so there is nothing to send while it is under review. */
   useEffect(() => {
@@ -258,15 +323,20 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
     setEditor({ category: entry.category, entry });
   };
 
+  /** Drops an entry and every link to it. Whether that is allowed is the caller's question. */
+  const dropEntry = (id: string) => {
+    entries.find((entry) => entry.id === id)?.attachments.forEach((file) => URL.revokeObjectURL(file.url));
+    setEntries((current) => current.filter((entry) => entry.id !== id));
+    setBundles((current) => current.map((bundle) => ({ ...bundle, entryIds: bundle.entryIds.filter((entryId) => entryId !== id) })));
+    setQuality(null);
+  };
+
   const removeEntry = (id: string) => {
     if (isEntryLocked(id)) {
       flash('승인된 항목은 삭제할 수 없습니다.');
       return;
     }
-    entries.find((entry) => entry.id === id)?.attachments.forEach((file) => URL.revokeObjectURL(file.url));
-    setEntries((current) => current.filter((entry) => entry.id !== id));
-    setBundles((current) => current.map((bundle) => ({ ...bundle, entryIds: bundle.entryIds.filter((entryId) => entryId !== id) })));
-    setQuality(null);
+    dropEntry(id);
     flash('항목을 삭제했습니다.');
   };
 
@@ -299,11 +369,20 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
     await annualRollover.current;
   };
 
-  /** Applies one line of next year's draft: rewrite in place, add, or drop the entry. */
+  /**
+   * Applies one line of next year's draft: rewrite in place, add, or drop the entry.
+   *
+   * An approved document is locked everywhere else, but not here: starting next year's draft from
+   * last year's approved one is the whole point of this step, and {@link ensureAnnualDraft} is what
+   * unlocks it. What stays frozen is a unit approved during a correction round, which is waiting
+   * for a review rather than for a new year.
+   */
   const applyAnnual = async (item: AnnualItem) => {
     if (item.action === 'keep') return;
-    if (item.entryId && isEntryLocked(item.entryId)) {
-      flash('승인된 항목은 다음 검토까지 고정됩니다.');
+    const frozenForCorrection = !loaded || !isOwnDocument || status === 'pending'
+      || (status === 'rejected' && item.entryId && approvedEntryIds.has(item.entryId));
+    if (frozenForCorrection) {
+      flash(status === 'pending' ? '검토 중에는 다음 학년도 초안을 반영할 수 없습니다.' : '승인된 항목은 다음 검토까지 고정됩니다.');
       return;
     }
     await ensureAnnualDraft();
@@ -312,7 +391,9 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
       return;
     }
     if (item.action === 'archive') {
-      removeEntry(item.entryId);
+      /* The rollover above has just unlocked the document, but this render still remembers it as
+       * approved — so remove the entry directly rather than through the guarded path. */
+      dropEntry(item.entryId);
       flash('올해 문서에서 제외했습니다.');
       return;
     }
@@ -388,9 +469,13 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
         '검토 결과를 저장하지 못했습니다.',
       );
       if (!document) return;
-      setPendingDocuments((current) => current.filter((item) => item.ownerEmail !== viewedOwnerEmail));
       setRole('manager');
-      flash(document.status === 'approved' ? '인수인계가 최종 승인되었습니다.' : '검토 의견과 함께 반려되었습니다.');
+      flash(document.status === 'approved'
+        ? `${ownerName || '작성자'}님의 인수인계서를 최종 승인했습니다.`
+        : `${ownerName || '작성자'}님에게 검토 의견과 함께 반려했습니다.`);
+      /* The verdict moved this document out of the queue and into the record, so the list beside it
+       * is now wrong — reread it rather than patching the row out by hand. */
+      await readDocument(viewedOwnerEmail);
     } catch {
       setSaveState('error');
       setSaveMessage('네트워크 오류로 검토 결과를 저장하지 못했습니다.');
@@ -426,11 +511,19 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
     setTab('review');
     setLoaded(false);
     const opened = await readDocument(viewedOwnerEmail);
-    const queue = opened?.pendingDocuments ?? [];
-    if (opened?.document?.status !== 'pending' && queue[0]) {
+    const waiting = (opened?.submittedDocuments ?? []).filter((item) => item.status === 'pending');
+    if (opened?.document?.status !== 'pending' && waiting[0]) {
+      setQueueFilter('pending');
       setLoaded(false);
-      await readDocument(queue[0].ownerEmail);
+      await readDocument(waiting[0].ownerEmail);
     }
+  };
+
+  /** Opens one submission from the list, whether it is still waiting or already decided. */
+  const openSubmission = (ownerEmail: string) => {
+    if (ownerEmail === viewedOwnerEmail && loaded) return;
+    setLoaded(false);
+    void readDocument(ownerEmail);
   };
 
   /* Composing is where a correction round is actually done, so the refusals this step provokes —
@@ -440,9 +533,9 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
   return <main className="handover-workspace">
     {toast && <div className="ho-toast"><span>✓</span>{toast}</div>}
     <section className="ho-hero">
-      <div className="ho-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span><small>인수인계</small></div>
+      <div className="ho-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span>{origin && <><button type="button" onClick={origin.onOpen}>{origin.label}</button><span>/</span></>}<small>인수인계</small></div>
       <div className="ho-hero-row"><div><h1>업무 인수인계서</h1><p>업무를 자유롭게 기록하고, 담당업무 단위로 묶어 완성하세요.</p></div><div className="ho-hero-actions"><SaveIndicator state={saveState} savedAt={savedAt} message={saveMessage} /><StatusBadge status={status} /><div className="ho-role-switch"><button type="button" className={role === 'author' ? 'active' : ''} onClick={() => showAuthor(tab)}>작성자</button><button type="button" className={role === 'manager' ? 'active' : ''} disabled={viewerRole !== 'admin'} title={viewerRole === 'admin' ? undefined : '파트장 계정으로 로그인해야 검토할 수 있습니다.'} onClick={() => { void showManager(); }}>파트장 검토</button></div></div></div>
-      <div className="ho-progress"><button type="button" className={tab === 'write' ? 'active' : ''} onClick={() => showAuthor('write')}><i>1</i><span><b>항목 작성</b><small>{entries.length}개 기록됨</small></span></button><em /><button type="button" className={tab === 'compose' ? 'active' : ''} onClick={() => showAuthor('compose')}><i>2</i><span><b>업무 단위 조합</b><small>{bundles.length}개 단위</small></span></button><em /><button type="button" className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}><i>3</i><span><b>제출 및 승인</b><small>{status === 'draft' ? '제출 전' : status === 'pending' ? '검토 중' : status === 'rejected' ? '보완 필요' : '처리 완료'}</small></span></button></div>
+      <div className="ho-progress"><button type="button" className={tab === 'write' ? 'active' : ''} onClick={() => showAuthor('write')}><i>1</i><span><b>항목 작성</b><small>{entries.length}개 기록됨</small></span></button><em /><button type="button" className={tab === 'compose' ? 'active' : ''} onClick={() => showAuthor('compose')}><i>2</i><span><b>업무 단위 조합</b><small>{bundles.length}개 단위</small></span></button><em /><button type="button" className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}><i>3</i><span><b>제출 및 승인</b><small>{status === 'draft' ? '제출 전' : status === 'pending' ? '검토 중' : status === 'rejected' ? '보완 필요' : '승인 완료'}</small></span></button></div>
     </section>
 
     {role === 'author' && tab === 'write' && <section className="ho-content ho-write-view">
@@ -549,14 +642,38 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
     {tab === 'review' && <section className="ho-content ho-review-view">
       <div className="ho-section-title"><div><span className="ho-step">3단계</span><h2>{role === 'manager' ? '인수인계 검토' : '제출 및 승인 현황'}</h2><p>{role === 'manager' ? '담당업무 단위별로 승인하거나 보완 의견을 남겨 주세요.' : '파트장 검토 상태와 업무 단위별 의견을 확인하세요.'}</p></div>{role === 'author' && status === 'pending' && viewerRole === 'admin' && <button className="outline" type="button" onClick={() => { void showManager(); }}>파트장 검토 화면 보기 <span>→</span></button>}</div>
       {role === 'manager' && viewerRole === 'admin' && <div className="ho-review-queue">
-        <div><span>검토 대기 문서</span><b>{pendingDocuments.length}건</b></div>
-        {pendingDocuments.length > 0
-          ? <label>작성자 선택<select value={pendingDocuments.some((item) => item.ownerEmail === viewedOwnerEmail) ? viewedOwnerEmail : ''} onChange={(event) => { if (event.target.value) { setLoaded(false); void readDocument(event.target.value); } }}><option value="" disabled>문서를 선택하세요</option>{pendingDocuments.map((item) => <option value={item.ownerEmail} key={item.ownerEmail}>{item.ownerName} · {item.ownerEmail}</option>)}</select></label>
-          : <p>현재 검토를 기다리는 문서가 없습니다.</p>}
+        <div className="ho-queue-head">
+          <div><span>제출된 인수인계서</span><b>{submittedDocuments.length}건</b><em>검토 대기 {pendingDocuments.length}건</em></div>
+          <div className="ho-queue-filters" role="tablist">{queueFilters.map((filter) => {
+            const count = filter.id === 'all' ? submittedDocuments.length : submittedDocuments.filter((item) => item.status === filter.id).length;
+            return <button type="button" role="tab" aria-selected={queueFilter === filter.id} key={filter.id} className={queueFilter === filter.id ? 'active' : ''} onClick={() => setQueueFilter(filter.id)}>{filter.label}<b>{count}</b></button>;
+          })}</div>
+          <button type="button" className="ho-queue-refresh" onClick={() => { void readDocument(viewedOwnerEmail); }}>새로고침</button>
+        </div>
+        {queueDocuments.length > 0
+          ? <ul className="ho-queue-list">{queueDocuments.map((item) => <li key={item.ownerEmail}>
+              <button type="button" className={item.ownerEmail === viewedOwnerEmail ? 'active' : ''} aria-current={item.ownerEmail === viewedOwnerEmail} onClick={() => openSubmission(item.ownerEmail)}>
+                <span className="ho-queue-who"><b>{item.ownerName || item.ownerEmail}</b><small>{item.ownerEmail}</small></span>
+                <StatusBadge status={item.status} />
+                <span className="ho-queue-when">{item.status === 'pending'
+                  ? <>제출 {onDateTime(item.submittedAt ?? item.updatedAt)}</>
+                  : <>{item.status === 'approved' ? '승인' : '반려'} {onDateTime(item.reviewedAt ?? item.updatedAt)}{item.reviewedBy ? ` · ${item.reviewedBy}` : ''}</>}</span>
+                <span className="ho-queue-open" aria-hidden="true">→</span>
+              </button>
+            </li>)}</ul>
+          : <p>{queueFilter === 'pending' ? '현재 검토를 기다리는 문서가 없습니다.' : '해당하는 제출물이 없습니다.'}</p>}
       </div>}
       {status === 'draft' && <div className="ho-review-empty"><div>3</div><span>제출 대기</span><h3>아직 제출된 인수인계서가 없습니다.</h3><p>항목을 업무 단위로 조합한 뒤 파트장에게 제출해 주세요.</p><button type="button" onClick={() => { setRole('author'); setTab('compose'); }}>조합 화면으로 이동 <span>→</span></button></div>}
       {status !== 'draft' && <>
-        <div className={`ho-review-banner ${status}`}><div className="ho-review-symbol">{status === 'pending' ? '⌛' : status === 'approved' ? '✓' : '!'}</div><div><h3>{status === 'pending' ? (role === 'manager' ? '검토할 인수인계서가 도착했습니다.' : '파트장 검토를 기다리고 있습니다.') : status === 'approved' ? '인수인계가 정상적으로 승인되었습니다.' : '보완 후 다시 제출해 주세요.'}</h3><p>{status === 'pending' ? `담당업무 ${bundles.length}개 단위 · 총 ${entries.length}개 항목` : status === 'approved' ? '승인 절차가 완료되어 인수인계가 정상 처리되었습니다.' : '반려된 담당업무 단위의 코멘트를 확인하고 내용을 수정할 수 있습니다.'}</p></div><StatusBadge status={status} /></div>
+        <div className={`ho-review-banner ${status}`}><div className="ho-review-symbol">{status === 'pending' ? '⌛' : status === 'approved' ? '✓' : '!'}</div><div><h3>{status === 'pending'
+          ? (role === 'manager' ? '검토할 인수인계서가 도착했습니다.' : '파트장 검토를 기다리고 있습니다.')
+          : status === 'approved'
+            ? (role === 'manager' ? '이미 승인 처리한 인수인계서입니다.' : '인수인계서가 승인되었습니다.')
+            : (role === 'manager' ? '보완을 요청한 인수인계서입니다.' : '보완 후 다시 제출해 주세요.')}</h3><p>{status === 'pending'
+          ? `담당업무 ${bundles.length}개 단위 · 총 ${entries.length}개 항목`
+          : status === 'approved'
+            ? `${reviewedBy ? `${reviewedBy} 파트장이 ` : ''}${reviewedAt ? `${onDate(reviewedAt)}에 ` : ''}승인해 인수인계가 정상 처리되었습니다.`
+            : `${reviewedBy ? `${reviewedBy} 파트장이 ` : ''}${reviewedAt ? `${onDate(reviewedAt)}에 ` : ''}반려했습니다. 반려된 담당업무 단위의 코멘트를 확인하고 내용을 수정할 수 있습니다.`}</p></div><StatusBadge status={status} /></div>
         <div className="ho-review-layout"><div className="ho-review-bundles">{bundles.map((bundle, index) => <article className={`ho-review-card ${bundle.decision ?? ''}`} key={bundle.id}>
           <div className="ho-review-card-head"><span>A-{String(index + 1).padStart(2, '0')}</span><div><small>담당업무 단위</small><h3>{bundle.title}</h3></div><div>{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{bundle.decision && <b className={bundle.decision}>{bundle.decision === 'approved' ? '승인' : '반려'}</b>}</div>
           <BundleReadOnly bundle={bundle} entries={entries} onOpenEntry={(entryId) => setDetailView({ bundleId: bundle.id, entryId })} />
@@ -566,8 +683,9 @@ export default function HandoverWorkspace({ onHome, currentUser }: { onHome: () 
           {role === 'author' && status === 'rejected' && bundle.decision === 'approved' && <div className="ho-manager-fixed"><span>✓</span><p><b>승인 상태로 고정됨</b>이 단위와 그 안의 항목은 수정할 수 없고, 다시 제출해도 재검토되지 않습니다.</p></div>}
           {role === 'author' && bundle.decision === 'rejected' && bundle.comment && <div className="ho-manager-comment"><span>파트장 코멘트</span><p>{bundle.comment}</p></div>}
         </article>)}</div>
-        <aside className="ho-review-side"><span>제출한 문서</span><h3>제출 정보</h3><dl><div><dt>작성자</dt><dd>{ownerName || '—'}</dd></div><div><dt>소속</dt><dd>국제처</dd></div><div><dt>담당업무 단위</dt><dd>{bundles.length}개</dd></div><div><dt>전체 항목</dt><dd>{entries.length}개</dd></div><div><dt>제출일</dt><dd>{submittedAt ? new Date(submittedAt).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '제출 전'}</dd></div></dl>{role === 'manager' && status === 'pending' && <div className="ho-review-guide"><b>검토 안내</b><p>이전에 승인한 단위는 고정됩니다. 다시 제출된 단위만 승인 또는 반려해 주세요.</p></div>}</aside></div>
+        <aside className="ho-review-side"><span>제출한 문서</span><h3>제출 정보</h3><dl><div><dt>작성자</dt><dd>{ownerName || '—'}</dd></div><div><dt>소속</dt><dd>국제처</dd></div><div><dt>담당업무 단위</dt><dd>{bundles.length}개</dd></div><div><dt>전체 항목</dt><dd>{entries.length}개</dd></div><div><dt>제출일</dt><dd>{submittedAt ? onDate(submittedAt) : '제출 전'}</dd></div><div><dt>검토 결과</dt><dd>{status === 'pending' ? '검토 대기' : status === 'approved' ? '승인 완료' : status === 'rejected' ? '반려' : '제출 전'}</dd></div>{reviewedAt && <div><dt>검토일</dt><dd>{onDate(reviewedAt)}</dd></div>}{reviewedBy && <div><dt>검토자</dt><dd>{reviewedBy}</dd></div>}</dl>{role === 'manager' && status === 'pending' && <div className="ho-review-guide"><b>검토 안내</b><p>이전에 승인한 단위는 고정됩니다. 다시 제출된 단위만 승인 또는 반려해 주세요.</p></div>}</aside></div>
         {role === 'manager' && status === 'pending' && <div className="ho-review-submit"><div><b>{bundles.filter((bundle) => bundle.decision).length} / {bundles.length}</b><span>업무 단위 검토 완료</span></div><button type="button" onClick={completeReview} disabled={!reviewReady || busy}>{busy ? '전송 중…' : '검토 완료 및 결과 전송'} <span>→</span></button></div>}
+        {role === 'author' && status === 'approved' && <div className="ho-resubmit approved"><div><span>✓</span><p><b>승인 완료 · 이 문서는 더 이상 수정할 수 없습니다.</b><small>{reviewedBy ? `${reviewedBy} 파트장이 ` : '파트장이 '}{bundles.length}개 담당업무 단위를 모두 승인했습니다. 다음 학년도 인수인계는 연간 업데이트에서 시작할 수 있습니다.</small></p></div><button type="button" onClick={() => { setRole('author'); setTab('write'); setAnnualOpen(true); }}>연간 업데이트 시작 <span>→</span></button></div>}
         {role === 'author' && status === 'rejected' && <div className="ho-resubmit"><div><span>↻</span><p><b>반려된 업무 단위만 다시 작성할 수 있습니다.</b><small>승인된 단위와 항목은 그대로 고정되며 재검토 대상에서도 제외됩니다.</small></p></div><button type="button" onClick={reopenDraft}>반려 항목 수정하기 <span>→</span></button></div>}
       </>}
     </section>}

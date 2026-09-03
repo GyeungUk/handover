@@ -16,7 +16,14 @@ import type { ScheduleChange } from './workspace/types';
 import { seedTeams, taskKey, type Person, type Task, type TaskDate, type TaskPeriod, type Team } from './org-data';
 import { academicYears, alignmentActionLabels, baseAcademicYear, shiftLabel, type AlignmentItem, type AlignmentResponse } from './academic-calendar';
 
-type View = { type: 'home' } | { type: 'handover' } | { type: 'all' } | { type: 'team'; teamId: string } | { type: 'person'; teamId: string; personId: string };
+/** The calendar screens — the ones a handover draft is started from, and returned to. */
+type CalendarView = { type: 'all' } | { type: 'team'; teamId: string } | { type: 'person'; teamId: string; personId: string };
+/**
+ * `handover` carries the calendar screen it was opened from, so the header button and the
+ * breadcrumb put the reader back where they actually were rather than on the landing page. A
+ * shared `?view=handover` link has no origin, and both fall back to home.
+ */
+type View = { type: 'home' } | { type: 'handover'; from?: CalendarView } | CalendarView;
 /**
  * The signed-in account, as `/api/auth/session` reports it. `email` is not what anyone types to sign
  * in — the employee number is — but it stays the key a handover document is filed under.
@@ -43,25 +50,37 @@ type StoredTaskPeriod = TaskPeriod & {
 type OrgResponse = { removedMemberIds: string[]; customMembers?: CustomMember[] };
 type TaskCreateTarget = { initialPersonId?: string; initialTeamId?: string; initialMonth?: number };
 
-function viewFromLocation(): View {
-  const params = new URLSearchParams(window.location.search);
-  const type = params.get('view');
-  if (type === 'all' || type === 'handover') return { type };
+function calendarViewFrom(type: string | null, params: URLSearchParams): CalendarView | null {
+  if (type === 'all') return { type };
   const teamId = params.get('team');
   if (type === 'team' && teamId) return { type, teamId };
   const personId = params.get('person');
   if (type === 'person' && teamId && personId) return { type, teamId, personId };
-  return { type: 'home' };
+  return null;
+}
+
+function viewFromLocation(): View {
+  const params = new URLSearchParams(window.location.search);
+  const type = params.get('view');
+  if (type === 'handover') {
+    const from = calendarViewFrom(params.get('from'), params);
+    return from ? { type, from } : { type };
+  }
+  return calendarViewFrom(type, params) ?? { type: 'home' };
 }
 
 function hrefForView(view: View) {
   const url = new URL(window.location.href);
   url.searchParams.delete('view');
+  url.searchParams.delete('from');
   url.searchParams.delete('team');
   url.searchParams.delete('person');
   if (view.type !== 'home') url.searchParams.set('view', view.type);
-  if (view.type === 'team' || view.type === 'person') url.searchParams.set('team', view.teamId);
-  if (view.type === 'person') url.searchParams.set('person', view.personId);
+  /* on a handover link the team and person name the origin, not the screen being shown */
+  const located = view.type === 'handover' ? view.from : view;
+  if (view.type === 'handover' && view.from) url.searchParams.set('from', view.from.type);
+  if (located && (located.type === 'team' || located.type === 'person')) url.searchParams.set('team', located.teamId);
+  if (located && located.type === 'person') url.searchParams.set('person', located.personId);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -725,6 +744,29 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
 
   const openTeam = (teamId: string) => navigate({ type: 'team', teamId });
   const openPerson = (teamId: string, personId: string) => navigate({ type: 'person', teamId, personId });
+
+  /*
+   * Where "back" goes from the handover screen. On a calendar screen this is that screen, and it
+   * travels into the handover link; on the handover screen it is the origin the link carried. The
+   * header button and the breadcrumb both read it, so the two never disagree.
+   */
+  const calendarOrigin: CalendarView | null =
+    view.type === 'all' || view.type === 'team' || view.type === 'person' ? view
+      : view.type === 'handover' ? view.from ?? null
+        : null;
+  /* Null once the origin team or person is gone from the roster, which drops back to home. */
+  const originLabel = useMemo(() => {
+    if (!calendarOrigin) return null;
+    if (calendarOrigin.type === 'all') return '전체 업무 캘린더';
+    const team = teams.find((item) => item.id === calendarOrigin.teamId);
+    if (!team) return null;
+    if (calendarOrigin.type === 'team') return `${team.title} 캘린더`;
+    const person = team.people.find((item) => item.id === calendarOrigin.personId);
+    return person ? `${person.name} 캘린더` : null;
+  }, [calendarOrigin, teams]);
+  const returnTo = originLabel && calendarOrigin ? calendarOrigin : { type: 'home' } as View;
+  const openHandover = () => navigate(calendarOrigin ? { type: 'handover', from: calendarOrigin } : { type: 'handover' });
+  const leaveHandover = () => navigate(returnTo);
   const selectedTeam = view.type === 'team' || view.type === 'person' ? teams.find((team) => team.id === view.teamId) ?? null : null;
   const selectedPerson = view.type === 'person' ? selectedTeam?.people.find((person) => person.id === view.personId) ?? null : null;
 
@@ -759,10 +801,10 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   }, [taskFocus, teams]);
   return <OrgContext.Provider value={teams}><TodayContext.Provider value={today}><div className={`site-shell ${view.type !== 'home' ? 'dashboard-shell' : ''}`}>
     <a className="skip-link" href="#main-content">본문으로 건너뛰기</a>
-    <AppHeader user={currentUser} compact={view.type !== 'home'} handoverActive={view.type === 'handover'} onHome={() => navigate({ type: 'home' })} onHandover={() => navigate({ type: 'handover' })} onSearch={() => setSearchOpen(true)} onAddTask={() => setTaskCreateTarget({})} onManageMembers={() => setMemberAdminOpen(true)} />
+    <AppHeader user={currentUser} compact={view.type !== 'home'} handoverActive={view.type === 'handover'} handoverBackLabel={originLabel ? '캘린더로 돌아가기' : '홈으로 돌아가기'} onHome={() => navigate({ type: 'home' })} onHandover={view.type === 'handover' ? leaveHandover : openHandover} onSearch={() => setSearchOpen(true)} onAddTask={() => setTaskCreateTarget({})} onManageMembers={() => setMemberAdminOpen(true)} />
     <div id="main-content" tabIndex={-1}>
     {view.type === 'home' && <Landing onAll={() => navigate({ type: 'all' })} onTeam={openTeam} onPerson={openPerson} />}
-    {view.type === 'handover' && <HandoverWorkspace currentUser={currentUser} onHome={() => navigate({ type: 'home' })} />}
+    {view.type === 'handover' && <HandoverWorkspace currentUser={currentUser} onHome={() => navigate({ type: 'home' })} origin={originLabel ? { label: originLabel, onOpen: leaveHandover } : null} />}
     {view.type === 'all' && <AllTeamsView onHome={() => navigate({ type: 'home' })} onTeam={openTeam} onPerson={openPerson} />}
     {view.type === 'team' && selectedTeam && <TeamView team={selectedTeam} onHome={() => navigate({ type: 'home' })} onAll={() => navigate({ type: 'all' })} onTeam={openTeam} onPerson={(id) => openPerson(selectedTeam.id, id)} onTask={showTask} onAddTask={() => setTaskCreateTarget({ initialTeamId: selectedTeam.id })} />}
     {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => navigate({ type: 'home' })} onAll={() => navigate({ type: 'all' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} onCalendarCheck={() => setCalendarCheckId(selectedPerson.id)} onAddTask={(initialMonth) => setTaskCreateTarget({ initialPersonId: selectedPerson.id, initialTeamId: selectedTeam.id, initialMonth })} />}

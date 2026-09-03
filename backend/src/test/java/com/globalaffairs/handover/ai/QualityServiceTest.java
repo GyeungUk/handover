@@ -57,6 +57,48 @@ class QualityServiceTest {
     }
 
     @Test
+    void doesNotReportBackTheGapTheAuthorAlreadyWroteDown() {
+        /* detailHtml appends the author's own open questions to the body. Quoting one of them is a
+           reviewer restating a gap the author had already flagged, which is not a finding. */
+        modelAnswers("""
+                {"findings":[
+                  {"entryId":"e1","kind":"일정","severity":"high","quote":"마감일은 언제입니까?",
+                   "message":"마감일을 알 수 없습니다.","suggestion":"마감일을 적어 주세요."},
+                  {"entryId":"e1","kind":"지시대명사","severity":"high","quote":"그 파일을 사용합니다",
+                   "message":"어떤 파일인지 알 수 없습니다.","suggestion":"파일명을 적어 주세요."}
+                ]}""");
+
+        QualityResponse response = service.check(List.of(
+                entry("e1", "그 파일을 사용합니다. 확인이 필요한 내용 마감일은 언제입니까?")));
+
+        assertThat(response.findings())
+                .extracting(QualityResponse.QualityFinding::quote)
+                .containsExactly("그 파일을 사용합니다");
+    }
+
+    @Test
+    void sendsTheAuthorsOpenQuestionsAsTheirOwnFieldRatherThanAsBody() {
+        modelAnswers("{\"findings\":[]}");
+        org.mockito.ArgumentCaptor<String> user = org.mockito.ArgumentCaptor.forClass(String.class);
+
+        service.check(List.of(entry("e1", "접수를 진행합니다. 확인이 필요한 내용 마감일은 언제입니까?")));
+
+        verify(openAiClient).ask(anyString(), anyString(), any(), anyString(), user.capture());
+        assertThat(user.getValue())
+                .contains("본문: 접수를 진행합니다.")
+                .contains("작성자확인요청: 마감일은 언제입니까?");
+    }
+
+    @Test
+    void skipsAnEntryThatIsNothingButItsOpenQuestions() {
+        modelAnswers("{\"findings\":[]}");
+
+        assertThatThrownBy(() -> service.check(List.of(entry("e1", "확인이 필요한 내용 마감일은 언제입니까?"))))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("점검할 내용이 없습니다.");
+    }
+
+    @Test
     void refusesAnEmptyRequest() {
         assertThatThrownBy(() -> service.check(List.of()))
                 .isInstanceOf(ApiException.class)

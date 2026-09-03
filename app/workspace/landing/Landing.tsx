@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { WEEKS_IN_YEAR } from '../../org-data';
+import { WEEKS_IN_YEAR, taskTrack } from '../../org-data';
 import { useReveal, useTeams, useToday } from '../context';
 import FlowSection from './FlowSection';
 import HeroSection from './HeroSection';
@@ -31,8 +31,10 @@ export default function Landing({
      and the only expensive thing on this page. */
   const weekLoad = useMemo(() => {
     const people = teams.flatMap((team) => team.people);
+    /* The weeks each task is drawn on, so the ring counts the same busy weeks the calendars do. */
+    const spans = people.map((person) => person.tasks.map(taskTrack));
     return Array.from({ length: WEEKS_IN_YEAR }, (_, week) =>
-      people.filter((person) => person.tasks.some((task) => week >= task.start && week < task.start + task.duration)).length);
+      spans.filter((tasks) => tasks.some((span) => week >= span.start && week < span.start + span.duration)).length);
   }, [teams]);
 
   const peopleCount = useMemo(() => teams.reduce((sum, team) => sum + team.people.length, 0), [teams]);
@@ -41,7 +43,10 @@ export default function Landing({
     if (today.week === null) return [];
     return teams.flatMap((team) => team.people.flatMap((person) =>
       person.tasks
-        .filter((task) => today.week! >= task.start && today.week! < task.start + task.duration)
+        .filter((task) => {
+          const span = taskTrack(task);
+          return today.week! >= span.start && today.week! < span.start + span.duration;
+        })
         .map((task) => ({ team, person, task })),
     ));
   }, [teams, today.week]);

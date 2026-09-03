@@ -35,7 +35,7 @@ public class DocumentController {
      * cannot hold a null.
      */
     public record DocumentEnvelope(
-            DocumentResponse document, String viewerRole, List<DocumentSummary> pendingDocuments) {}
+            DocumentResponse document, String viewerRole, List<DocumentSummary> submittedDocuments) {}
 
     /**
      * The caller's own document, or another account's when an administrator names one — a part
@@ -50,8 +50,9 @@ public class DocumentController {
             throw ApiException.forbidden("다른 담당자의 인수인계서는 열 수 없습니다.");
         }
         String ownerEmail = requested.isEmpty() ? current.email() : requested;
-        List<DocumentSummary> pending = current.role() == AppRole.ADMIN ? service.findPending() : List.of();
-        return ResponseEntity.ok(new DocumentEnvelope(service.find(ownerEmail), viewerRole(current), pending));
+        /* Only the part leader gets the list: it names every author who has submitted. */
+        List<DocumentSummary> submitted = current.role() == AppRole.ADMIN ? service.findSubmitted() : List.of();
+        return ResponseEntity.ok(new DocumentEnvelope(service.find(ownerEmail), viewerRole(current), submitted));
     }
 
     /** Saves the working document. Once submitted it is frozen until the reviewer sends it back. */

@@ -102,6 +102,11 @@ export type ImportResponse = {
   items: ImportItem[];
   /** content the model could not place in any of the four sections, kept visible rather than dropped */
   unmapped: string[];
+  /**
+   * Why proposals were rejected before they became cards. A thin result then explains itself
+   * instead of looking like the feature failed. Optional, so an older backend still parses.
+   */
+  skipped?: { reason: string; count: number }[];
 };
 
 /** What next year's document should do with a current entry. */
@@ -200,11 +205,15 @@ export type HandoverDocument = {
   reviewedBy: string | null;
 };
 
+/** One line of the part leader's submission list. Only a submitted document appears there. */
 export type HandoverDocumentSummary = {
   ownerEmail: string;
   ownerName: string;
   status: WorkflowStatus;
   updatedAt: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
 };
 
 /** `null` means this account has never saved a document; the workspace then starts empty. */

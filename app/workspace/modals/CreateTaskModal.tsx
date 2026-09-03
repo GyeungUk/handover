@@ -10,6 +10,7 @@ import {
   taskDateLabel,
   taskLengthLabel,
   taskStartLabel,
+  taskTrack,
   weekOfDate,
   type Person,
   type Task,
@@ -42,12 +43,14 @@ function AnnualPreview({ person, team, draft }: { person: Person; team: Team; dr
       <div className="create-year-rows">
         {tasks.map((task, index) => {
           const draftTask = index === tasks.length - 1;
+          /* The draft is a plan and nothing else; an existing task sits where the calendar draws it. */
+          const drawn = taskTrack(task);
           return (
             <div className={`create-year-row ${draftTask ? 'is-draft' : ''}`} key={`${task.title}-${task.start}-${index}`}>
               <span
                 style={{
-                  '--left': `${(task.start / WEEKS_IN_YEAR) * 100}%`,
-                  '--width': `${(task.duration / WEEKS_IN_YEAR) * 100}%`,
+                  '--left': `${(drawn.start / WEEKS_IN_YEAR) * 100}%`,
+                  '--width': `${(drawn.duration / WEEKS_IN_YEAR) * 100}%`,
                   '--team': team.color,
                   '--soft': team.soft,
                 } as CSSProperties}

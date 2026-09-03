@@ -20,7 +20,7 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1/chat/completions';
  * files a paragraph under becomes close to a guess — 담당업무 collects everything with a date on it.
  * Blank turns the field off, for a model that does not accept it.
  */
-const DEFAULT_REASONING_EFFORT = 'xhigh';
+const DEFAULT_REASONING_EFFORT = 'medium';
 
 export const escapeHtml = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

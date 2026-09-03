@@ -43,7 +43,7 @@ public class QualityService {
     /** One entry as the workspace sends it for review. */
     public record IncomingEntry(String id, String category, String title, String text) {}
 
-    private record Document(String id, String section, String title, String body) {}
+    private record Document(String id, String section, String title, String body, String openQuestions) {}
 
     public QualityResponse check(List<IncomingEntry> entries) {
         openAiClient.requireConfigured(NOT_CONFIGURED);
@@ -58,11 +58,18 @@ public class QualityService {
                         && entry.title() != null && !entry.title().isEmpty()
                         && !AiSupport.normalize(entry.text()).isEmpty())
                 .limit(MAX_ENTRIES)
-                .map(entry -> new Document(
-                        entry.id(),
-                        schema.categoryLabels().getOrDefault(entry.category(), "기타"),
-                        AiSupport.truncate(entry.title(), TITLE_MAX),
-                        AiSupport.truncate(AiSupport.normalize(entry.text()), TEXT_MAX)))
+                .map(entry -> {
+                    /* The author's own open questions travel separately: they are a record of what
+                       is missing, not a gap the reviewer has just found. */
+                    AiSupport.EntryText split = AiSupport.splitOpenQuestions(entry.text());
+                    return new Document(
+                            entry.id(),
+                            schema.categoryLabels().getOrDefault(entry.category(), "기타"),
+                            AiSupport.truncate(entry.title(), TITLE_MAX),
+                            AiSupport.truncate(split.body(), TEXT_MAX),
+                            AiSupport.truncate(split.openQuestions(), TEXT_MAX));
+                })
+                .filter(doc -> !doc.body().isEmpty())
                 .toList();
 
         if (documents.isEmpty()) {
@@ -72,8 +79,11 @@ public class QualityService {
         List<JsonNode> proposed = new ArrayList<>();
         for (List<Document> batch : documentBatches(documents)) {
             String user = batch.stream()
-                    .map(doc -> "<문서 id=\"%s\" 섹션=\"%s\">\n제목: %s\n본문: %s\n</문서>"
-                            .formatted(doc.id(), doc.section(), doc.title(), doc.body()))
+                    .map(doc -> "<문서 id=\"%s\" 섹션=\"%s\">\n제목: %s\n본문: %s\n%s</문서>"
+                            .formatted(doc.id(), doc.section(), doc.title(), doc.body(),
+                                    doc.openQuestions().isEmpty()
+                                            ? ""
+                                            : "작성자확인요청: %s\n".formatted(doc.openQuestions())))
                     .collect(Collectors.joining("\n\n"));
             JsonNode answer = openAiClient.ask(
                     "quality", "handover_quality", resources.schema("quality"), resources.prompt("quality"), user);
@@ -94,9 +104,12 @@ public class QualityService {
         for (JsonNode item : proposed) {
             String entryId = item.path("entryId").asText("");
             Document document = byId.get(entryId);
-            String quote = AiSupport.normalize(item.path("quote").asText(""));
             /* a finding only counts if the phrase it names is really in that entry */
-            if (document == null || quote.isEmpty() || !document.body().contains(quote)) {
+            if (document == null) {
+                continue;
+            }
+            String quote = AiSupport.groundedQuote(item.path("quote").asText(""), document.body());
+            if (quote.isEmpty()) {
                 continue;
             }
             String kind = item.path("kind").asText("");

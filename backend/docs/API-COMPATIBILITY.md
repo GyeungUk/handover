@@ -117,7 +117,8 @@ upsert하므로 사용자 화면을 다시 열어도 상태가 유지됩니다.
 
 | | 기존 | 신규 |
 | --- | --- | --- |
-| GET 200 | `{ "document": {...} \| null, "viewerRole": "admin" \| "member", "pendingDocuments": [...] }` | 동일. `pendingDocuments`는 관리자에게만 검토 대기 문서 요약을 주며 일반 계정은 빈 배열 |
+| GET 200 | `{ "document": {...} \| null, "viewerRole": "admin" \| "member", "pendingDocuments": [...] }` | `pendingDocuments` → `submittedDocuments`. 관리자에게만 **제출된 모든 문서**(`pending`·`rejected`·`approved`)의 요약을 검토 대기·오래된 순으로 먼저 주고, 일반 계정은 빈 배열 |
+| `submittedDocuments[]` | `{ ownerEmail, ownerName, status, updatedAt }` | `{ ownerEmail, ownerName, status, updatedAt, submittedAt, reviewedAt, reviewedBy }` |
 | GET `?owner=` | 관리자만 타인 문서 열람, 그 외 403 | 동일 |
 | PUT 요청 | `{ entries, bundles }` | 동일 |
 | PUT / POST 200 | `{ "document": { ... } }` | 동일 |

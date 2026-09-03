@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Modal, Text } from '../../ui';
-import { WEEKS_IN_YEAR, months, taskDateLabel, taskLengthLabel, weekLabel, type Person, type Task, type Team } from '../../org-data';
+import { WEEKS_IN_YEAR, confirmedDays, months, taskDateLabel, taskLengthLabel, taskTrack, weekLabel, type Person, type Task, type Team } from '../../org-data';
 import type {
   AddTaskDate,
   AddTaskDates,
@@ -28,6 +28,10 @@ import TaskPeriodSection from './TaskPeriod';
  * that has been moved keeps a ghost of where it used to sit.
  */
 function YearPosition({ task }: { task: Task }) {
+  /* The same reading the calendar behind the modal uses: once days are confirmed the bar sits on
+     them, and the plan they were confirmed inside of is no longer drawn — including its ghost,
+     since there is no week a task was "moved from" once the days are the record. */
+  const drawn = taskTrack(task);
   return (
     <div className="task-when-track" aria-hidden="true">
       {months.map((month, index) => (
@@ -35,13 +39,13 @@ function YearPosition({ task }: { task: Task }) {
           {month.replace('월', '')}
         </span>
       ))}
-      {task.movedFrom !== undefined && (
+      {task.movedFrom !== undefined && !drawn.settled && (
         <i
           className="task-when-ghost"
           style={{ '--start': task.movedFrom, '--duration': task.duration } as CSSProperties}
         />
       )}
-      <i className="task-when-bar" style={{ '--start': task.start, '--duration': task.duration } as CSSProperties} />
+      <i className="task-when-bar" style={{ '--start': drawn.start, '--duration': drawn.duration } as CSSProperties} />
     </div>
   );
 }
@@ -92,6 +96,9 @@ export default function TaskModal({
   const startMonth = months[Math.floor(task.start / 4)];
   const endWeek = Math.min(WEEKS_IN_YEAR - 1, task.start + task.duration - 1);
   const endMonth = months[Math.floor(endWeek / 4)];
+  /* Confirmed days replace the planned window as the answer to "when is this": the head states the
+     days themselves, and the window they were chosen inside of stays in the 확정 일자 section below. */
+  const settled = confirmedDays(task);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -143,20 +150,39 @@ export default function TaskModal({
         </div>
 
         <section className="task-when">
-          <div className="task-when-head">
-            <div>
-              <small>시작</small>
-              <b>{task.period ? taskDateLabel(task.period.startsOn) : `${startMonth} ${(task.start % 4) + 1}주`}</b>
+          {settled.length ? (
+            <div className="task-when-head">
+              <div>
+                <small>확정 일자</small>
+                <b>{taskDateLabel(settled[0].date)}</b>
+              </div>
+              {settled.length > 1 && (
+                <>
+                  <i aria-hidden="true">→</i>
+                  <div>
+                    <small>마지막 확정</small>
+                    <b>{taskDateLabel(settled[settled.length - 1].date)}</b>
+                  </div>
+                </>
+              )}
+              <span className="task-when-length">{taskLengthLabel(task)}</span>
             </div>
-            <i aria-hidden="true">→</i>
-            <div>
-              <small>종료</small>
-              <b>{task.period ? taskDateLabel(task.period.endsOn) : `${endMonth} ${(endWeek % 4) + 1}주`}</b>
+          ) : (
+            <div className="task-when-head">
+              <div>
+                <small>시작</small>
+                <b>{task.period ? taskDateLabel(task.period.startsOn) : `${startMonth} ${(task.start % 4) + 1}주`}</b>
+              </div>
+              <i aria-hidden="true">→</i>
+              <div>
+                <small>종료</small>
+                <b>{task.period ? taskDateLabel(task.period.endsOn) : `${endMonth} ${(endWeek % 4) + 1}주`}</b>
+              </div>
+              <span className="task-when-length">{taskLengthLabel(task)}간</span>
             </div>
-            <span className="task-when-length">{taskLengthLabel(task)}간</span>
-          </div>
+          )}
           <YearPosition task={task} />
-          {task.movedFrom !== undefined && (
+          {task.movedFrom !== undefined && !settled.length && (
             <p className="task-when-moved">
               최초 계획 <b>{weekLabel(task.movedFrom)}</b> <i aria-hidden="true">→</i> 현재 <b>{weekLabel(task.start)}</b>
             </p>

@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { Button, Chip, ChipRail, Container, Stat } from '../../ui';
-import type { Person, Task, Team } from '../../org-data';
+import { taskTrack, type Person, type Task, type Team } from '../../org-data';
 import { useTeams } from '../context';
 import { CalendarBody, WeekHeader } from '../calendar/WeekRuler';
 import { PersonTaskRow } from '../calendar/rows';
@@ -36,8 +36,13 @@ export default function TeamView({
   onAddTask: () => void;
 }) {
   const teams = useTeams();
+  /* Counted off the weeks the year track draws, so a task whose days are confirmed contributes
+     those days' weeks rather than the window it was planned across. */
   const busyWeeks = new Set(
-    team.people.flatMap((person) => person.tasks.flatMap((task) => Array.from({ length: task.duration }, (_, i) => task.start + i))),
+    team.people.flatMap((person) => person.tasks.flatMap((task) => {
+      const span = taskTrack(task);
+      return Array.from({ length: span.duration }, (_, index) => span.start + index);
+    })),
   ).size;
   const taskCount = team.people.reduce((sum, person) => sum + person.tasks.length, 0);
 

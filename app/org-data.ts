@@ -277,6 +277,34 @@ export function taskSpan(task: Task) {
   };
 }
 
+/**
+ * A task's confirmed days, oldest first — empty while it is still only planned.
+ *
+ * The server lists them in date order, but a day recorded during this session is appended to what
+ * is already held, so the sort here is what makes "the first one" mean the earliest one.
+ */
+export function confirmedDays(task: Task) {
+  return [...(task.dates ?? [])].sort((first, second) => first.date.localeCompare(second.date));
+}
+
+/**
+ * The week slots a task is drawn on: the ones its confirmed days fall in once there are any, and
+ * the ones it is planned on while there are none.
+ *
+ * A loose plan is a guess about where the work will land — "8월 2주부터 5주간" — and a confirmed
+ * day is not a guess. Once the day exists, drawing the guess beside it says the work runs for five
+ * weeks when what happens is one morning at the immigration office, so the calendar stops drawing
+ * it. The plan is not thrown away: it is still the window a further day may be recorded in, which
+ * is why this returns a reading of the task rather than rewriting the task itself.
+ */
+export function taskTrack(task: Task) {
+  const days = confirmedDays(task);
+  if (!days.length) return { start: task.start, duration: task.duration, settled: false };
+  const weeks = days.map((day) => Math.max(0, Math.min(WEEKS_IN_YEAR - 1, weekOfDate(day.date))));
+  const start = Math.min(...weeks);
+  return { start, duration: Math.max(...weeks) - start + 1, settled: true };
+}
+
 /** "8월 20일 (목)" — how a confirmed date reads next to the week it sits in. */
 export function taskDateLabel(date: string) {
   const [year, month, day] = date.split('-').map(Number);
@@ -307,13 +335,17 @@ export function taskSpanLabel(task: Task) {
   return `${opens.month}월 ${opens.day}일 ~ ${closes.month}월 ${closes.day}일`;
 }
 
-/** "9월 14일 (월)" or "9월 3주" — where a task starts, in the unit it is actually planned in. */
+/** "9월 14일 (월)" or "9월 3주" — where a task starts, in the unit it is actually known in. */
 export function taskStartLabel(task: Task) {
+  const days = confirmedDays(task);
+  if (days.length) return taskDateLabel(days[0].date);
   return task.period ? taskDateLabel(task.period.startsOn) : weekLabel(task.start);
 }
 
-/** "5주" or "12일" — how long a task runs, in the unit it is actually planned in. */
+/** "5주" · "12일" · "확정 3일" — how much calendar a task takes, in the unit it is actually known in. */
 export function taskLengthLabel(task: Task) {
+  const settled = confirmedDays(task);
+  if (settled.length) return `확정 ${settled.length}일`;
   if (!task.period) return `${task.duration}주`;
   const days = Math.round((Date.parse(task.period.endsOn) - Date.parse(task.period.startsOn)) / 86_400_000) + 1;
   return `${days}일`;
@@ -321,10 +353,16 @@ export function taskLengthLabel(task: Task) {
 
 export type TaskPhase = 'done' | 'active' | 'upcoming';
 
-/** Where a task sits relative to today. Drives which handover section it seeds. */
+/**
+ * Where a task sits relative to today. Drives which handover section it seeds.
+ *
+ * Read off the slots the task is drawn on, so a task whose days are confirmed is judged by those
+ * days rather than by the window it was once planned in — the same weeks the calendar shows.
+ */
 export function taskPhase(task: Task, todayWeek: number): TaskPhase {
-  if (task.start + task.duration <= todayWeek) return 'done';
-  if (task.start <= todayWeek) return 'active';
+  const { start, duration } = taskTrack(task);
+  if (start + duration <= todayWeek) return 'done';
+  if (start <= todayWeek) return 'active';
   return 'upcoming';
 }
 

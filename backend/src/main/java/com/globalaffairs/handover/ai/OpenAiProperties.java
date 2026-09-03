@@ -17,7 +17,7 @@ public record OpenAiProperties(
 
     public OpenAiProperties {
         baseUrl = baseUrl == null || baseUrl.isBlank() ? "https://api.openai.com/v1/chat/completions" : baseUrl;
-        reasoningEffort = reasoningEffort == null ? "xhigh" : reasoningEffort.trim();
+        reasoningEffort = reasoningEffort == null ? "medium" : reasoningEffort.trim();
         timeout = timeout == null ? Duration.ofSeconds(120) : timeout;
     }
 

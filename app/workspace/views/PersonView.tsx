@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Avatar, Badge, Button, Card, Container, Stat } from '../../ui';
-import { academicYearLabel, months, taskLengthLabel, taskStartLabel, weekLabel, SLOTS_PER_MONTH, type Person, type Task, type Team } from '../../org-data';
+import { academicYearLabel, months, taskLengthLabel, taskStartLabel, taskTrack, weekLabel, SLOTS_PER_MONTH, type Person, type Task, type Team } from '../../org-data';
 import { CalendarBody, WeekGrid, WeekHeader } from '../calendar/WeekRuler';
 import { layoutTasks } from '../calendar/rows';
 import PersonTimelineCard, { MonthStrip } from '../calendar/PersonTimelineCard';
@@ -36,29 +36,31 @@ function AnnualTrack({
       </div>
       <div className="task-timeline large-track">
         <WeekGrid />
-        {placed.map(({ task, lane, inside, flipped, displayStart, displayDuration }) => {
-          const taskMonth = Math.floor(task.start / SLOTS_PER_MONTH);
+        {placed.map(({ task, lane, inside, flipped, displayStart, displayDuration, drawn }) => {
+          const taskMonth = Math.floor(drawn.start / SLOTS_PER_MONTH);
           return (
             <button
-              className={`task-bar ${inside ? 'is-inside' : 'is-beside'} ${flipped ? 'is-flipped' : ''} ${taskMonth === monthIndex ? 'is-active' : ''} ${task.movedFrom !== undefined ? 'is-moved' : ''}`}
+              className={`task-bar ${inside ? 'is-inside' : 'is-beside'} ${flipped ? 'is-flipped' : ''} ${taskMonth === monthIndex ? 'is-active' : ''} ${task.movedFrom !== undefined && !drawn.settled ? 'is-moved' : ''}`}
               key={`${task.title}-${task.start}`}
               style={{
                 '--start': displayStart,
                 '--duration': displayDuration,
                 '--lane': lane,
                 '--team': team.color,
-                '--actual-width': `${(task.duration / displayDuration) * 100}%`,
+                '--actual-width': `${(drawn.duration / displayDuration) * 100}%`,
               } as CSSProperties}
               type="button"
               onClick={() => onTask(task, person)}
               aria-label={`${task.title} 업무 상세 보기`}
-              title={`${task.title} · 업무 상세 보기${task.movedFrom !== undefined ? ` (${weekLabel(task.movedFrom)}에서 변경됨)` : ''}`}
+              title={`${task.title} · 업무 상세 보기${task.movedFrom !== undefined && !drawn.settled ? ` (${weekLabel(task.movedFrom)}에서 변경됨)` : ''}`}
             >
               <span className="task-bar-fill" aria-hidden="true" />
               <span className="task-bar-label">
-                {task.movedFrom !== undefined && <i className="moved-flag" aria-hidden="true">↻</i>}
+                {task.movedFrom !== undefined && !drawn.settled && <i className="moved-flag" aria-hidden="true">↻</i>}
                 <b>{task.title}</b>
-                <span>{task.period ? taskStartLabel(task) : months[taskMonth]} · {taskLengthLabel(task)}</span>
+                {/* A settled task says the day it is on; only a task still planned in slots is
+                    vague enough for the month alone to be the honest answer. */}
+                <span>{task.period || drawn.settled ? taskStartLabel(task) : months[taskMonth]} · {taskLengthLabel(task)}</span>
               </span>
             </button>
           );
@@ -104,8 +106,13 @@ export default function PersonView({
   const todayWeek = today.week;
   const nextTask = (todayWeek === null
     ? undefined
-    : person.tasks.find((task) => task.start + task.duration > todayWeek)) ?? person.tasks[0];
-  const busyWeeks = person.tasks.reduce((sum, task) => sum + task.duration, 0);
+    : person.tasks.find((task) => {
+      const span = taskTrack(task);
+      return span.start + span.duration > todayWeek;
+    })) ?? person.tasks[0];
+  /* Weeks the year track actually shows as busy: a task whose days are confirmed commits those
+     days' weeks, not the window it was planned across. */
+  const busyWeeks = person.tasks.reduce((sum, task) => sum + taskTrack(task).duration, 0);
 
   /* `today` resolves after hydration. Open the personal calendar on that month
      once, then leave the user's month navigation alone. */
@@ -140,7 +147,9 @@ export default function PersonView({
           <Stat label="주요 업무" value={person.tasks.length} unit="건" />
           <Stat
             label="다음 일정"
-            value={nextTask ? months[Math.floor(nextTask.start / SLOTS_PER_MONTH)] : '—'}
+            /* The month it is actually drawn in: a task whose day is confirmed is in that day's
+               month, not in the one the loose plan happened to open in. */
+            value={nextTask ? months[Math.floor(taskTrack(nextTask).start / SLOTS_PER_MONTH)] : '—'}
             hint={nextTask?.title ?? '등록된 일정 없음'}
           />
         </SummaryBar>

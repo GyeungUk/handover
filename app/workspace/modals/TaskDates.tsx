@@ -18,6 +18,11 @@ import { parsePastedDates } from './task-date-paste';
  * period when it has one — so the only days offered are days the month grid can actually mark. The
  * server enforces the same window; this only saves a round trip to hear it.
  *
+ * That window is also the only place it still appears once a day is confirmed. The calendars draw
+ * the confirmed days alone from then on — a five-week band beside the day somebody actually has to
+ * be at the immigration office claims five weeks of work that is not there — so this section says
+ * so, and keeps the plan visible as what a further day may still be chosen inside of.
+ *
  * A year's dates rarely arrive one at a time, though — they arrive as a circular or a spreadsheet
  * column — so the same section takes a pasted block, reads every line back before anything is
  * saved, and sends only the lines that are days the task can hold.
@@ -106,7 +111,11 @@ export default function TaskDates({
       <header className="task-dates-head">
         <div>
           <h3>확정 일자</h3>
-          <small>{taskSpanLabel(task)} 안에서 선택합니다.</small>
+          <small>
+            {dates.length
+              ? `달력에는 확정한 ${dates.length}일만 표시됩니다. 원래 계획 ${taskSpanLabel(task)} 안에서 더 추가할 수 있습니다.`
+              : `${taskSpanLabel(task)} 안에서 선택합니다.`}
+          </small>
         </div>
         {!adding && !pasting && (
           <div className="task-dates-add">
@@ -142,6 +151,7 @@ export default function TaskDates({
         !adding && !pasting && (
           <p className="task-dates-empty">
             출입국 단체접수일이나 접수 마감일처럼 날짜가 정해진 일이 있다면 기록해 두세요.
+            하나라도 확정하면 달력은 계획 기간 대신 그 날짜만 표시합니다.
           </p>
         )
       )}

@@ -506,10 +506,19 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
     }
 
     if (url.pathname === '/api/handover' && method === 'GET') {
-      const pendingDocuments = handoverDocument?.status === 'pending'
-        ? [{ ownerEmail: user.email, ownerName: user.displayName, status: handoverDocument.status, updatedAt: handoverDocument.updatedAt }]
+      /* The part leader's list is every submission, so a decided document stays on it. */
+      const submittedDocuments = handoverDocument && handoverDocument.status !== 'draft'
+        ? [{
+            ownerEmail: user.email,
+            ownerName: user.displayName,
+            status: handoverDocument.status,
+            updatedAt: handoverDocument.updatedAt,
+            submittedAt: handoverDocument.submittedAt,
+            reviewedAt: handoverDocument.reviewedAt,
+            reviewedBy: handoverDocument.reviewedBy,
+          }]
         : [];
-      return json({ document: handoverDocument, viewerRole: 'admin', pendingDocuments });
+      return json({ document: handoverDocument, viewerRole: 'admin', submittedDocuments });
     }
     if (url.pathname === '/api/handover' && method === 'PUT') {
       const frozen = handoverDocument?.status === 'pending' || handoverDocument?.status === 'approved' ? handoverDocument.status : null;

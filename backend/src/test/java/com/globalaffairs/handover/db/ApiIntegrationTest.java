@@ -283,9 +283,10 @@ class ApiIntegrationTest {
 
         mockMvc.perform(as(get("/api/handover"), adminSession))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.pendingDocuments.length()").value(1))
-                .andExpect(jsonPath("$.pendingDocuments[0].ownerEmail").value(MEMBER))
-                .andExpect(jsonPath("$.pendingDocuments[0].ownerName").value(MEMBER_NAME));
+                .andExpect(jsonPath("$.submittedDocuments.length()").value(1))
+                .andExpect(jsonPath("$.submittedDocuments[0].ownerEmail").value(MEMBER))
+                .andExpect(jsonPath("$.submittedDocuments[0].ownerName").value(MEMBER_NAME))
+                .andExpect(jsonPath("$.submittedDocuments[0].status").value("pending"));
 
         /* Frozen while it waits: an edit now would silently outrun the review. */
         mockMvc.perform(as(put("/api/handover"), memberSession)
@@ -327,6 +328,13 @@ class ApiIntegrationTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.document.status").value("approved"));
+
+        /* A decided document stays on the part leader's list — that list is the submission record,
+         * not only the queue. */
+        mockMvc.perform(as(get("/api/handover"), adminSession))
+                .andExpect(jsonPath("$.submittedDocuments.length()").value(1))
+                .andExpect(jsonPath("$.submittedDocuments[0].status").value("approved"))
+                .andExpect(jsonPath("$.submittedDocuments[0].reviewedBy").value(ADMIN_NAME));
 
         mockMvc.perform(as(put("/api/handover"), memberSession)
                         .contentType(MediaType.APPLICATION_JSON).content(DOCUMENT))

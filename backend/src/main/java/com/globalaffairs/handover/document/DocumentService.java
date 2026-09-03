@@ -15,6 +15,7 @@ import com.globalaffairs.handover.web.Timestamps;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,18 +87,44 @@ public class DocumentService {
         return documents.findById(ownerEmail).map(this::read).orElse(null);
     }
 
+    /**
+     * Every document that has been submitted at least once, for the part leader's list.
+     *
+     * <p>A draft is left out: it is nobody's submission yet. What is waiting comes first and in the
+     * order it arrived, because that is the queue the reviewer works through; everything already
+     * decided follows, most recent first, as a record to look back at.
+     */
     @Transactional(readOnly = true)
-    public List<DocumentSummary> findPending() {
-        return documents.findByStatusOrderByUpdatedAtAsc(PENDING).stream()
-                .map(document -> new DocumentSummary(
-                        document.getOwnerEmail(),
-                        document.getOwnerName(),
-                        document.getStatus(),
-                        Timestamps.toIsoString(document.getUpdatedAt())))
-                .toList();
+    public List<DocumentSummary> findSubmitted() {
+        List<HandoverDocument> submitted =
+                documents.findByStatusInOrderByUpdatedAtDesc(List.of(PENDING, REJECTED, APPROVED));
+        Stream<HandoverDocument> waiting = submitted.stream()
+                .filter(document -> PENDING.equals(document.getStatus()))
+                .sorted(Comparator.comparing(HandoverDocument::getUpdatedAt));
+        Stream<HandoverDocument> decided =
+                submitted.stream().filter(document -> !PENDING.equals(document.getStatus()));
+        return Stream.concat(waiting, decided).map(DocumentService::summarise).toList();
     }
 
-    public record DocumentSummary(String ownerEmail, String ownerName, String status, String updatedAt) {}
+    private static DocumentSummary summarise(HandoverDocument document) {
+        return new DocumentSummary(
+                document.getOwnerEmail(),
+                document.getOwnerName(),
+                document.getStatus(),
+                Timestamps.toIsoString(document.getUpdatedAt()),
+                document.getSubmittedAt() == null ? null : Timestamps.toIsoString(document.getSubmittedAt()),
+                document.getReviewedAt() == null ? null : Timestamps.toIsoString(document.getReviewedAt()),
+                document.getReviewedBy());
+    }
+
+    public record DocumentSummary(
+            String ownerEmail,
+            String ownerName,
+            String status,
+            String updatedAt,
+            String submittedAt,
+            String reviewedAt,
+            String reviewedBy) {}
 
     /**
      * Replaces the working document. A submitted document is frozen until the reviewer sends it

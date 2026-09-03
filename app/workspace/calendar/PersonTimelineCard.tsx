@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { Avatar } from '../../ui';
-import { WEEKS_IN_YEAR, months, taskLengthLabel, taskStartLabel, type Person, type Task } from '../../org-data';
+import { WEEKS_IN_YEAR, months, taskLengthLabel, taskStartLabel, taskTrack, type Person, type Task } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -23,7 +23,9 @@ import { useToday } from '../context';
 function monthLoad(person: Person) {
   const load = Array<number>(12).fill(0);
   for (const task of person.tasks) {
-    for (let week = task.start; week < Math.min(WEEKS_IN_YEAR, task.start + task.duration); week += 1) {
+    /* The weeks the task is drawn on — its confirmed days' weeks once it has any. */
+    const { start, duration } = taskTrack(task);
+    for (let week = start; week < Math.min(WEEKS_IN_YEAR, start + duration); week += 1) {
       load[Math.floor(week / 4)] += 1;
     }
   }

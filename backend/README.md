@@ -109,7 +109,8 @@ curl -s -b /tmp/handover.jar localhost:8080/api/members
 | `HANDOVER_CORS_ALLOWED_ORIGINS` | 허용 오리진 (쉼표 구분) | 비우면 CORS 매핑 없음 |
 | `OPENAI_API_KEY` | 모델 호출 키 | `.env`는 비워 두고 `run-local.sh`가 `.dev.vars`에서 읽습니다. 없으면 AI 엔드포인트가 503 |
 | 모델 | 코드에서 `gpt-5.6-luna`로 고정 | 환경변수로 교체되지 않습니다 |
-| `OPENAI_REASONING_EFFORT` | 기본 `xhigh` | Luna Chat Completions 허용값 `none`·`low`·`medium`·`high`·`xhigh`; 비우면 필드 생략 |
+| `OPENAI_REASONING_EFFORT` | 기본 `medium` | Luna Chat Completions 허용값 `none`·`low`·`medium`·`high`·`xhigh`; 비우면 필드 생략 |
+| `OPENAI_TIMEOUT` | 모델 호출 하나의 제한시간, 기본 `280s` | 실제 문서 한 부분에 수십 초~수 분이 걸립니다. Vercel 함수 상한(300초)보다 길게 두지 마세요 |
 | `SERVER_PORT` | 기본 8080 | |
 | `HANDOVER_DRAFT_INFERABLE_PROPERTY_KEYS` | 초안이 자동으로 채워도 되는 속성 key | 기본 `importance,impact,response,priority` |
 
@@ -189,7 +190,55 @@ node backend/tools/export-prompts.mjs       # → backend/src/main/resources/ai/
 | 스크립트 | 원본 | 결과물 |
 | --- | --- | --- |
 | `export-domain-data.mjs` | `app/org-data.ts`, `app/academic-calendar.ts`, `app/handover-schema.ts` | `domain/*.json` (조직도, 학사일정, 섹션/속성 정의, `annualActionLabels`, `alignmentActionLabels`) |
-| `export-prompts.mjs` | `app/api/*/route.ts`의 `systemPrompt` | `ai/prompt/*.txt` |
+| `export-prompts.mjs` | (원본 없음 — 프롬프트는 백엔드가 소유) | `ai/prompt/*.txt`가 비어 있지 않은지 검사만 합니다 |
+
+프롬프트는 예외입니다. Next.js 라우트가 Spring으로 프록시하게 되면서 TypeScript 쪽 사본이 사라졌고,
+`ai/prompt/*.txt`가 원본입니다. `export-prompts.mjs`는 내보내지 않고 파일이 비어 있지 않은지만 확인합니다.
+
+### 프롬프트를 고쳤을 때 — 읽지 말고 돌려 보세요
+
+프롬프트는 읽어서 판단할 수 없습니다. 지금 `ai/prompt/*.txt`에 들어 있는 규칙 중 상당수는 실제 문서를
+모델에 넣고 결과를 세어 본 뒤에 추가된 것입니다. 예를 들어 발표자료 한 건으로 측정했을 때
+
+- 담당업무/계획을 가르는 판정 질문이 없던 동안에는 22건 중 19건이 계획 한 곳으로 몰렸고, 같은 문서를
+  다시 돌리면 분포가 매번 달랐습니다. "학기마다 되풀이되는가"를 먼저 묻게 한 뒤 분포가 고정됐습니다.
+- 현안 기준에 "주의사항"이 들어 있어 규정 안내가 전부 현안으로 잡혔습니다. "실제로 발생한 문제"로
+  좁힌 뒤 남은 현안은 원문에 적힌 시스템 오류 하나뿐이었습니다.
+
+```bash
+# 저장소 루트에서. 실제 API를 호출하므로 빌드에는 들어가지 않습니다.
+node backend/tools/try-prompt.mjs import  ./인수인계.pdf
+node backend/tools/try-prompt.mjs quality ./entries.json
+node backend/tools/try-prompt.mjs draft   minseo 23
+```
+
+키는 `OPENAI_API_KEY` 또는 `.dev.vars`에서 읽습니다. `import`는 서비스가 어떤 항목을 왜 버릴지까지
+같이 보여 주고, `--json`은 모델 응답 원본을 그대로 냅니다. 자세한 사용법은 스크립트 상단 주석에 있습니다.
+`OPENAI_REASONING_EFFORT`로 추론 강도를 바꿔 가며 같은 문서를 비교할 수 있고, 호출별 소요 시간이
+따로 찍히므로 부분들이 실제로 겹쳐 실행됐는지 확인할 수 있습니다.
+
+### `import`은 문서를 나누어 병렬로 묻습니다
+
+한 번에 다 묻지 않습니다. `ImportService`가 원문을 빈 줄 기준 9,000자 안팎의 부분으로 나누고,
+최대 4개씩 동시에 호출한 뒤 결과를 합칩니다. 36,000자 이하의 표 중심 문서는 중간에 빈 줄이나
+반복 머리글이 있어도 자르지 않고 통째로 한 부분에 넣습니다. 행마다
+대상만 바뀌는 표는 업무 단위가 하나뿐이라, 나누면 부분마다 같은 항목을 하나씩 만들어 냅니다.
+실제로 면접시간표를 4등분했을 때 거의 같은 "면접시간표 운영" 항목이 세 건 나왔습니다.
+
+이렇게 바꾼 이유는 두 가지입니다.
+
+- **끝나지 않았습니다.** 8,391자 발표자료를 통째로 넣으면 `xhigh`에서 344초가 걸렸고, 한 번은
+  15분을 넘겨 끊었습니다. 페이지 앞단(Vercel 함수)의 상한은 300초라 이 기능은 자신이 존재하는
+  이유인 그 파일에서 끝까지 가지 못했습니다. 부분으로 나누면 가장 느린 부분이 전체 시간이 됩니다.
+- **문맥을 지켰습니다.** 너무 작은 부분은 한 학점전환 절차를 세 항목으로 중복했습니다. 9,000자로
+  높인 뒤 8,342자 오리엔테이션은 한 번에 읽어 33초에 끝났고, 중복 학점전환은 한 항목이 됐습니다.
+
+기본 추론 강도는 `medium`입니다. 같은 오리엔테이션을 통째로 읽을 때 `xhigh`는 344초가 걸렸지만
+`medium`은 30초 안팎에 완료됐고, 최신 회귀 실행에서는 제안 11건이 근거 확인을 모두 통과했습니다.
+
+같은 업무가 두 부분에서 다른 이름으로 올라오면 제목의 2글자 조각 겹침이 0.6 이상일 때 뒤엣것을
+버립니다. 실제 측정에서 진짜 중복 쌍은 0.71, 서로 다른 업무 중 가장 가까운 쌍은 0.43이었습니다.
+30자 남짓한 문서는 예전처럼 한 번만 호출하므로 붙여넣기 경로의 동작은 그대로입니다.
 
 ### JSON Schema의 열거값
 
@@ -417,7 +466,11 @@ backend/
 검증한 서버측 규칙: 섹션 키 유효성, 속성 허용 key만 통과, `basis`/`confidence`/`severity` 값 범위,
 액션 값 범위, 인용문 실재 여부, 본문에 원시 태그 없음.
 
-응답 시간은 2.1~4.9초였습니다. 기본 타임아웃 120초는 충분합니다.
+응답 시간은 2.1~4.9초였습니다. **이 수치는 합성한 짧은 입력에서 나온 것이라 실제 파일에는 맞지
+않습니다.** 실제 문서(8,391자 발표자료)로 다시 재면 `import`는 한 번에 344초, 한 번은 15분을 넘겼고,
+2,591자 규정 PDF도 167초였습니다. 그래서 문서를 부분으로 나누어 병렬 호출하도록 바꾸고
+(§5), 한 호출의 타임아웃을 120초에서 280초로 올렸으며, `/api/*` 프록시 라우트에 `maxDuration = 300`을
+명시했습니다. 아래 §10의 나머지 표는 이 변경 이전에 잰 값입니다.
 
 > 모델은 비결정적이라 항목 **개수**와 일부 판단(`basis`가 `record`인지 `inferred`인지 등)은 호출마다
 > 다릅니다. 이는 두 백엔드 사이의 차이가 아니라 같은 백엔드를 두 번 불러도 생기는 차이입니다.
