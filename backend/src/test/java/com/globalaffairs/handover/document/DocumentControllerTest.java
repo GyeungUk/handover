@@ -36,6 +36,9 @@ class DocumentControllerTest {
     @MockitoBean
     private DocumentService service;
 
+    @MockitoBean
+    private DocumentArchiveService archives;
+
     private static DocumentResponse sample(String status) {
         return new DocumentResponse(
                 "김지현",

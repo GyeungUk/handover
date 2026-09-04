@@ -195,7 +195,12 @@ public class AnnualService {
                             .map(pair -> pair.value() == null ? "" : pair.value())
                             .collect(Collectors.joining(" ")));
             String sourceFacts = evidenceSource.title() + " " + evidenceSource.body() + " " + evidenceSource.properties();
-            if (!AiSupport.usesOnlyRecordedNumbers(proposedFacts, sourceFacts, Set.of(Integer.toString(toYear)))) {
+            /* Both years are the model's own working context, not figures it invented: a revision
+         * says which year it is moving the entry to, and its reason names the year it is moving
+         * away from. Allowing only the target year threw away correct proposals for the sentence
+         * that explained them. */
+        Set<String> years = Set.of(Integer.toString(toYear), Integer.toString(toYear - 1));
+        if (!AiSupport.usesOnlyRecordedNumbers(proposedFacts, sourceFacts, years)) {
                 continue;
             }
             if (!"new".equals(action)) {

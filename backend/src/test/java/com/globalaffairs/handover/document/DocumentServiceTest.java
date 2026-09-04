@@ -53,6 +53,9 @@ class DocumentServiceTest {
     @Mock
     private HandoverBundleRowRepository bundles;
 
+    @Mock
+    private DocumentArchiveService archives;
+
     private ObjectMapper objectMapper;
     private DocumentService service;
 
@@ -63,6 +66,7 @@ class DocumentServiceTest {
                 documents,
                 entries,
                 bundles,
+                archives,
                 new HandoverSchema(objectMapper),
                 objectMapper,
                 Clock.fixed(NOW, ZoneOffset.UTC));
@@ -420,6 +424,47 @@ class DocumentServiceTest {
         assertThat(reviewed.reviewedAt()).isEqualTo("2026-08-29T01:02:03.456Z");
         /* an approval carries no comment, so an approved unit never shows one */
         assertThat(reviewed.bundles()).allSatisfy(bundle -> assertThat(bundle.comment()).isEmpty());
+    }
+
+    @Test
+    void anApprovalIsRecordedAsTheYearsArchive() {
+        givenStored("pending",
+                storedEntry("r1", "responsibility", "체류 관리", "[]"),
+                List.of(storedBundle("b1", "단위", "[\"r1\"]", null, "")));
+
+        DocumentResponse reviewed = service.review(OWNER, "파트장", List.of(
+                new DecisionInput("b1", "approved", "")));
+
+        ArgumentCaptor<DocumentResponse> filed = ArgumentCaptor.forClass(DocumentResponse.class);
+        verify(archives).archiveApproved(any(HandoverDocument.class), filed.capture());
+        /* what is filed is the document as it was approved, verdicts and all */
+        assertThat(filed.getValue().status()).isEqualTo("approved");
+        assertThat(filed.getValue().entries()).extracting(DocumentResponse.Entry::id).containsExactly("r1");
+        assertThat(reviewed.status()).isEqualTo("approved");
+    }
+
+    @Test
+    void aRejectionIsNotAYearWorthRecording() {
+        givenStored("pending", null, List.of(storedBundle("b1", "단위", "[]", null, "")));
+
+        service.review(OWNER, "파트장", List.of(new DecisionInput("b1", "rejected", "연락처가 빠졌습니다.")));
+
+        verify(archives, never()).archiveApproved(any(), any());
+    }
+
+    @Test
+    void rolloverRecordsAnApprovedYearThatWasNeverArchived() {
+        givenStored("approved",
+                storedEntry("r1", "responsibility", "체류 관리", "[]"),
+                List.of(storedBundle("b1", "단위", "[\"r1\"]", "approved", "")));
+
+        service.rollover(OWNER);
+
+        ArgumentCaptor<DocumentResponse> filed = ArgumentCaptor.forClass(DocumentResponse.class);
+        verify(archives).archiveIfAbsent(any(HandoverDocument.class), filed.capture());
+        /* the year as it stood before the rollover cleared it, not the fresh draft */
+        assertThat(filed.getValue().status()).isEqualTo("approved");
+        assertThat(filed.getValue().bundles().getFirst().decision()).isEqualTo("approved");
     }
 
     @Test

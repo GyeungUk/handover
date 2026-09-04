@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.globalaffairs.handover.account.AccountRepository;
 import com.globalaffairs.handover.account.AccountSessionRepository;
+import com.globalaffairs.handover.document.HandoverArchiveRepository;
 import com.globalaffairs.handover.document.HandoverBundleRowRepository;
 import com.globalaffairs.handover.document.HandoverDocumentRepository;
 import com.globalaffairs.handover.document.HandoverEntryRowRepository;
@@ -93,6 +94,9 @@ class ApiIntegrationTest {
     private TaskChecklistItemRepository checklistItems;
 
     @Autowired
+    private HandoverArchiveRepository documentArchives;
+
+    @Autowired
     private HandoverDocumentRepository documents;
 
     @Autowired
@@ -114,6 +118,7 @@ class ApiIntegrationTest {
         checklistItems.deleteAll();
         documentEntries.deleteAll();
         documentBundles.deleteAll();
+        documentArchives.deleteAll();
         documents.deleteAll();
         accountSessions.deleteAll();
         accounts.deleteAll();
@@ -340,6 +345,62 @@ class ApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content(DOCUMENT))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("승인된 문서는 수정할 수 없습니다."));
+
+        /* The approval closed an academic year, and the record of it is what the annual rollover
+         * would otherwise overwrite. The year is read back through its own endpoints below rather
+         * than off the row, because that is how the workspace opens a past year. */
+        String listed = mockMvc.perform(as(get("/api/handover/archives"), memberSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.viewerRole").value("member"))
+                .andExpect(jsonPath("$.archives.length()").value(1))
+                .andExpect(jsonPath("$.archives[0].ownerEmail").value(MEMBER))
+                .andExpect(jsonPath("$.archives[0].ownerName").value(MEMBER_NAME))
+                .andExpect(jsonPath("$.archives[0].status").value("approved"))
+                .andExpect(jsonPath("$.archives[0].entryCount").value(2))
+                .andExpect(jsonPath("$.archives[0].bundleCount").value(1))
+                .andExpect(jsonPath("$.archives[0].reviewedBy").value(ADMIN_NAME))
+                .andReturn().getResponse().getContentAsString();
+        int academicYear = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(listed).path("archives").path(0).path("academicYear").asInt();
+
+        mockMvc.perform(as(get("/api/handover/archives/" + academicYear), memberSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.archive.academicYearLabel").value(academicYear + "학년도"))
+                /* the document as it was approved, verdicts and all — never the editable copy */
+                .andExpect(jsonPath("$.document.status").value("approved"))
+                .andExpect(jsonPath("$.document.entries[0].id").value("r1"))
+                .andExpect(jsonPath("$.document.entries[0].attachments[0].name").value("명단.xlsx"))
+                .andExpect(jsonPath("$.document.bundles[0].decision").value("approved"));
+
+        /* The part leader reads the whole office; an author only ever their own. */
+        mockMvc.perform(as(get("/api/handover/archives"), adminSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.viewerRole").value("admin"))
+                .andExpect(jsonPath("$.archives.length()").value(1))
+                .andExpect(jsonPath("$.archives[0].ownerEmail").value(MEMBER));
+        mockMvc.perform(as(get("/api/handover/archives/" + academicYear + "?owner=" + MEMBER), adminSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document.status").value("approved"));
+        mockMvc.perform(as(get("/api/handover/archives?owner=" + ADMIN), memberSession))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("다른 담당자의 인수인계서는 열 수 없습니다."));
+        mockMvc.perform(as(get("/api/handover/archives/" + academicYear + "?owner=" + ADMIN), memberSession))
+                .andExpect(status().isForbidden());
+
+        /* A year nobody has closed is missing, not empty. */
+        mockMvc.perform(as(get("/api/handover/archives/" + (academicYear - 5)), memberSession))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("해당 학년도에 보관된 인수인계서가 없습니다."));
+
+        /* Starting next year's draft leaves the closed year exactly as it was approved. */
+        mockMvc.perform(as(post("/api/handover"), memberSession)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"action\":\"rollover\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document.status").value("draft"));
+        mockMvc.perform(as(get("/api/handover/archives/" + academicYear), memberSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document.status").value("approved"))
+                .andExpect(jsonPath("$.document.bundles[0].decision").value("approved"));
     }
 
     @Test

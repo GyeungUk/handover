@@ -216,6 +216,27 @@ public class DraftService {
         return pairs;
     }
 
+    /**
+     * The task a draft says it came from, named as the calendar names it.
+     *
+     * <p>The name has to match a real task or the draft is dropped, because a draft about work
+     * nobody is recorded as doing is exactly what this route exists to prevent. The match ignores
+     * spacing, though: an office writes 비자 연장 집중기간 and a model writing prose about it
+     * closes or opens a gap, and a whole correct draft was being thrown away for that alone. What
+     * comes back is the calendar's own spelling, so the card still names the task the reader has
+     * on their year view.
+     */
+    private static String matchTask(String proposed, Set<String> taskNames) {
+        if (taskNames.contains(proposed)) {
+            return proposed;
+        }
+        String squeezed = proposed.replaceAll("\\s+", "");
+        return taskNames.stream()
+                .filter(name -> name.replaceAll("\\s+", "").equals(squeezed))
+                .findFirst()
+                .orElse(null);
+    }
+
     private List<DraftResponse.DraftItem> readDrafts(
             JsonNode answer, Set<String> taskNames, Set<String> eligiblePairs) {
         List<DraftResponse.DraftItem> drafts = new ArrayList<>();
@@ -232,10 +253,11 @@ public class DraftService {
                     || item.path("paragraphs").isEmpty()) {
                 continue;
             }
-            if (!"responsibility".equals(category) && !taskNames.contains(proposedSourceTask)) {
+            String matchedTask = matchTask(proposedSourceTask, taskNames);
+            if (!"responsibility".equals(category) && matchedTask == null) {
                 continue;
             }
-            String sourceTask = "responsibility".equals(category) ? "연간 업무 전체" : proposedSourceTask;
+            String sourceTask = "responsibility".equals(category) ? "연간 업무 전체" : matchedTask;
             String pair = category + ":" + sourceTask;
             if (!eligiblePairs.contains(pair) || !acceptedPairs.add(pair)) {
                 continue;

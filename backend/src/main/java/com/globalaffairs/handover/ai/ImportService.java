@@ -108,7 +108,7 @@ public class ImportService {
 
         String haystack = AiSupport.normalize(source);
         Set<String> usedQuotes = new java.util.HashSet<>();
-        Set<String> usedTitles = new java.util.HashSet<>();
+        Map<String, List<String>> usedTitles = new LinkedHashMap<>();
         Map<String, Integer> skipped = new LinkedHashMap<>();
         List<ImportResponse.ImportItem> items = new ArrayList<>();
         for (JsonNode item : answers.stream().flatMap(answer -> answer.path("items").valueStream()).toList()) {
@@ -140,12 +140,19 @@ public class ImportService {
                 skip(skipped, SKIPPED_REUSED_QUOTE);
                 continue;
             }
-            /* Two parts of one document propose the same work under two names; the first is kept. */
-            if (usedTitles.stream().anyMatch(seen -> AiSupport.titleOverlap(seen, title) >= AiSupport.SAME_WORK)) {
+            /*
+             * Two parts of one document propose the same work under two names; the first is kept.
+             * Within a section, because the prompt now asks for the schedule, the failure and the
+             * unfinished business of one duty as their own items — "상대교 지명 절차 안내" as a
+             * responsibility and "상대교 지명 절차 진행 일정" as a plan are the two halves the
+             * author asked to see separated, and they overlap by exactly the words they share.
+             */
+            List<String> sectionTitles = usedTitles.computeIfAbsent(category, ignored -> new ArrayList<>());
+            if (sectionTitles.stream().anyMatch(seen -> AiSupport.titleOverlap(seen, title) >= AiSupport.SAME_WORK)) {
                 skip(skipped, SKIPPED_REPEATED_TITLE);
                 continue;
             }
-            usedTitles.add(title);
+            sectionTitles.add(title);
             Map<String, String> properties = support.cleanImportProperties(
                     category, ModelJson.propertyPairs(item.path("properties")), source, IMPORT_PROPERTY_KEYS::contains);
             String prose = title + " " + String.join(" ", paragraphs) + " "

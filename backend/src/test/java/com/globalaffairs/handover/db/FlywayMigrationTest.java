@@ -77,7 +77,7 @@ class FlywayMigrationTest {
                 "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql",
                 "V7__account_onboarding_members.sql", "V8__custom_tasks.sql",
                 "V9__removed_tasks.sql", "V10__task_dates.sql", "V11__task_periods.sql",
-                "V12__bundle_previous_comment.sql");
+                "V12__bundle_previous_comment.sql", "V13__handover_archives.sql");
     }
 
     @Test
@@ -101,7 +101,8 @@ class FlywayMigrationTest {
                         "custom_tasks",
                         "removed_tasks",
                         "task_dates",
-                        "task_periods");
+                        "task_periods",
+                        "handover_archives");
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'task_reschedules'", String.class))
                 .contains("task_reschedules_pkey", "task_reschedules_task_key_idx", "task_reschedules_person_id_idx");
@@ -128,6 +129,14 @@ class FlywayMigrationTest {
         assertThat(jdbc.queryForList(
                         "SELECT indexname FROM pg_indexes WHERE tablename = 'task_periods'", String.class))
                 .contains("task_periods_pkey", "task_periods_person_id_idx");
+        /* One record per author per year, read either by author or across the office. */
+        assertThat(jdbc.queryForList(
+                        "SELECT indexname FROM pg_indexes WHERE tablename = 'handover_archives'", String.class))
+                .contains(
+                        "handover_archives_pkey",
+                        "handover_archives_owner_year_key",
+                        "handover_archives_owner_idx",
+                        "handover_archives_year_idx");
     }
 
     @Test

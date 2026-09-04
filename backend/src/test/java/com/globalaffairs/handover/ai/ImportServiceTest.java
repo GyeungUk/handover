@@ -213,6 +213,42 @@ class ImportServiceTest {
     }
 
     @Test
+    void dropsASecondProposalOfTheSameWorkWithinOneSection() {
+        modelAnswers("""
+                {"items":[
+                  {"category":"plan","title":"체류기간 연장 단체접수 진행","paragraphs":["[업무 개요] 접수를 진행합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"2학기 체류기간 연장 단체접수","confidence":"high"},
+                  {"category":"plan","title":"체류기간 연장 단체접수 운영","paragraphs":["[처리 절차] 접수를 운영합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"9월 중 단체 접수를 신청할 예정입니다","confidence":"high"}
+                ],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(SOURCE, "a.txt");
+
+        assertThat(response.items()).extracting(ImportResponse.ImportItem::title)
+                .containsExactly("체류기간 연장 단체접수 진행");
+        assertThat(response.skipped()).containsExactly(new ImportResponse.Skipped("같은 업무를 다시 제안한 항목", 1));
+    }
+
+    @Test
+    void keepsTheScheduleOfADutyTheModelPutInItsOwnSection() {
+        /* The prompt asks for one duty's dated step as its own plan item; the titles then share
+           the duty's own words, and only a section-local check tells that apart from a repeat. */
+        modelAnswers("""
+                {"items":[
+                  {"category":"responsibility","title":"체류기간 연장 단체접수 안내","paragraphs":["[업무 개요] 학생에게 단체접수를 안내합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"2학기 체류기간 연장 단체접수","confidence":"high"},
+                  {"category":"plan","title":"체류기간 연장 단체접수 일정","paragraphs":["[대상·일정] 9월 중 단체 접수를 신청할 예정입니다."],
+                   "properties":[],"questions":[],"sourceQuote":"9월 중 단체 접수를 신청할 예정입니다","confidence":"high"}
+                ],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(SOURCE, "a.txt");
+
+        assertThat(response.items()).extracting(ImportResponse.ImportItem::category)
+                .containsExactly("responsibility", "plan");
+        assertThat(response.skipped()).isEmpty();
+    }
+
+    @Test
     void returnsItemsInDocumentSectionOrderRegardlessOfTheOrderTheModelUsed() {
         modelAnswers("""
                 {"items":[

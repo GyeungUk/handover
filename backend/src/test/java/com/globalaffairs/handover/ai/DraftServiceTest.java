@@ -228,6 +228,40 @@ class DraftServiceTest {
     }
 
     @Test
+    void keepsADraftWhoseTaskNameOnlyDiffersInSpacing() {
+        modelAnswers("""
+                {"drafts":[{
+                  "category":"plan","title":"2학기 비자 연장 접수",
+                  "paragraphs":["첫 문단입니다."],
+                  "properties":[],
+                  "basis":"record",
+                  "questions":[],
+                  "sourceTask":"비자연장 집중기간"
+                }]}""");
+
+        DraftResponse response = service.draft("minseo");
+
+        assertThat(response.drafts()).hasSize(1);
+        /* The card still names the task the way the year view does, not the way the model wrote it. */
+        assertThat(response.drafts().get(0).sourceTask()).isEqualTo("비자 연장 집중기간");
+    }
+
+    @Test
+    void dropsADraftAboutWorkTheCalendarDoesNotRecord() {
+        modelAnswers("""
+                {"drafts":[{
+                  "category":"plan","title":"신규 업무 초안",
+                  "paragraphs":["첫 문단입니다."],
+                  "properties":[],
+                  "basis":"record",
+                  "questions":[],
+                  "sourceTask":"비자 연장 접수"
+                }]}""");
+
+        assertThat(service.draft("minseo").drafts()).isEmpty();
+    }
+
+    @Test
     void keepsOnlyTheJudgementPropertyThatBelongsToTheItemsOwnSection() {
         when(repository.findByPersonIdOrderByIdAsc("minseo")).thenReturn(List.of(
                 reschedule("비자 연장 집중기간", 21, 22, "접수 일정 조정")));

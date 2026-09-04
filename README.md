@@ -94,6 +94,8 @@ npm run dev                        # /api/* 가 Spring 으로 전달됩니다
 | GET | `/api/handover` | 등록 계정 | 저장된 인수인계서 (관리자는 `?owner=`로 타인 문서) |
 | PUT | `/api/handover` | 등록 계정 | 작성 중인 인수인계서 저장 |
 | POST | `/api/handover` | 등록 계정 / **관리자** | `rollover` 다음 학년도 초안 · `submit` 제출 · `review` 파트장 검토 결과 |
+| GET | `/api/handover/archives` | 등록 계정 | 보관된 학년도 목록 (본인 것, 관리자는 전원 · `?owner=`로 한 명) |
+| GET | `/api/handover/archives/{학년도}` | 등록 계정 | 그 학년도에 승인된 인수인계서 원본 (관리자는 `?owner=`) |
 | POST | `/api/draft` | 등록 계정 | 담당자 일정 기반 인수인계 초안 |
 | POST | `/api/import` | 등록 계정 | 기존 문서 4개 섹션 자동 분류 |
 | POST | `/api/annual` | 등록 계정 | 다음 학년도 갱신 초안 |

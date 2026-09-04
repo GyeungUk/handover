@@ -151,6 +151,32 @@ upsert하므로 사용자 화면을 다시 열어도 상태가 유지됩니다.
 정리하고 다음 학년도 `draft`로 전환하며, `submit`은 직전 검토 의견을 지웁니다(재제출은
 검토를 처음부터 다시 받습니다). 반려가 하나라도 있으면 문서 전체가 `rejected`입니다.
 
+### GET /api/handover/archives · GET /api/handover/archives/{학년도} — Spring 전용 (D1에 대응 없음)
+
+`handover_documents`는 계정당 한 행이고 연간 갱신이 그 행을 다시 쓰므로, 승인된 학년도는 다음 해가
+시작되는 순간 사라졌습니다. 파트장 검토 결과가 `approved`가 되는 시점에 그 문서를 그대로 복사해
+`handover_archives`에 남기고, 이 두 엔드포인트가 그 기록을 읽습니다. 보관본은 승인 당시 JSON 그대로이며
+수정 경로가 없습니다.
+
+| | 응답 |
+| --- | --- |
+| GET `/archives` 200 | `{ "archives": [...], "viewerRole": "admin" \| "member" }` — 최근 학년도 순, 같은 학년도 안에서는 이름 순 |
+| `archives[]` | `{ ownerEmail, ownerName, academicYear, academicYearLabel, status, entryCount, bundleCount, submittedAt, reviewedAt, reviewedBy, archivedAt }` |
+| GET `/archives/{학년도}` 200 | `{ "archive": {...}, "document": {...} }` — `document`는 `/api/handover`의 `document`와 같은 형식 |
+
+일반 계정은 본인 것만 읽습니다. 관리자는 목록에서 전원을 보고 `?owner=`로 한 사람만 추릴 수 있으며,
+개별 학년도도 `?owner=`로 엽니다.
+
+| 메서드 | 상태 | 메시지 |
+| --- | --- | --- |
+| 공통 | 401 | `로그인이 필요합니다.` |
+| 공통 | 403 | `다른 담당자의 인수인계서는 열 수 없습니다.` |
+| GET `/archives/{학년도}` | 404 | `해당 학년도에 보관된 인수인계서가 없습니다.` |
+
+학년도는 승인 시각을 한국 시간으로 읽어 학사연도 시작 월(3월) 기준으로 정합니다. 2027년 1월에 승인된
+문서는 2026학년도로 들어갑니다. 같은 학년도에 두 번 승인되면(보완 후 재승인) 마지막 승인본이 그 해의
+기록을 대체합니다.
+
 ### POST /api/draft
 
 | 순서 | 상태 | 메시지 |

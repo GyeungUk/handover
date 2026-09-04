@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type CSSProperties } from 'react';
-import type { ImportItem, ImportResponse } from '../../handover-schema';
+import type { HandoverCategory, ImportItem, ImportResponse } from '../../handover-schema';
 import { acceptedImportTypes, extractText, supportedNote } from '../../file-text';
 import { categories } from '../categories';
 import { Button, Modal } from '../../ui';
@@ -14,10 +14,30 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const [error, setError] = useState('');
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [adopted, setAdopted] = useState<string[]>([]);
+  /* The author's own correction of a section the model chose, kept until the modal closes. */
+  const [moved, setMoved] = useState<Record<string, HandoverCategory>>({});
   const [dropActive, setDropActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const reset = () => { setResult(null); setAdopted([]); setError(''); };
+  const reset = () => { setResult(null); setAdopted([]); setMoved({}); setError(''); };
+
+  /** The section a card is in: the author's correction when they made one, else the model's. */
+  const sectionOf = (item: ImportItem) => moved[item.id] ?? item.category;
+
+  /**
+   * The item as the author filed it. Property fields belong to a section, so moving a card drops
+   * the values the new section has no field for rather than carrying keys the editor cannot show.
+   */
+  const filed = (item: ImportItem): ImportItem => {
+    const category = sectionOf(item);
+    if (category === item.category) return item;
+    const fields = new Set(categories.find((meta) => meta.id === category)!.propertyFields.map((field) => field.key));
+    return {
+      ...item,
+      category,
+      properties: Object.fromEntries(Object.entries(item.properties).filter(([key]) => fields.has(key))),
+    };
+  };
 
   /** "원문을 그대로 옮긴 항목 4건 · 근거를 확인하지 못한 항목 2건" */
   const skippedNote = (skipped: ImportResponse['skipped']) =>
@@ -66,13 +86,13 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   };
 
   const adopt = (item: ImportItem) => {
-    onAdopt(item);
+    onAdopt(filed(item));
     setAdopted((current) => [...current, item.id]);
   };
 
   const adoptAll = () => {
     if (!result) return;
-    result.items.filter((item) => !adopted.includes(item.id)).forEach(onAdopt);
+    result.items.filter((item) => !adopted.includes(item.id)).forEach((item) => onAdopt(filed(item)));
     setAdopted(result.items.map((item) => item.id));
   };
 
@@ -85,7 +105,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
     className="ho-draft-modal"
     dismissable={!loading && !reading}
     title="기존 자료 불러오기"
-    description="예전에 쓰던 인수인계 문서를 올리면 담당업무·계획·현안·미결 네 개 섹션으로 나누어 초안을 제안합니다. 채택하기 전까지 아무것도 저장되지 않습니다."
+    description="예전에 쓰던 인수인계 문서를 올리면 담당업무·계획·현안·미결 네 개 섹션으로 나누어 초안을 제안합니다. 섹션은 채택 전에 카드에서 바꿀 수 있고, 채택하기 전까지 아무것도 저장되지 않습니다."
     footer={<>
       <p className="ho-modal-note"><span aria-hidden="true">ⓘ</span> 원문에 없는 내용은 만들지 않습니다. 비어 있는 부분은 ‘확인이 필요한 내용’ 질문으로 남습니다.</p>
       <span className="spacer" />
@@ -124,22 +144,28 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
           <p><b>{result.fileName}</b> · {result.charCount.toLocaleString()}자에서 {result.items.length}건을 정리했습니다.</p>
           {skippedNote(result.skipped) && <p className="ho-import-skipped">초안에 넣지 않은 제안: {skippedNote(result.skipped)}</p>}
           <div className="ho-import-counts">{categories.map((category) => {
-            const count = result.items.filter((item) => item.category === category.id).length;
+            const count = result.items.filter((item) => sectionOf(item) === category.id).length;
             return <span key={category.id} className={count ? '' : 'empty'} style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties}><i />{category.short}<b>{count}</b></span>;
           })}</div>
         </div>
         {result.unmapped.length > 0 && <div className="ho-import-unmapped"><b>섹션에 넣지 못한 내용</b><ul>{result.unmapped.map((line) => <li key={line}>{line}</li>)}</ul></div>}
         <div className="ho-draft-list">{result.items.map((item) => {
-          const meta = categories.find((category) => category.id === item.category)!;
+          const meta = categories.find((category) => category.id === sectionOf(item))!;
           const isAdopted = adopted.includes(item.id);
           return <article className={`ho-draft-card ${isAdopted ? 'is-adopted' : ''}`} key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
             <div className="ho-draft-card-head">
-              <span className="ho-draft-chip"><i />{meta.short}</span>
+              <label className="ho-draft-chip ho-import-section">
+                <i /><span className="sr-only">섹션</span>
+                <select value={sectionOf(item)} disabled={isAdopted}
+                  onChange={(event) => setMoved((current) => ({ ...current, [item.id]: event.target.value as HandoverCategory }))}>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.short}</option>)}
+                </select>
+              </label>
               <span className={`ho-draft-basis ${item.confidence === 'high' ? 'record' : 'inferred'}`}>{item.confidence === 'high' ? '섹션 확실' : '섹션 확인 필요'}</span>
               <small>{item.sourceQuote ? '원문 근거 확인됨' : '원문 요약'}</small>
             </div>
             <h4>{item.title}</h4>
-            {Object.keys(item.properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
+            {Object.keys(filed(item).properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
             <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />
             {item.sourceQuote && <p className="ho-import-quote"><span>원문</span>“{item.sourceQuote}”</p>}
             <div className="ho-draft-card-actions">

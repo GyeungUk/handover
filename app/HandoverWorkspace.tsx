@@ -12,6 +12,9 @@ import EntryDetailModal from './handover/modals/EntryDetailModal';
 import DraftModal from './handover/modals/DraftModal';
 import ImportModal from './handover/modals/ImportModal';
 import AnnualModal from './handover/modals/AnnualModal';
+import ArchiveModal from './handover/modals/ArchiveModal';
+import { printHandoverDocument } from './handover/print';
+import { academicYearLabel } from './org-data';
 
 export type { HandoverCategory };
 type WorkspaceTab = 'write' | 'compose' | 'review';
@@ -48,6 +51,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   const [draftOpen, setDraftOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [annualOpen, setAnnualOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [quality, setQuality] = useState<QualityResponse | null>(null);
   const [qualityLoading, setQualityLoading] = useState(false);
   const [qualityError, setQualityError] = useState('');
@@ -114,6 +118,29 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   const rejectBanner = status === 'rejected' && <div className="ho-reject-banner"><span>!</span><div><b>반려된 업무 단위만 다시 작성할 수 있습니다.</b><p>{fixedBundleCount > 0
     ? `승인된 ${fixedBundleCount}개 단위와 그 안의 항목은 승인 상태로 고정되고, 반려된 ${returnedBundles.length}개 단위만 수정됩니다.`
     : `${returnedBundles.length}개 단위가 모두 보완 대상입니다. 단위별 코멘트를 확인하고 다시 작성해 주세요.`}</p></div><button type="button" onClick={() => setTab('review')}>검토 의견 보기</button></div>;
+
+  /**
+   * The document on screen, as the print sheet and the API both describe one.
+   *
+   * Printing deliberately takes the live editor state rather than the last saved response: an
+   * author reads the paper copy to decide whether to submit, so it has to show the edit they just
+   * made, autosaved or not.
+   */
+  const openDocument = useCallback((): HandoverDocument => ({
+    ownerName,
+    status,
+    entries,
+    bundles,
+    updatedAt: savedAt ?? new Date().toISOString(),
+    submittedAt,
+    reviewedAt,
+    reviewedBy,
+  }), [ownerName, status, entries, bundles, savedAt, submittedAt, reviewedAt, reviewedBy]);
+
+  const printDocument = () => {
+    if (!entries.length) return;
+    printHandoverDocument(openDocument(), { academicYearLabel });
+  };
 
   const flash = useCallback((message: string) => {
     setToast(message);
@@ -534,7 +561,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     {toast && <div className="ho-toast"><span>✓</span>{toast}</div>}
     <section className="ho-hero">
       <div className="ho-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span>{origin && <><button type="button" onClick={origin.onOpen}>{origin.label}</button><span>/</span></>}<small>인수인계</small></div>
-      <div className="ho-hero-row"><div><h1>업무 인수인계서</h1><p>업무를 자유롭게 기록하고, 담당업무 단위로 묶어 완성하세요.</p></div><div className="ho-hero-actions"><SaveIndicator state={saveState} savedAt={savedAt} message={saveMessage} /><StatusBadge status={status} /><div className="ho-role-switch"><button type="button" className={role === 'author' ? 'active' : ''} onClick={() => showAuthor(tab)}>작성자</button><button type="button" className={role === 'manager' ? 'active' : ''} disabled={viewerRole !== 'admin'} title={viewerRole === 'admin' ? undefined : '파트장 계정으로 로그인해야 검토할 수 있습니다.'} onClick={() => { void showManager(); }}>파트장 검토</button></div></div></div>
+      <div className="ho-hero-row"><div><h1>업무 인수인계서</h1><p>업무를 자유롭게 기록하고, 담당업무 단위로 묶어 완성하세요.</p></div><div className="ho-hero-actions"><SaveIndicator state={saveState} savedAt={savedAt} message={saveMessage} /><StatusBadge status={status} /><div className="ho-hero-tools"><button type="button" onClick={printDocument} disabled={!loaded || !entries.length} title={entries.length ? '브라우저 인쇄 창에서 PDF로 저장할 수 있습니다.' : '작성된 항목이 없습니다.'}><span aria-hidden="true">⎙</span> PDF 저장</button><button type="button" onClick={() => setArchiveOpen(true)} disabled={!loaded}><span aria-hidden="true">🗂</span> 지난 학년도</button></div><div className="ho-role-switch"><button type="button" className={role === 'author' ? 'active' : ''} onClick={() => showAuthor(tab)}>작성자</button><button type="button" className={role === 'manager' ? 'active' : ''} disabled={viewerRole !== 'admin'} title={viewerRole === 'admin' ? undefined : '파트장 계정으로 로그인해야 검토할 수 있습니다.'} onClick={() => { void showManager(); }}>파트장 검토</button></div></div></div>
       <div className="ho-progress"><button type="button" className={tab === 'write' ? 'active' : ''} onClick={() => showAuthor('write')}><i>1</i><span><b>항목 작성</b><small>{entries.length}개 기록됨</small></span></button><em /><button type="button" className={tab === 'compose' ? 'active' : ''} onClick={() => showAuthor('compose')}><i>2</i><span><b>업무 단위 조합</b><small>{bundles.length}개 단위</small></span></button><em /><button type="button" className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}><i>3</i><span><b>제출 및 승인</b><small>{status === 'draft' ? '제출 전' : status === 'pending' ? '검토 중' : status === 'rejected' ? '보완 필요' : '승인 완료'}</small></span></button></div>
     </section>
 
@@ -640,7 +667,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     </section>}
 
     {tab === 'review' && <section className="ho-content ho-review-view">
-      <div className="ho-section-title"><div><span className="ho-step">3단계</span><h2>{role === 'manager' ? '인수인계 검토' : '제출 및 승인 현황'}</h2><p>{role === 'manager' ? '담당업무 단위별로 승인하거나 보완 의견을 남겨 주세요.' : '파트장 검토 상태와 업무 단위별 의견을 확인하세요.'}</p></div>{role === 'author' && status === 'pending' && viewerRole === 'admin' && <button className="outline" type="button" onClick={() => { void showManager(); }}>파트장 검토 화면 보기 <span>→</span></button>}</div>
+      <div className="ho-section-title"><div><span className="ho-step">3단계</span><h2>{role === 'manager' ? '인수인계 검토' : '제출 및 승인 현황'}</h2><p>{role === 'manager' ? '담당업무 단위별로 승인하거나 보완 의견을 남겨 주세요.' : '파트장 검토 상태와 업무 단위별 의견을 확인하세요.'}</p></div><div className="ho-review-tools"><button className="outline" type="button" onClick={printDocument} disabled={!loaded || !entries.length}>PDF로 저장 · 인쇄 <span aria-hidden="true">⎙</span></button>{role === 'author' && status === 'pending' && viewerRole === 'admin' && <button className="outline" type="button" onClick={() => { void showManager(); }}>파트장 검토 화면 보기 <span>→</span></button>}</div></div>
       {role === 'manager' && viewerRole === 'admin' && <div className="ho-review-queue">
         <div className="ho-queue-head">
           <div><span>제출된 인수인계서</span><b>{submittedDocuments.length}건</b><em>검토 대기 {pendingDocuments.length}건</em></div>
@@ -691,6 +718,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     </section>}
     {draftOpen && <DraftModal onAdopt={adoptProposal} onClose={() => setDraftOpen(false)} />}
     {importOpen && <ImportModal onAdopt={(item) => adoptProposal(item, '분류된 항목을 추가했습니다.')} onClose={() => setImportOpen(false)} />}
+    {archiveOpen && <ArchiveModal viewerRole={viewerRole} currentEmail={currentUser.email.toLowerCase()} onClose={() => setArchiveOpen(false)} />}
     {annualOpen && <AnnualModal entries={status === 'rejected' ? entries.filter((entry) => !approvedEntryIds.has(entry.id)) : entries} startsNewCycle={status === 'approved'} onApply={applyAnnual} onClose={() => setAnnualOpen(false)} />}
     {editor && <EntryEditor category={categories.find((category) => category.id === editor.category)!} entry={editor.entry} onSave={saveEntry} onClose={() => setEditor(null)} />}
     {detailBundle && detailEntry && <EntryDetailModal entry={detailEntry} bundle={detailBundle} entries={entries} onSelect={(entryId) => setDetailView({ bundleId: detailBundle.id, entryId })} onClose={() => setDetailView(null)} />}

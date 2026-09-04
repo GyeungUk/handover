@@ -196,6 +196,34 @@ class AnnualServiceTest {
     }
 
     @Test
+    void letsTheReasonNameTheYearTheEntryIsMovingAwayFrom() {
+        modelAnswers("""
+                {"items":[{"action":"revise","entryId":"e1","category":"plan","title":"2027학년도 체류기간 연장 접수",
+                  "paragraphs":["다음 학년도 일정 확인이 필요합니다."],"properties":[],
+                  "reason":"2026학년도 기준 연도 표기가 남아 있어 수정했습니다.","questions":[],
+                  "evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."}]}""");
+
+        /* The source year is context the model was handed, not a figure it invented — a proposal
+         * whose only unrecorded number is the year it is moving away from must survive. */
+        assertThat(service.renew(List.of(entry("e1", "체류기간 연장 접수")), 2026).items())
+                .extracting(AnnualResponse.AnnualItem::action)
+                .containsExactly("revise");
+    }
+
+    @Test
+    void stillDropsAProposalThatInventsADateTheEntryNeverRecorded() {
+        modelAnswers("""
+                {"items":[{"action":"revise","entryId":"e1","category":"plan","title":"체류기간 연장 접수",
+                  "paragraphs":["9월 5일까지 제출합니다."],"properties":[],"reason":"일정 갱신","questions":[],
+                  "evidenceEntryId":"e1","evidenceQuote":"지난해 본문입니다."}]}""");
+
+        /* Dropped, so the entry falls through to the untouched keep the service adds for it. */
+        assertThat(service.renew(List.of(entry("e1", "체류기간 연장 접수")), 2026).items())
+                .extracting(AnnualResponse.AnnualItem::action)
+                .containsExactly("keep");
+    }
+
+    @Test
     void keepsTheOriginalTitleAlongsideTheProposedOne() {
         modelAnswers("""
                 {"items":[{"action":"revise","entryId":"e1","category":"plan","title":"2027학년도 체류기간 연장 접수",

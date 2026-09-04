@@ -351,10 +351,10 @@ function importVerdicts(items, source) {
 
   /* AiSupport#groundedQuote: exact first, then ignoring the spaces the model may have moved. */
   const quoteMatch = (candidate, ignored) => {
-    const squeezedCandidate = [...candidate].filter((character) => !ignored.test(character)).join('');
+    const squeezedCandidate = [...candidate].filter((character) => !ignored.has(character)).join('');
     const origin = [];
     const squeezedSource = [...haystack].filter((character, index) => {
-      if (ignored.test(character)) return false;
+      if (ignored.has(character)) return false;
       origin.push(index);
       return true;
     }).join('');

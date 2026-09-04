@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import WorkspaceClient, { type SessionUser } from '../WorkspaceClient';
 import {
+  ACADEMIC_YEAR_START,
   WEEKS_IN_YEAR,
   academicYearBounds,
   seedTeams,
@@ -22,6 +23,7 @@ import {
   type AlignmentItem,
 } from '../academic-calendar';
 import type {
+  HandoverArchiveSummary,
   HandoverCategory,
   HandoverDocument,
   HandoverEntry,
@@ -39,6 +41,7 @@ type PreviewTaskPeriod = TaskPeriod & {
   startWeek: number;
   duration: number;
 };
+type PreviewArchive = HandoverArchiveSummary;
 type ChecklistKey = 'result-report' | 'schedule-share' | 'contact-refresh';
 type ChecklistItem = {
   key: ChecklistKey;
@@ -105,6 +108,60 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
     return { ...period, startWeek, duration: Math.max(1, weekOfDate(period.endsOn) - startWeek + 1) };
   };
   let handoverDocument: HandoverDocument | null = null;
+
+  /* Closed years. A preview account has no history, and the year archive is unreadable without
+     one, so two past years are seeded here the way an approved document leaves them. */
+  const archivedEntry = (id: string, category: HandoverCategory, title: string, detail: string): HandoverEntry => ({
+    id, category, title, detail, properties: {}, attachments: [], formatting: { fontFamily: 'Pretendard', fontSize: '16' },
+  });
+  const archivedYear = (academicYear: number, entries: HandoverEntry[]): {
+    archive: PreviewArchive;
+    document: HandoverDocument;
+  } => {
+    const reviewedAt = `${academicYear + 1}-02-20T05:00:00.000Z`;
+    const document: HandoverDocument = {
+      ownerName: user.displayName,
+      status: 'approved',
+      entries,
+      bundles: [{ id: `b-${academicYear}`, title: '체류·비자 관리', entryIds: entries.map((entry) => entry.id), decision: 'approved', comment: '', previousComment: '' }],
+      updatedAt: reviewedAt,
+      submittedAt: `${academicYear + 1}-02-10T02:00:00.000Z`,
+      reviewedAt,
+      reviewedBy: '박부장',
+    };
+    return {
+      document,
+      archive: {
+        ownerEmail: user.email,
+        ownerName: user.displayName,
+        academicYear,
+        academicYearLabel: `${academicYear}학년도`,
+        status: 'approved',
+        entryCount: entries.length,
+        bundleCount: document.bundles.length,
+        submittedAt: document.submittedAt,
+        reviewedAt,
+        reviewedBy: '박부장',
+        archivedAt: reviewedAt,
+      },
+    };
+  };
+  const handoverArchives = new Map<number, { archive: PreviewArchive; document: HandoverDocument }>([
+    [ACADEMIC_YEAR_START - 2, archivedYear(ACADEMIC_YEAR_START - 2, [
+      archivedEntry('a1', 'responsibility', '외국인 유학생 체류·비자 관리',
+        '<p><strong>업무 개요</strong><br>학기 중 체류기간 연장과 자격외활동 허가를 단체 접수로 처리합니다.</p>'),
+      archivedEntry('a2', 'plan', '2학기 체류기간 연장 단체접수',
+        '<p><strong>일정 및 현황</strong><br>학기 개강 후 4주 이내에 대상자를 확정하고 출입국에 일괄 제출했습니다.</p>'),
+    ])],
+    [ACADEMIC_YEAR_START - 1, archivedYear(ACADEMIC_YEAR_START - 1, [
+      archivedEntry('b1', 'responsibility', '교환학생 파견·유치 실무',
+        '<p><strong>업무 개요</strong><br>파견 선발부터 수학 인정까지의 실무를 담당합니다.</p>'),
+      archivedEntry('b2', 'issue', '기숙사 배정 지연 대응',
+        '<p><strong>변경 내용</strong><br>배정 결과 통보가 한 주 늦어져 입국 일정을 조정했습니다.</p>'),
+      archivedEntry('b3', 'pending', '학점 인정 심사 잔여 건',
+        '<p><strong>남은 업무 범위</strong><br>후기 파견자 성적표 도착분의 인정 심사가 남아 있습니다.</p>'),
+    ])],
+  ]);
 
   /* The task as the workspace currently shows it, so a preview date is bounded by the moved span —
      or by the fixed period where there is one — the same way the server bounds a real one. */
@@ -604,10 +661,41 @@ function createPreviewFetch(user: SessionUser, fallback: typeof window.fetch) {
           updatedAt: now,
           bundles: reviewed,
         };
+        if (handoverDocument.status === 'approved') {
+          handoverArchives.set(ACADEMIC_YEAR_START, {
+            document: handoverDocument,
+            archive: {
+              ownerEmail: user.email,
+              ownerName: user.displayName,
+              academicYear: ACADEMIC_YEAR_START,
+              academicYearLabel: `${ACADEMIC_YEAR_START}학년도`,
+              status: 'approved',
+              entryCount: handoverDocument.entries.length,
+              bundleCount: handoverDocument.bundles.length,
+              submittedAt: handoverDocument.submittedAt,
+              reviewedAt: now,
+              reviewedBy: user.displayName,
+              archivedAt: now,
+            },
+          });
+        }
       } else {
         return json({ error: '지원하지 않는 작업입니다.' }, 400);
       }
       return json({ document: handoverDocument });
+    }
+
+    if (url.pathname === '/api/handover/archives' && method === 'GET') {
+      const archives = [...handoverArchives.values()]
+        .map((year) => year.archive)
+        .sort((left, right) => right.academicYear - left.academicYear);
+      return json({ archives, viewerRole: 'admin' });
+    }
+    if (url.pathname.startsWith('/api/handover/archives/') && method === 'GET') {
+      const year = Number(url.pathname.split('/').pop());
+      const found = handoverArchives.get(year);
+      if (!found) return json({ error: '해당 학년도에 보관된 인수인계서가 없습니다.' }, 404);
+      return json(found);
     }
 
     return json({ error: '미리보기에서 지원하지 않는 요청입니다.' }, 404);

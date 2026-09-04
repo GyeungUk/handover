@@ -77,6 +77,17 @@ public class AcademicCalendar {
         return startsOn().plusYears(1);
     }
 
+    /**
+     * The academic year a real date belongs to, named the way the office names it.
+     *
+     * <p>A year opens in {@link OrgData#startMonth()} and runs into the next calendar year, so
+     * January of 2027 is still 2026학년도. Unlike {@link #holds}, this is defined for every date:
+     * it is what a document approved in a year the calendar does not publish is filed under.
+     */
+    public int academicYearOf(LocalDate date) {
+        return date.getMonthValue() >= orgData.startMonth() ? date.getYear() : date.getYear() - 1;
+    }
+
     /** Whether a real date falls inside the academic year the workspace covers. */
     public boolean holds(LocalDate date) {
         return date != null && !date.isBefore(startsOn()) && date.isBefore(endsBefore());

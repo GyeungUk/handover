@@ -54,6 +54,7 @@ public class DocumentService {
     private final HandoverDocumentRepository documents;
     private final HandoverEntryRowRepository entries;
     private final HandoverBundleRowRepository bundles;
+    private final DocumentArchiveService archive;
     private final HandoverSchema schema;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -62,12 +63,14 @@ public class DocumentService {
             HandoverDocumentRepository documents,
             HandoverEntryRowRepository entries,
             HandoverBundleRowRepository bundles,
+            DocumentArchiveService archive,
             HandoverSchema schema,
             ObjectMapper objectMapper,
             Clock clock) {
         this.documents = documents;
         this.entries = entries;
         this.bundles = bundles;
+        this.archive = archive;
         this.schema = schema;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -206,6 +209,9 @@ public class DocumentService {
         if (PENDING.equals(document.getStatus())) {
             throw ApiException.conflict("파트장 검토가 끝난 후 연간 업데이트를 시작할 수 있습니다.");
         }
+        /* This row is about to become next year's draft, so it is the last moment a year approved
+         * before the archive existed can still be recorded. A year already on file is left alone. */
+        archive.archiveIfAbsent(document, read(document));
 
         List<DocumentResponse.Bundle> cleared = readBundles(ownerEmail).stream()
                 .map(bundle -> new DocumentResponse.Bundle(
@@ -268,7 +274,14 @@ public class DocumentService {
         document.setUpdatedAt(now);
         document.setReviewedAt(now);
         document.setReviewedBy(reviewerName);
-        return write(document, readEntries(ownerEmail), reviewed);
+        DocumentResponse decided = write(document, readEntries(ownerEmail), reviewed);
+        /* An approval closes the academic year, and the annual rollover will rewrite this row into
+         * next year's draft. The record of the year is taken here, inside the same transaction.
+         * A rejection closes nothing: the author is about to write into this same row again. */
+        if (APPROVED.equals(document.getStatus())) {
+            archive.archiveApproved(document, decided);
+        }
+        return decided;
     }
 
     /* ------------------------------------------------------------------ *

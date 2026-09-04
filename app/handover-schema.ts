@@ -216,6 +216,39 @@ export type HandoverDocumentSummary = {
   reviewedBy: string | null;
 };
 
+/**
+ * One academic year on file.
+ *
+ * The live document is rewritten in place every year, so a year only survives because approving it
+ * files a copy. An author sees their own years; the part leader sees the whole office's.
+ */
+export type HandoverArchiveSummary = {
+  ownerEmail: string;
+  ownerName: string;
+  academicYear: number;
+  /** e.g. "2026학년도" — formed by the server so the two backends label a year identically. */
+  academicYearLabel: string;
+  status: WorkflowStatus;
+  entryCount: number;
+  bundleCount: number;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  archivedAt: string;
+};
+
+/** {@code GET /api/handover/archives} */
+export type HandoverArchiveListResponse = {
+  archives: HandoverArchiveSummary[];
+  viewerRole: 'admin' | 'member';
+};
+
+/** {@code GET /api/handover/archives/{academicYear}} — the document exactly as it was approved. */
+export type HandoverArchiveResponse = {
+  archive: HandoverArchiveSummary;
+  document: HandoverDocument;
+};
+
 /** `null` means this account has never saved a document; the workspace then starts empty. */
 export type HandoverDocumentResponse = { document: HandoverDocument | null };
 
