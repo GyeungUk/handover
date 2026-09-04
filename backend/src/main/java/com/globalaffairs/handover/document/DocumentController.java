@@ -28,10 +28,12 @@ public class DocumentController {
 
     private final DocumentService service;
     private final DocumentArchiveService archives;
+    private final DocumentDraftService drafts;
 
-    public DocumentController(DocumentService service, DocumentArchiveService archives) {
+    public DocumentController(DocumentService service, DocumentArchiveService archives, DocumentDraftService drafts) {
         this.service = service;
         this.archives = archives;
+        this.drafts = drafts;
     }
 
     /**
@@ -74,11 +76,13 @@ public class DocumentController {
     public ResponseEntity<Map<String, DocumentResponse>> act(
             AuthenticatedUser user, @RequestBody(required = false) ActionRequest request) {
         AuthenticatedUser current = Access.requireRegistered(user);
-        ActionRequest body = request == null ? new ActionRequest(null, null, null) : request;
+        ActionRequest body = request == null ? new ActionRequest(null, null, null, null) : request;
 
         DocumentResponse document;
         if ("submit".equals(body.action())) {
-            document = service.submit(current.email());
+            document = body.bundleIds() == null
+                    ? service.submit(current.email())
+                    : service.submit(current.email(), body.bundleIds());
         } else if ("rollover".equals(body.action())) {
             document = service.rollover(current.email());
         } else if ("review".equals(body.action())) {
@@ -130,6 +134,26 @@ public class DocumentController {
             throw ApiException.notFound("해당 학년도에 보관된 인수인계서가 없습니다.");
         }
         return ResponseEntity.ok(archived);
+    }
+
+    /** Alternate next-year drafts remain private to their author until one is submitted. */
+    @GetMapping("/drafts")
+    public ResponseEntity<DocumentDraftService.DraftList> drafts(AuthenticatedUser user) {
+        AuthenticatedUser current = Access.requireRegistered(user);
+        return ResponseEntity.ok(drafts.list(current.email()));
+    }
+
+    @PostMapping("/drafts")
+    public ResponseEntity<Map<String, DocumentResponse>> createDraft(AuthenticatedUser user) {
+        AuthenticatedUser current = Access.requireRegistered(user);
+        return ResponseEntity.ok(Map.of("document", drafts.create(current.email(), current.displayName())));
+    }
+
+    @PostMapping("/drafts/{draftId}/open")
+    public ResponseEntity<Map<String, DocumentResponse>> openDraft(
+            AuthenticatedUser user, @PathVariable String draftId) {
+        AuthenticatedUser current = Access.requireRegistered(user);
+        return ResponseEntity.ok(Map.of("document", drafts.open(current.email(), current.displayName(), draftId)));
     }
 
     /** {@code GET /api/handover/archives} — the year list and who is reading it. */

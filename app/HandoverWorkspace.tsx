@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { documentLimits, isEditableStatus, type AnnualItem, type EntryAttachment, type EntryFormatting, type HandoverCategory, type HandoverDocument, type HandoverDocumentSummary, type HandoverEntry, type QualityResponse, type WorkBundle, type WorkflowStatus } from './handover-schema';
+import { documentLimits, type EntryAttachment, type EntryFormatting, type HandoverCategory, type HandoverDocument, type HandoverDocumentSummary, type HandoverEntry, type QualityResponse, type WorkBundle, type WorkflowStatus } from './handover-schema';
 import { CategoryIcon, SaveIndicator, StatusBadge, type SaveState } from './handover/atoms';
 import { categories, defaultFormatting, initialBundles, initialEntries } from './handover/categories';
 import { plainText, sanitizeRichHtml, savePayload, snapshotOf } from './handover/format';
@@ -11,7 +11,7 @@ import BundleReadOnly from './handover/BundleReadOnly';
 import EntryDetailModal from './handover/modals/EntryDetailModal';
 import DraftModal from './handover/modals/DraftModal';
 import ImportModal from './handover/modals/ImportModal';
-import AnnualModal from './handover/modals/AnnualModal';
+import ApprovedDraftModal from './handover/modals/ApprovedDraftModal';
 import ArchiveModal from './handover/modals/ArchiveModal';
 import { printHandoverDocument } from './handover/print';
 import { academicYearLabel } from './org-data';
@@ -50,7 +50,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   const [toast, setToast] = useState('');
   const [draftOpen, setDraftOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [annualOpen, setAnnualOpen] = useState(false);
+  const [approvedDraftOpen, setApprovedDraftOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [quality, setQuality] = useState<QualityResponse | null>(null);
   const [qualityLoading, setQualityLoading] = useState(false);
@@ -69,11 +69,10 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   const [reviewedAt, setReviewedAt] = useState<string | null>(null);
   const [reviewedBy, setReviewedBy] = useState<string | null>(null);
   const [viewedOwnerEmail, setViewedOwnerEmail] = useState(currentUser.email.toLowerCase());
-  const [fixedApprovedBundleIds, setFixedApprovedBundleIds] = useState<Set<string>>(() => new Set());
+  const [pendingBundleIds, setPendingBundleIds] = useState<Set<string>>(() => new Set());
+  const [submissionBundleIds, setSubmissionBundleIds] = useState<Set<string>>(() => new Set());
   const savedSnapshot = useRef<string | null>(null);
   const saveQueue = useRef<Promise<boolean>>(Promise.resolve(true));
-  const annualRollover = useRef<Promise<void> | null>(null);
-  const annualCycleReady = useRef(true);
 
   const assignedIds = useMemo(() => new Set(bundles.flatMap((bundle) => bundle.entryIds)), [bundles]);
   const approvedEntryIds = useMemo(
@@ -86,24 +85,34 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   );
   const unassignedEntries = entries.filter((entry) => !assignedIds.has(entry.id));
   const activeMeta = categories.find((category) => category.id === activeCategory)!;
-  const canSubmit = bundles.length > 0 && entries.length > 0 && unassignedEntries.length === 0 && bundles.every((bundle) => bundle.entryIds.length > 0 && bundle.title.trim());
+  const submittableBundles = bundles.filter((bundle) => bundle.decision !== 'pending' && bundle.decision !== 'approved');
+  const selectedSubmissionBundles = submittableBundles.filter((bundle) => submissionBundleIds.has(bundle.id));
+  const canSubmit = selectedSubmissionBundles.length > 0
+    && selectedSubmissionBundles.every((bundle) => bundle.entryIds.length > 0 && bundle.title.trim());
   /* A part leader loads someone else's document to review it, and every write here targets the
    * caller's own row — so a document that is only being read must never become editable. */
   const isOwnDocument = viewedOwnerEmail === currentUser.email.toLowerCase();
-  const isLocked = !loaded || !isOwnDocument || status === 'pending' || status === 'approved';
-  const isEntryLocked = (entryId: string) => isLocked || (status === 'rejected' && approvedEntryIds.has(entryId));
-  const isBundleLocked = (bundle: WorkBundle) => isLocked || (status === 'rejected' && bundle.decision === 'approved');
+  const isLocked = !loaded || !isOwnDocument || status === 'approved';
+  /* Source-based helpers stay available after approval. Adopting their first proposal starts this
+     academic year's working copy, as starting from an approved document does. */
+  const canUseAiHelpers = loaded && isOwnDocument;
+  const pendingEntryIds = useMemo(
+    () => new Set(bundles.filter((bundle) => bundle.decision === 'pending').flatMap((bundle) => bundle.entryIds)),
+    [bundles],
+  );
+  const isEntryLocked = (entryId: string) => isLocked || approvedEntryIds.has(entryId) || pendingEntryIds.has(entryId);
+  const isBundleLocked = (bundle: WorkBundle) => isLocked || bundle.decision === 'approved' || bundle.decision === 'pending';
   const detailBundle = detailView ? bundles.find((bundle) => bundle.id === detailView.bundleId) : undefined;
   const detailEntry = detailView ? entries.find((entry) => entry.id === detailView.entryId) : undefined;
-  const reviewableBundles = bundles.filter((bundle) => !fixedApprovedBundleIds.has(bundle.id));
-  /* An empty set is ready, not unready: an author who dropped every returned unit leaves a
-   * resubmission whose units are all already approved, and the reviewer still has to close it. */
-  const reviewReady = reviewableBundles.every((bundle) => bundle.decision && (bundle.decision === 'approved' || bundle.comment.trim()));
+  const reviewReady = pendingBundleIds.size > 0 && [...pendingBundleIds].every((id) => {
+    const bundle = bundles.find((item) => item.id === id);
+    return bundle?.decision === 'approved' || (bundle?.decision === 'rejected' && bundle.comment.trim());
+  });
   const returnedBundles = status === 'rejected' ? bundles.filter((bundle) => bundle.decision === 'rejected') : [];
-  const fixedBundleCount = bundles.length - returnedBundles.length;
+  const fixedBundleCount = bundles.filter((bundle) => bundle.decision === 'approved').length;
   /* A correction round can only change what came back, so a finding on a frozen entry is a dead
    * end: the button under it opens an editor the author is not allowed to save. */
-  const checkableEntries = status === 'rejected' ? entries.filter((entry) => !approvedEntryIds.has(entry.id)) : entries;
+  const checkableEntries = entries.filter((entry) => !approvedEntryIds.has(entry.id) && !pendingEntryIds.has(entry.id));
   /* The part leader's list is every submission, so the queue is the part of it still waiting. */
   const pendingDocuments = submittedDocuments.filter((item) => item.status === 'pending');
   const queueDocuments = queueFilter === 'all' ? submittedDocuments : submittedDocuments.filter((item) => item.status === queueFilter);
@@ -151,14 +160,16 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     const safeEntries = document.entries.map((entry) => ({ ...entry, detail: sanitizeRichHtml(entry.detail) }));
     setEntries(safeEntries);
     setBundles(document.bundles);
-    setFixedApprovedBundleIds(new Set(document.bundles.filter((bundle) => bundle.decision === 'approved').map((bundle) => bundle.id)));
+    setPendingBundleIds(new Set(document.bundles.filter((bundle) => bundle.decision === 'pending').map((bundle) => bundle.id)));
+    setSubmissionBundleIds(new Set(document.bundles
+      .filter((bundle) => bundle.decision !== 'pending' && bundle.decision !== 'approved')
+      .map((bundle) => bundle.id)));
     setStatus(document.status);
     setOwnerName(document.ownerName);
     setSubmittedAt(document.submittedAt);
     setReviewedAt(document.reviewedAt);
     setReviewedBy(document.reviewedBy);
     setSavedAt(document.updatedAt);
-    annualCycleReady.current = document.status !== 'approved';
     savedSnapshot.current = snapshotOf(safeEntries, document.bundles);
     setSaveState('saved');
     setSaveMessage('');
@@ -220,7 +231,6 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       } else {
         setEntries([]);
         setBundles([]);
-        setFixedApprovedBundleIds(new Set());
         setStatus('draft');
         setOwnerName('');
         setSubmittedAt(null);
@@ -283,20 +293,20 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
 
   /* Autosave. A submitted document is frozen, so there is nothing to send while it is under review. */
   useEffect(() => {
-    if (!loaded || !isOwnDocument || !isEditableStatus(status)) return;
+    if (!loaded || role !== 'author' || !isOwnDocument || status === 'approved') return;
     if (snapshotOf(entries, bundles) === savedSnapshot.current) return;
     const timer = window.setTimeout(() => { void persist(entries, bundles); }, 1200);
     return () => window.clearTimeout(timer);
-  }, [loaded, isOwnDocument, status, entries, bundles, persist]);
+  }, [loaded, role, isOwnDocument, status, entries, bundles, persist]);
 
   useEffect(() => {
     const warnAboutUnsavedChanges = (event: BeforeUnloadEvent) => {
-      if (!loaded || !isOwnDocument || !isEditableStatus(status) || snapshotOf(entries, bundles) === savedSnapshot.current) return;
+      if (!loaded || role !== 'author' || !isOwnDocument || status === 'approved' || snapshotOf(entries, bundles) === savedSnapshot.current) return;
       event.preventDefault();
     };
     window.addEventListener('beforeunload', warnAboutUnsavedChanges);
     return () => window.removeEventListener('beforeunload', warnAboutUnsavedChanges);
-  }, [loaded, isOwnDocument, status, entries, bundles]);
+  }, [loaded, role, isOwnDocument, status, entries, bundles]);
 
   const saveEntry = (title: string, detail: string, properties: Record<string, string>, formatting: EntryFormatting, attachments: EntryAttachment[]) => {
     if (!editor) return;
@@ -367,8 +377,10 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     flash('항목을 삭제했습니다.');
   };
 
-  /** Every AI proposal — calendar draft, uploaded document, next-year update — lands here. */
-  const adoptProposal = (item: AdoptableItem, message = '초안을 항목으로 추가했습니다.') => {
+  /** Every proposal from an external source lands here. */
+  const adoptProposal = async (item: AdoptableItem, message = '초안을 항목으로 추가했습니다.') => {
+    if (!loaded || !isOwnDocument) throw new Error('내 인수인계서에서만 초안을 추가할 수 있습니다.');
+    await ensureNextAcademicYearDraft();
     const id = `${item.category}-${crypto.randomUUID()}`;
     setEntries((current) => [...current, { id, category: item.category, title: item.title, detail: sanitizeRichHtml(item.detail), properties: item.properties, attachments: [], formatting: defaultFormatting }]);
     setActiveCategory(item.category);
@@ -376,65 +388,27 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     flash(message);
   };
 
-  /** An approved document is immutable until the first annual change deliberately starts a new cycle. */
-  const ensureAnnualDraft = async () => {
-    if (status !== 'approved' || annualCycleReady.current) return;
-    if (!annualRollover.current) {
-      annualRollover.current = (async () => {
-        const response = await fetch('/api/handover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'rollover' }),
-        });
-        const data = await response.json() as { document?: HandoverDocument; error?: string };
-        if (!response.ok || !data.document) throw new Error(data.error ?? '다음 학년도 초안을 시작하지 못했습니다.');
-        applyDocument(data.document);
-        annualCycleReady.current = true;
-        flash('다음 학년도 작성 상태로 전환했습니다.');
-      })().finally(() => { annualRollover.current = null; });
-    }
-    await annualRollover.current;
+  /** Starts another working copy without replacing drafts that were already made from this source. */
+  const ensureNextAcademicYearDraft = async () => {
+    const response = await fetch('/api/handover/drafts', { method: 'POST' });
+    const data = await response.json() as { document?: HandoverDocument; error?: string };
+    if (!response.ok || !data.document) throw new Error(data.error ?? '전년도 승인본으로 이번 학년도 초안을 만들지 못했습니다.');
+    applyDocument(data.document);
+    flash('전년도 승인본에서 이번 학년도 초안을 만들었습니다. 기존 초안은 별도로 보관됩니다.');
   };
 
-  /**
-   * Applies one line of next year's draft: rewrite in place, add, or drop the entry.
-   *
-   * An approved document is locked everywhere else, but not here: starting next year's draft from
-   * last year's approved one is the whole point of this step, and {@link ensureAnnualDraft} is what
-   * unlocks it. What stays frozen is a unit approved during a correction round, which is waiting
-   * for a review rather than for a new year.
-   */
-  const applyAnnual = async (item: AnnualItem) => {
-    if (item.action === 'keep') return;
-    const frozenForCorrection = !loaded || !isOwnDocument || status === 'pending'
-      || (status === 'rejected' && item.entryId && approvedEntryIds.has(item.entryId));
-    if (frozenForCorrection) {
-      flash(status === 'pending' ? '검토 중에는 다음 학년도 초안을 반영할 수 없습니다.' : '승인된 항목은 다음 검토까지 고정됩니다.');
-      return;
-    }
-    await ensureAnnualDraft();
-    if (item.action === 'new' || !item.entryId) {
-      adoptProposal(item, '이월 항목을 추가했습니다.');
-      return;
-    }
-    if (item.action === 'archive') {
-      /* The rollover above has just unlocked the document, but this render still remembers it as
-       * approved — so remove the entry directly rather than through the guarded path. */
-      dropEntry(item.entryId);
-      flash('올해 문서에서 제외했습니다.');
-      return;
-    }
-    setEntries((current) => current.map((entry) => entry.id === item.entryId
-      ? { ...entry, title: item.title, detail: sanitizeRichHtml(item.detail), properties: item.properties }
-      : entry));
-    setActiveCategory(item.category);
-    setQuality(null);
-    flash('수정 내용을 반영했습니다.');
+  const openApprovedDraft = async (draftId: string) => {
+    const response = await fetch(`/api/handover/drafts/${encodeURIComponent(draftId)}/open`, { method: 'POST' });
+    const data = await response.json() as { document?: HandoverDocument; error?: string };
+    if (!response.ok || !data.document) throw new Error(data.error ?? '선택한 초안을 열지 못했습니다.');
+    applyDocument(data.document);
+    flash('별도로 보관한 초안을 열었습니다.');
   };
 
   const addBundle = () => {
     const id = `bundle-${crypto.randomUUID()}`;
     setBundles((current) => [...current, { id, title: `새 담당업무 단위 ${current.length + 1}`, entryIds: [], decision: null, comment: '', previousComment: '' }]);
+    setSubmissionBundleIds((current) => new Set([...current, id]));
     setExpandedBundle(id);
   };
 
@@ -472,7 +446,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       if (!await persist(entries, bundles)) return;
       /* The queue this document just joined is refetched when the reviewer view opens, so there is
        * nothing to patch in here — see showManager. */
-      if (!await runAction({ action: 'submit' }, '제출하지 못했습니다.')) return;
+      if (!await runAction({ action: 'submit', bundleIds: [...submissionBundleIds] }, '제출하지 못했습니다.')) return;
       setTab('review');
       setRole('author');
       flash(correcting ? '보완한 업무 단위를 다시 제출했습니다.' : '인수인계서를 제출했습니다.');
@@ -489,7 +463,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     setBusy(true);
     try {
       const decisions = bundles
-        .filter((bundle) => !fixedApprovedBundleIds.has(bundle.id))
+        .filter((bundle) => pendingBundleIds.has(bundle.id))
         .map((bundle) => ({ bundleId: bundle.id, decision: bundle.decision, comment: bundle.comment }));
       const document = await runAction(
         { action: 'review', ownerEmail: viewedOwnerEmail, decisions },
@@ -573,26 +547,26 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
         <div className="ho-ai-panel-head">
           <span className="ho-draft-spark" aria-hidden="true">✦</span>
           <div><b>AI 상세 초안 도우미</b><p>업무 개요에서 멈추지 않고 현황·절차·후속 조치·인계 포인트까지 구분해 정리합니다.</p></div>
-          <em>채택 전까지 저장되지 않음</em>
+          <em>{status === 'approved' ? '이번 학년도 초안으로 이어서 작성' : '여러 번 초안 생성 가능'}</em>
         </div>
         <div className="ho-ai-cards">
-          <button type="button" onClick={() => setImportOpen(true)} disabled={isLocked}>
+          <button type="button" onClick={() => setImportOpen(true)} disabled={!canUseAiHelpers}>
             <span className="ho-ai-icon" aria-hidden="true">⇪</span>
             <b>기존 자료 업로드</b>
             <small>쓰고 있던 인수인계 문서를 올리면 담당업무·계획·현안·미결로 자동 분류합니다.</small>
             <em>파일 · 붙여넣기 <span aria-hidden="true">→</span></em>
           </button>
-          <button type="button" onClick={() => setDraftOpen(true)} disabled={isLocked}>
+          <button type="button" onClick={() => setDraftOpen(true)} disabled={!canUseAiHelpers}>
             <span className="ho-ai-icon" aria-hidden="true">▤</span>
             <b>캘린더에서 초안</b>
             <small>연간 일정과 일정 변경 사유를 근거로 네 개 섹션의 초안을 제안합니다.</small>
             <em>일정 기록 기반 <span aria-hidden="true">→</span></em>
           </button>
-          <button type="button" onClick={() => setAnnualOpen(true)} disabled={!loaded || status === 'pending'} title={status === 'pending' ? '파트장 검토가 끝난 후 다음 학년도 초안을 만들 수 있습니다.' : undefined}>
+          <button type="button" onClick={() => setApprovedDraftOpen(true)} disabled={!loaded || !isOwnDocument || status === 'pending'} title={status === 'pending' ? '검토 중에는 초안을 만들거나 바꿀 수 없습니다.' : undefined}>
             <span className="ho-ai-icon" aria-hidden="true">↻</span>
-            <b>연간 업데이트</b>
-            <small>전년도 문서에서 해마다 달라지는 부분만 골라 올해 초안으로 갱신합니다.</small>
-            <em>{entries.length}개 항목 기준 <span aria-hidden="true">→</span></em>
+            <b>전년도 승인본으로 초안</b>
+            <small>팀장 승인까지 완료된 전년도 인수인계서를 바탕으로 이번 학년도 작성본을 시작합니다.</small>
+            <em>{status === 'approved' ? `${entries.length}개 항목으로 이번 학년도 시작` : '보관 초안 관리'} <span aria-hidden="true">→</span></em>
           </button>
         </div>
       </div>
@@ -604,9 +578,10 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
         <div className="ho-entry-head"><div className="ho-category-icon large"><CategoryIcon category={activeMeta.id} /></div><div><span className="ho-step">{activeMeta.step}번 섹션</span><h3>{activeMeta.label}</h3><p>{activeMeta.description}</p></div><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span>＋</span> 새 항목 추가</button></div>
         <div className="ho-entry-list">{entries.filter((entry) => entry.category === activeMeta.id).map((entry, index) => {
           const entryLocked = isEntryLocked(entry.id);
-          const approvedFixed = entryLocked && status === 'rejected';
+          const approvedFixed = approvedEntryIds.has(entry.id);
+          const pendingReview = pendingEntryIds.has(entry.id);
           const needsFix = status === 'rejected' && rejectedEntryIds.has(entry.id);
-          return <article className={`${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`.trim()} key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><p>{plainText(entry.detail)}</p><span className={`ho-linked ${approvedFixed ? 'approved' : needsFix ? 'returned' : ''}`}>{approvedFixed ? '✓ 승인 완료 · 수정 불가' : needsFix ? '↩ 반려됨 · 다시 작성' : assignedIds.has(entry.id) ? '업무 단위에 연결됨' : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => editEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>;
+          return <article className={`${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`.trim()} key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><p>{plainText(entry.detail)}</p><span className={`ho-linked ${approvedFixed ? 'approved' : needsFix ? 'returned' : ''}`}>{approvedFixed ? '✓ 승인 완료 · 수정 불가' : pendingReview ? '⌛ 검토 중 · 수정 불가' : needsFix ? '↩ 반려됨 · 다시 작성' : assignedIds.has(entry.id) ? '업무 단위에 연결됨' : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => editEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>;
         })}{entries.every((entry) => entry.category !== activeMeta.id) && <div className="ho-empty"><div className="ho-category-icon"><CategoryIcon category={activeMeta.id} /></div><b>아직 작성된 항목이 없습니다.</b><p>{activeMeta.description}</p><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span aria-hidden="true">＋</span> 첫 항목 작성하기</button></div>}</div>
       </div>
       <aside className="ho-writing-tip"><span>TIP</span><p>한 항목에는 하나의 주제를 적어두면, 최종 조합 단계에서 여러 담당업무 단위로 정리하기 쉽습니다.</p><div>{categories.map((category) => <span key={category.id}><i style={{ background: category.accent }} />{category.short}<b>{entries.filter((entry) => entry.category === category.id).length}</b></span>)}</div></aside>
@@ -616,20 +591,21 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       <div className="ho-section-title"><div><span className="ho-step">2단계</span><h2>담당업무 단위 조합</h2><p>관련 항목을 묶어 하나의 완성된 인수인계 단위로 만드세요.</p></div><button type="button" className="outline" onClick={addBundle} disabled={isLocked}><span>＋</span> 새 업무 단위</button></div>
       {saveBanner}
       {rejectBanner}
-      <div className="ho-compose-summary"><div><small>작성 항목</small><strong>{entries.length}</strong><span>개</span></div><i /><div><small>업무 단위</small><strong>{bundles.length}</strong><span>개</span></div><i />{status === 'rejected' && <><div className="warning"><small>반려된 단위</small><strong>{returnedBundles.length}</strong><span>개</span></div><i /></>}<div className={unassignedEntries.length ? 'warning' : 'done'}><small>미배치 항목</small><strong>{unassignedEntries.length}</strong><span>개</span></div><p>{unassignedEntries.length ? '모든 항목을 업무 단위에 배치해야 제출할 수 있습니다.' : status === 'rejected' ? '반려된 단위의 코멘트를 확인하고 그 단위만 다시 작성해 주세요.' : '모든 항목이 빠짐없이 연결되었습니다.'}</p></div>
+      <div className="ho-compose-summary"><div><small>작성 항목</small><strong>{entries.length}</strong><span>개</span></div><i /><div><small>업무 단위</small><strong>{bundles.length}</strong><span>개</span></div><i />{status === 'rejected' && <><div className="warning"><small>반려된 단위</small><strong>{returnedBundles.length}</strong><span>개</span></div><i /></>}<div className={unassignedEntries.length ? 'warning' : 'done'}><small>미배치 항목</small><strong>{unassignedEntries.length}</strong><span>개</span></div><p>{unassignedEntries.length ? '미배치 항목은 나중에 제출해도 됩니다. 이번에 보낼 업무 단위만 선택해 제출하세요.' : status === 'rejected' ? '반려된 단위의 코멘트를 확인하고 필요한 단위만 다시 제출하세요.' : '제출할 업무 단위를 선택하면, 나머지 단위는 계속 작성할 수 있습니다.'}</p></div>
       <div className="ho-bundle-list">{bundles.map((bundle, bundleIndex) => {
         const bundleLocked = isBundleLocked(bundle);
-        const approvedFixed = status === 'rejected' && bundle.decision === 'approved';
-        const needsFix = status === 'rejected' && bundle.decision === 'rejected';
+        const approvedFixed = bundle.decision === 'approved';
+        const pendingReview = bundle.decision === 'pending';
+        const needsFix = bundle.decision === 'rejected';
         return <article className={`ho-bundle ${expandedBundle === bundle.id ? 'expanded' : ''} ${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`} key={bundle.id}>
-        <div className="ho-bundle-head"><span className="ho-bundle-index">A-{String(bundleIndex + 1).padStart(2, '0')}</span><div><small>{approvedFixed ? '승인 완료 · 수정 불가' : needsFix ? '반려됨 · 다시 작성' : '담당업무 단위'}</small><input aria-label="담당업무 단위 이름" value={bundle.title} maxLength={documentLimits.bundleTitle} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, title: event.target.value } : item))} disabled={bundleLocked} /></div><div className="ho-bundle-counts">{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{approvedFixed && <b className="ho-fixed-badge">✓ 승인 고정</b>}{needsFix && <b className="ho-return-badge">↩ 보완 필요</b>}<button type="button" onClick={() => setExpandedBundle((current) => current === bundle.id ? null : bundle.id)}>{expandedBundle === bundle.id ? '접기' : approvedFixed ? '보기' : '편집'} <span>⌄</span></button></div>
+        <div className="ho-bundle-head"><span className="ho-bundle-index">A-{String(bundleIndex + 1).padStart(2, '0')}</span><div><small>{approvedFixed ? '승인 완료 · 수정 불가' : pendingReview ? '검토 중 · 수정 불가' : needsFix ? '반려됨 · 다시 작성' : '담당업무 단위'}</small><input aria-label="담당업무 단위 이름" value={bundle.title} maxLength={documentLimits.bundleTitle} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, title: event.target.value } : item))} disabled={bundleLocked} /></div><div className="ho-bundle-counts">{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{!bundleLocked && <label className="ho-submit-select"><input type="checkbox" checked={submissionBundleIds.has(bundle.id)} onChange={() => setSubmissionBundleIds((current) => { const next = new Set(current); if (next.has(bundle.id)) next.delete(bundle.id); else next.add(bundle.id); return next; })} />이번에 제출</label>}{approvedFixed && <b className="ho-fixed-badge">✓ 승인 고정</b>}{pendingReview && <b className="ho-pending-badge">⌛ 검토 중</b>}{needsFix && <b className="ho-return-badge">↩ 보완 필요</b>}<button type="button" onClick={() => setExpandedBundle((current) => current === bundle.id ? null : bundle.id)}>{expandedBundle === bundle.id ? '접기' : bundleLocked ? '보기' : '편집'} <span>⌄</span></button></div>
         {needsFix && bundle.comment && <div className="ho-manager-comment"><span>파트장 코멘트</span><p>{bundle.comment}</p></div>}
         {expandedBundle === bundle.id && <div className="ho-bundle-body">{categories.map((category) => <div className="ho-pick-column" key={category.id} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><div><span className="ho-category-icon"><CategoryIcon category={category.id} /></span><b>{category.short}</b><em>{entries.filter((entry) => entry.category === category.id).length}개</em></div>{entries.filter((entry) => entry.category === category.id).map((entry) => {
           const selected = bundle.entryIds.includes(entry.id);
           const assignedElsewhere = !selected && bundles.some((item) => item.id !== bundle.id && item.entryIds.includes(entry.id));
           return <button type="button" key={entry.id} className={selected ? 'selected' : ''} disabled={bundleLocked || isEntryLocked(entry.id) || assignedElsewhere} onClick={() => toggleEntry(bundle.id, entry.id)}><i>{selected ? '✓' : ''}</i><span><b>{entry.title}</b>{assignedElsewhere && <small>다른 단위에 배치됨</small>}</span></button>;
         })}</div>)}</div>}
-        {expandedBundle === bundle.id && !bundleLocked && <div className="ho-bundle-footer"><button type="button" onClick={() => { setBundles((current) => current.filter((item) => item.id !== bundle.id)); setExpandedBundle(null); }}>업무 단위 삭제</button><span>선택한 항목 <b>{bundle.entryIds.length}개</b></span></div>}
+        {expandedBundle === bundle.id && !bundleLocked && <div className="ho-bundle-footer"><button type="button" onClick={() => { setBundles((current) => current.filter((item) => item.id !== bundle.id)); setSubmissionBundleIds((current) => { const next = new Set(current); next.delete(bundle.id); return next; }); setExpandedBundle(null); }}>업무 단위 삭제</button><span>선택한 항목 <b>{bundle.entryIds.length}개</b></span></div>}
       </article>;
       })}{bundles.length === 0 && <div className="ho-empty-bundle"><b>아직 만들어진 담당업무 단위가 없습니다.</b><p>새 업무 단위를 만들고 작성한 항목을 자유롭게 조합해 주세요.</p><button type="button" onClick={addBundle}>＋ 첫 업무 단위 만들기</button></div>}</div>
       <div className="ho-quality">
@@ -663,7 +639,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
           })}</ul>
         </>}
       </div>
-      <div className="ho-submit-bar"><div><span>{canSubmit ? '✓' : '!'}</span><p><b>{canSubmit ? status === 'rejected' ? '보완한 내용을 다시 제출할 수 있습니다.' : '제출 준비가 완료되었습니다.' : '아직 제출할 수 없습니다.'}</b><small>{canSubmit ? status === 'rejected' ? `보완한 ${returnedBundles.length}개 단위만 다시 검토받습니다.` : `${bundles.length}개 담당업무 단위 · 총 ${entries.length}개 항목` : '미배치 항목과 비어 있는 업무 단위를 확인해 주세요.'}</small></p></div><button type="button" disabled={!canSubmit || isLocked || busy} onClick={submitHandover}>{busy ? '제출하는 중…' : status === 'pending' ? '검토 대기 중' : status === 'approved' ? '승인 완료' : status === 'rejected' ? '보완분 다시 제출' : '파트장에게 제출'} <span>→</span></button></div>
+      <div className="ho-submit-bar"><div><span>{canSubmit ? '✓' : '!'}</span><p><b>{canSubmit ? `${selectedSubmissionBundles.length}개 업무 단위를 제출할 수 있습니다.` : '아직 제출할 수 없습니다.'}</b><small>{canSubmit ? '선택하지 않은 업무 단위와 미배치 항목은 계속 작성할 수 있습니다.' : '제출할 단위를 하나 이상 선택하고, 이름과 항목을 채워 주세요.'}</small></p></div><button type="button" disabled={!canSubmit || isLocked || busy} onClick={submitHandover}>{busy ? '제출하는 중…' : '선택 단위 제출'} <span>→</span></button></div>
     </section>}
 
     {tab === 'review' && <section className="ho-content ho-review-view">
@@ -702,24 +678,24 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
             ? `${reviewedBy ? `${reviewedBy} 파트장이 ` : ''}${reviewedAt ? `${onDate(reviewedAt)}에 ` : ''}승인해 인수인계가 정상 처리되었습니다.`
             : `${reviewedBy ? `${reviewedBy} 파트장이 ` : ''}${reviewedAt ? `${onDate(reviewedAt)}에 ` : ''}반려했습니다. 반려된 담당업무 단위의 코멘트를 확인하고 내용을 수정할 수 있습니다.`}</p></div><StatusBadge status={status} /></div>
         <div className="ho-review-layout"><div className="ho-review-bundles">{bundles.map((bundle, index) => <article className={`ho-review-card ${bundle.decision ?? ''}`} key={bundle.id}>
-          <div className="ho-review-card-head"><span>A-{String(index + 1).padStart(2, '0')}</span><div><small>담당업무 단위</small><h3>{bundle.title}</h3></div><div>{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{bundle.decision && <b className={bundle.decision}>{bundle.decision === 'approved' ? '승인' : '반려'}</b>}</div>
+          <div className="ho-review-card-head"><span>A-{String(index + 1).padStart(2, '0')}</span><div><small>담당업무 단위</small><h3>{bundle.title}</h3></div><div>{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{bundle.decision && <b className={bundle.decision}>{bundle.decision === 'approved' ? '승인' : bundle.decision === 'rejected' ? '반려' : '검토 중'}</b>}</div>
           <BundleReadOnly bundle={bundle} entries={entries} onOpenEntry={(entryId) => setDetailView({ bundleId: bundle.id, entryId })} />
           {status === 'pending' && bundle.previousComment && <div className="ho-manager-comment previous"><span>지난 검토에서 요청한 보완</span><p>{bundle.previousComment}</p></div>}
-          {role === 'manager' && status === 'pending' && !fixedApprovedBundleIds.has(bundle.id) && <div className="ho-manager-decision"><div><span>검토 결과</span><button type="button" className={bundle.decision === 'approved' ? 'active approve' : ''} onClick={() => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, decision: 'approved', comment: '' } : item))}>✓ 승인</button><button type="button" className={bundle.decision === 'rejected' ? 'active reject' : ''} onClick={() => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, decision: 'rejected' } : item))}>↩ 반려</button></div>{bundle.decision === 'rejected' && <label>보완 요청 코멘트 <span>*</span><textarea value={bundle.comment} maxLength={documentLimits.comment} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, comment: event.target.value } : item))} placeholder="이 담당업무 단위에서 보완해야 할 내용을 구체적으로 적어주세요." rows={3} /></label>}</div>}
-          {role === 'manager' && status === 'pending' && fixedApprovedBundleIds.has(bundle.id) && <div className="ho-manager-fixed"><span>✓</span><p><b>이전 검토에서 승인됨</b>승인 결과가 유지되어 다시 검토하지 않습니다.</p></div>}
-          {role === 'author' && status === 'rejected' && bundle.decision === 'approved' && <div className="ho-manager-fixed"><span>✓</span><p><b>승인 상태로 고정됨</b>이 단위와 그 안의 항목은 수정할 수 없고, 다시 제출해도 재검토되지 않습니다.</p></div>}
+          {role === 'manager' && pendingBundleIds.has(bundle.id) && <div className="ho-manager-decision"><div><span>검토 결과</span><button type="button" className={bundle.decision === 'approved' ? 'active approve' : ''} onClick={() => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, decision: 'approved', comment: '' } : item))}>✓ 승인</button><button type="button" className={bundle.decision === 'rejected' ? 'active reject' : ''} onClick={() => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, decision: 'rejected' } : item))}>↩ 반려</button></div>{bundle.decision === 'rejected' && <label>보완 요청 코멘트 <span>*</span><textarea value={bundle.comment} maxLength={documentLimits.comment} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, comment: event.target.value } : item))} placeholder="이 담당업무 단위에서 보완해야 할 내용을 구체적으로 적어주세요." rows={3} /></label>}</div>}
+          {role === 'manager' && bundle.decision === 'approved' && <div className="ho-manager-fixed"><span>✓</span><p><b>이미 승인됨</b>승인 결과는 고정되어 다시 검토하지 않습니다.</p></div>}
+          {role === 'author' && bundle.decision === 'approved' && <div className="ho-manager-fixed"><span>✓</span><p><b>승인 상태로 고정됨</b>이 단위와 그 안의 항목은 수정할 수 없고, 다음 업무 단위를 계속 작성할 수 있습니다.</p></div>}
           {role === 'author' && bundle.decision === 'rejected' && bundle.comment && <div className="ho-manager-comment"><span>파트장 코멘트</span><p>{bundle.comment}</p></div>}
         </article>)}</div>
         <aside className="ho-review-side"><span>제출한 문서</span><h3>제출 정보</h3><dl><div><dt>작성자</dt><dd>{ownerName || '—'}</dd></div><div><dt>소속</dt><dd>국제처</dd></div><div><dt>담당업무 단위</dt><dd>{bundles.length}개</dd></div><div><dt>전체 항목</dt><dd>{entries.length}개</dd></div><div><dt>제출일</dt><dd>{submittedAt ? onDate(submittedAt) : '제출 전'}</dd></div><div><dt>검토 결과</dt><dd>{status === 'pending' ? '검토 대기' : status === 'approved' ? '승인 완료' : status === 'rejected' ? '반려' : '제출 전'}</dd></div>{reviewedAt && <div><dt>검토일</dt><dd>{onDate(reviewedAt)}</dd></div>}{reviewedBy && <div><dt>검토자</dt><dd>{reviewedBy}</dd></div>}</dl>{role === 'manager' && status === 'pending' && <div className="ho-review-guide"><b>검토 안내</b><p>이전에 승인한 단위는 고정됩니다. 다시 제출된 단위만 승인 또는 반려해 주세요.</p></div>}</aside></div>
-        {role === 'manager' && status === 'pending' && <div className="ho-review-submit"><div><b>{bundles.filter((bundle) => bundle.decision).length} / {bundles.length}</b><span>업무 단위 검토 완료</span></div><button type="button" onClick={completeReview} disabled={!reviewReady || busy}>{busy ? '전송 중…' : '검토 완료 및 결과 전송'} <span>→</span></button></div>}
-        {role === 'author' && status === 'approved' && <div className="ho-resubmit approved"><div><span>✓</span><p><b>승인 완료 · 이 문서는 더 이상 수정할 수 없습니다.</b><small>{reviewedBy ? `${reviewedBy} 파트장이 ` : '파트장이 '}{bundles.length}개 담당업무 단위를 모두 승인했습니다. 다음 학년도 인수인계는 연간 업데이트에서 시작할 수 있습니다.</small></p></div><button type="button" onClick={() => { setRole('author'); setTab('write'); setAnnualOpen(true); }}>연간 업데이트 시작 <span>→</span></button></div>}
+        {role === 'manager' && pendingBundleIds.size > 0 && <div className="ho-review-submit"><div><b>{bundles.filter((bundle) => pendingBundleIds.has(bundle.id) && (bundle.decision === 'approved' || bundle.decision === 'rejected')).length} / {pendingBundleIds.size}</b><span>이번 제출 업무 단위 검토 완료</span></div><button type="button" onClick={completeReview} disabled={!reviewReady || busy}>{busy ? '전송 중…' : '검토 완료 및 결과 전송'} <span>→</span></button></div>}
+        {role === 'author' && status === 'approved' && <div className="ho-resubmit approved"><div><span>✓</span><p><b>승인 완료 · 이 문서는 더 이상 수정할 수 없습니다.</b><small>{reviewedBy ? `${reviewedBy} 파트장이 ` : '파트장이 '}{bundles.length}개 담당업무 단위를 모두 승인했습니다. 이번 학년도에는 이 전년도 승인본을 바탕으로 새 초안을 만들 수 있습니다.</small></p></div><button type="button" onClick={() => { setRole('author'); setTab('write'); setApprovedDraftOpen(true); }}>이번 학년도 초안 만들기 <span>→</span></button></div>}
         {role === 'author' && status === 'rejected' && <div className="ho-resubmit"><div><span>↻</span><p><b>반려된 업무 단위만 다시 작성할 수 있습니다.</b><small>승인된 단위와 항목은 그대로 고정되며 재검토 대상에서도 제외됩니다.</small></p></div><button type="button" onClick={reopenDraft}>반려 항목 수정하기 <span>→</span></button></div>}
       </>}
     </section>}
     {draftOpen && <DraftModal onAdopt={adoptProposal} onClose={() => setDraftOpen(false)} />}
     {importOpen && <ImportModal onAdopt={(item) => adoptProposal(item, '분류된 항목을 추가했습니다.')} onClose={() => setImportOpen(false)} />}
     {archiveOpen && <ArchiveModal viewerRole={viewerRole} currentEmail={currentUser.email.toLowerCase()} onClose={() => setArchiveOpen(false)} />}
-    {annualOpen && <AnnualModal entries={status === 'rejected' ? entries.filter((entry) => !approvedEntryIds.has(entry.id)) : entries} startsNewCycle={status === 'approved'} onApply={applyAnnual} onClose={() => setAnnualOpen(false)} />}
+    {approvedDraftOpen && <ApprovedDraftModal entryCount={entries.length} bundleCount={bundles.length} reviewedAt={reviewedAt} reviewedBy={reviewedBy} canCreate={status !== 'pending'} onStart={ensureNextAcademicYearDraft} onOpen={openApprovedDraft} onClose={() => setApprovedDraftOpen(false)} />}
     {editor && <EntryEditor category={categories.find((category) => category.id === editor.category)!} entry={editor.entry} onSave={saveEntry} onClose={() => setEditor(null)} />}
     {detailBundle && detailEntry && <EntryDetailModal entry={detailEntry} bundle={detailBundle} entries={entries} onSelect={(entryId) => setDetailView({ bundleId: detailBundle.id, entryId })} onClose={() => setDetailView(null)} />}
   </main>;

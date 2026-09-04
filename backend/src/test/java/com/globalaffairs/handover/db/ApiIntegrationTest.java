@@ -293,11 +293,11 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.submittedDocuments[0].ownerName").value(MEMBER_NAME))
                 .andExpect(jsonPath("$.submittedDocuments[0].status").value("pending"));
 
-        /* Frozen while it waits: an edit now would silently outrun the review. */
+        /* An unchanged pending unit may be included in an autosave while other units are drafted. */
         mockMvc.perform(as(put("/api/handover"), memberSession)
                         .contentType(MediaType.APPLICATION_JSON).content(DOCUMENT))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.error").value("검토 중인 문서는 수정할 수 없습니다."));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.document.status").value("pending"));
 
         mockMvc.perform(as(post("/api/handover"), adminSession)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -322,7 +322,7 @@ class ApiIntegrationTest {
         mockMvc.perform(as(post("/api/handover"), memberSession)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"action\":\"submit\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.document.bundles[0].decision").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.document.bundles[0].decision").value("pending"))
                 .andExpect(jsonPath("$.document.bundles[0].comment").value(""));
 
         mockMvc.perform(as(post("/api/handover"), adminSession)
@@ -417,7 +417,7 @@ class ApiIntegrationTest {
         mockMvc.perform(as(post("/api/handover"), memberSession)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"action\":\"submit\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("담당업무 단위를 하나 이상 만들어 주세요."));
+                .andExpect(jsonPath("$.error").value("제출할 담당업무 단위를 하나 이상 선택해 주세요."));
     }
 
     @Test

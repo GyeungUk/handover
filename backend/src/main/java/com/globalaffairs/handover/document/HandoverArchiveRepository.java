@@ -11,6 +11,8 @@ public interface HandoverArchiveRepository extends JpaRepository<HandoverArchive
     /** One author's own years, most recent first. */
     List<HandoverArchive> findByOwnerEmailOrderByAcademicYearDesc(String ownerEmail);
 
+    Optional<HandoverArchive> findFirstByOwnerEmailOrderByAcademicYearDesc(String ownerEmail);
+
     /** Every author's years for the part leader: newest year first, then by name inside a year. */
     List<HandoverArchive> findAllByOrderByAcademicYearDescOwnerNameAsc();
 }

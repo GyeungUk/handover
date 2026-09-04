@@ -199,11 +199,11 @@ class DocumentServiceTest {
 
     @Test
     void refusesToSaveOverADocumentThatIsUnderReview() {
-        givenStored("pending", null, List.of());
+        givenStored("pending", null, List.of(storedBundle("b1", "검토 중 단위", "[]", "pending", "")));
 
         assertThatThrownBy(() -> service.save(OWNER, "김지현", saveOf(List.of(), List.of())))
                 .isInstanceOf(ApiException.class)
-                .hasMessage("검토 중인 문서는 수정할 수 없습니다.")
+                .hasMessage("검토 중인 담당업무 단위는 수정할 수 없습니다.")
                 .extracting(failure -> ((ApiException) failure).status())
                 .isEqualTo(HttpStatus.CONFLICT);
     }
@@ -312,10 +312,29 @@ class DocumentServiceTest {
     }
 
     @Test
+    void submitsOnlyTheUnitsTheAuthorSelected() {
+        HandoverDocument document = new HandoverDocument(OWNER, "김지현", "draft", NOW);
+        when(documents.findById(OWNER)).thenReturn(Optional.of(document));
+        when(entries.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedEntry("r1", "responsibility", "먼저 제출할 업무", "[]"),
+                new HandoverEntryRow(
+                        OWNER, "r2", 1, "plan", "계속 작성할 업무", "<p>본문</p>", "{}", "[]", "Pretendard", "16")));
+        when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
+                storedBundle("b1", "먼저 제출", "[\"r1\"]", null, ""),
+                storedBundle("b2", "나중 제출", "[\"r2\"]", null, "")));
+
+        DocumentResponse submitted = service.submit(OWNER, List.of("b1"));
+
+        assertThat(submitted.status()).isEqualTo("pending");
+        assertThat(submitted.bundles()).extracting(DocumentResponse.Bundle::decision)
+                .containsExactly("pending", null);
+    }
+
+    @Test
     void refusesToSubmitWithNothingWritten() {
         givenStored("draft", null, List.of());
 
-        assertThatThrownBy(() -> service.submit(OWNER)).hasMessage("작성된 항목이 없습니다.");
+        assertThatThrownBy(() -> service.submit(OWNER)).hasMessage("제출할 담당업무 단위를 하나 이상 선택해 주세요.");
     }
 
     @Test
@@ -336,7 +355,7 @@ class DocumentServiceTest {
         assertThat(submitted.submittedAt()).isEqualTo("2026-08-29T01:02:03.456Z");
         assertThat(submitted.reviewedAt()).isNull();
         assertThat(submitted.bundles().getFirst().decision()).isEqualTo("approved");
-        assertThat(submitted.bundles().get(1).decision()).isNull();
+        assertThat(submitted.bundles().get(1).decision()).isEqualTo("pending");
         assertThat(submitted.bundles()).allSatisfy(bundle -> assertThat(bundle.comment()).isEmpty());
     }
 
@@ -352,7 +371,7 @@ class DocumentServiceTest {
         DocumentResponse submitted = service.submit(OWNER);
 
         DocumentResponse.Bundle returned = submitted.bundles().getFirst();
-        assertThat(returned.decision()).isNull();
+        assertThat(returned.decision()).isEqualTo("pending");
         assertThat(returned.comment()).isEmpty();
         assertThat(returned.previousComment()).isEqualTo("연락처를 추가해 주세요.");
     }
@@ -366,9 +385,8 @@ class DocumentServiceTest {
         when(bundles.findByOwnerEmailOrderByPositionAsc(OWNER)).thenReturn(List.of(
                 storedBundle("b1", "승인 단위", "[\"r1\"]", "approved", "", "지난 요청")));
 
-        DocumentResponse submitted = service.submit(OWNER);
-
-        assertThat(submitted.bundles().getFirst().previousComment()).isEmpty();
+        assertThatThrownBy(() -> service.submit(OWNER))
+                .hasMessage("제출할 담당업무 단위를 하나 이상 선택해 주세요.");
     }
 
     @Test
@@ -490,7 +508,7 @@ class DocumentServiceTest {
         DocumentResponse reviewed = service.review(OWNER, "파트장", List.of(
                 new DecisionInput("b2", "approved", "")));
 
-        assertThat(reviewed.status()).isEqualTo("approved");
+        assertThat(reviewed.status()).isEqualTo("draft");
         assertThat(reviewed.bundles()).extracting(DocumentResponse.Bundle::decision)
                 .containsExactly("approved", "approved");
     }

@@ -3111,6 +3111,9 @@ small, .caption { font-size: var(--t-caption); }
 .ho-bundle-counts span, .ho-review-card-head > div:nth-child(3) span { min-width: 30px; padding: 4px 7px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-3); font-size: 13px; }
 .ho-bundle-counts i, .ho-review-card-head > div:nth-child(3) i { width: 5px; height: 5px; border-radius: 50%; background: var(--category); }
 .ho-bundle-head > button { width: 66px; color: var(--ink-2); font-size: 13px; }
+.ho-submit-select { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #c8d7e5; border-radius: 999px; color: #315c82; background: #f4f8fc; font-size: 12px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.ho-submit-select input { width: 14px; height: 14px; accent-color: var(--ho-blue); cursor: pointer; }
+.ho-pending-badge { padding: 5px 8px; border-radius: 999px; background: #edf3f9; color: #426a90; font-size: 12px; white-space: nowrap; }
 .ho-bundle-head > button span { display: inline-block; margin-left: 5px; transition: transform .15s; }
 .ho-bundle.expanded .ho-bundle-head > button span { transform: rotate(180deg); }
 .ho-bundle-body { padding: 16px 18px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; border-top: 1px solid var(--line); background: #fafbfb; }
@@ -4485,7 +4488,7 @@ small, .caption { font-size: var(--t-caption); }
 }
 
 /* ==========================================================================
-   Handover — AI first-draft helpers (upload · calendar · annual update)
+   Handover — first-draft helpers (upload · calendar · approved document)
    ========================================================================== */
 .ho-ai-panel {
   margin-bottom: var(--s-5);
@@ -4573,6 +4576,26 @@ small, .caption { font-size: var(--t-caption); }
   transition: background .3s var(--ease-out), color .3s var(--ease-out);
 }
 .ho-ai-cards > button:hover:not(:disabled) .ho-ai-icon { background: var(--blue-700); color: #fff; }
+
+.ho-approved-draft-source { padding: 18px; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--blue-100); border-radius: var(--r-lg); background: var(--blue-50); }
+.ho-approved-draft-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: var(--blue-700); color: #fff; font-weight: 800; }
+.ho-approved-draft-source b { display: block; font-size: 15px; }
+.ho-approved-draft-source p { margin: 4px 0 0; color: var(--ink-2); font-size: 13px; }
+.ho-approved-draft-source dl { margin: 0; display: flex; gap: 16px; }
+.ho-approved-draft-source dl div { display: grid; gap: 2px; text-align: right; }
+.ho-approved-draft-source dt { color: var(--ink-3); font-size: 11px; }
+.ho-approved-draft-source dd { margin: 0; color: var(--ink); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ho-approved-draft-note { margin: 14px 0 0; padding: 0 2px; color: var(--ink-2); font-size: 13px; line-height: 1.65; }
+.ho-approved-draft-note span { margin-right: 4px; color: var(--blue-700); }
+.ho-approved-draft-list { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 18px; }
+.ho-approved-draft-list h3 { margin: 0 0 9px; font-size: 14px; }
+.ho-approved-draft-list button { width: 100%; padding: 12px 2px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); text-align: left; }
+.ho-approved-draft-list button:first-of-type { border-top: 0; }
+.ho-approved-draft-list button:disabled { cursor: default; opacity: .58; }
+.ho-approved-draft-list span { display: grid; gap: 3px; }
+.ho-approved-draft-list b { font-size: 13px; }
+.ho-approved-draft-list small { color: var(--ink-2); font-size: 12px; }
+.ho-approved-draft-list em { color: var(--blue-700); font-size: 12px; font-style: normal; font-weight: 700; }
 
 /* both AI modals reuse the draft shell, so give it a default accent to paint against */
 .ho-draft-modal { --category: var(--navy); --category-soft: #eef2f7; }

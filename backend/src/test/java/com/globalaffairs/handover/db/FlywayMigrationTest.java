@@ -77,7 +77,8 @@ class FlywayMigrationTest {
                 "V4__accounts.sql", "V5__org_management.sql", "V6__task_checklists.sql",
                 "V7__account_onboarding_members.sql", "V8__custom_tasks.sql",
                 "V9__removed_tasks.sql", "V10__task_dates.sql", "V11__task_periods.sql",
-                "V12__bundle_previous_comment.sql", "V13__handover_archives.sql");
+                "V12__bundle_previous_comment.sql", "V13__handover_archives.sql",
+                "V14__bundle_pending_state.sql", "V15__handover_draft_copies.sql");
     }
 
     @Test

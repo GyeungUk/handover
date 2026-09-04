@@ -132,6 +132,13 @@ public class DocumentArchiveService {
                 .orElse(null);
     }
 
+    @Transactional(readOnly = true)
+    public ArchivedDocument latest(String ownerEmail) {
+        return archives.findFirstByOwnerEmailOrderByAcademicYearDesc(ownerEmail)
+                .map(archive -> new ArchivedDocument(summarise(archive), fromJson(archive.getDocument())))
+                .orElse(null);
+    }
+
     private ArchiveSummary summarise(HandoverArchive archive) {
         return new ArchiveSummary(
                 archive.getOwnerEmail(),

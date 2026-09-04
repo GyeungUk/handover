@@ -40,6 +40,9 @@ public class HandoverDocument {
     @Column(name = "reviewed_by")
     private String reviewedBy;
 
+    @Column(name = "active_draft_id")
+    private String activeDraftId;
+
     /** Prevents a slow save in another tab from silently overwriting a newer whole-document save. */
     @Version
     @Column(nullable = false)
@@ -107,4 +110,7 @@ public class HandoverDocument {
     public void setReviewedBy(String reviewedBy) {
         this.reviewedBy = reviewedBy;
     }
+
+    public String getActiveDraftId() { return activeDraftId; }
+    public void setActiveDraftId(String activeDraftId) { this.activeDraftId = activeDraftId; }
 }

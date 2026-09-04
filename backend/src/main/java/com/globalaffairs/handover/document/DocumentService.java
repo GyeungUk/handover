@@ -80,7 +80,7 @@ public class DocumentService {
         return schema.documentLimits();
     }
 
-    /** A document is editable only before it is submitted, or after it comes back rejected. */
+    /** A final, fully approved document is closed. Individual submitted units are locked separately. */
     static boolean isEditableStatus(String status) {
         return DRAFT.equals(status) || REJECTED.equals(status);
     }
@@ -130,52 +130,70 @@ public class DocumentService {
             String reviewedBy) {}
 
     /**
-     * Replaces the working document. A submitted document is frozen until the reviewer sends it
-     * back, so this refuses rather than silently dropping the edit.
+     * Replaces the working document. Draft and returned units remain editable while other units
+     * are with the reviewer, but pending and approved units themselves are immutable.
      */
     @Transactional
     public DocumentResponse save(String ownerEmail, String ownerName, DocumentRequests.SaveRequest request) {
         Optional<HandoverDocument> existing = documents.findById(ownerEmail);
-        existing.ifPresent(document -> {
-            if (!isEditableStatus(document.getStatus())) {
-                throw ApiException.conflict(PENDING.equals(document.getStatus())
-                        ? "검토 중인 문서는 수정할 수 없습니다."
-                        : "승인된 문서는 수정할 수 없습니다.");
-            }
-        });
+        existing.filter(document -> APPROVED.equals(document.getStatus())).ifPresent(document ->
+                { throw ApiException.conflict("승인된 문서는 수정할 수 없습니다."); });
 
         DocumentRequests.SaveRequest body =
                 request == null ? new DocumentRequests.SaveRequest(null, null) : request;
         List<DocumentResponse.Entry> parsedEntries = parseEntries(body.entries());
         List<DocumentResponse.Bundle> parsedBundles = parseBundles(body.bundles(), parsedEntries);
-        if (existing.filter(document -> REJECTED.equals(document.getStatus())).isPresent()) {
+        if (existing.isPresent()) {
             List<DocumentResponse.Entry> storedEntries = readEntries(ownerEmail);
             List<DocumentResponse.Bundle> storedBundles = readBundles(ownerEmail);
-            requireApprovedContentUnchanged(parsedEntries, parsedBundles, storedEntries, storedBundles);
+            requireLockedContentUnchanged(parsedEntries, parsedBundles, storedEntries, storedBundles);
             parsedBundles = preserveReview(parsedBundles, storedBundles);
         }
 
         HandoverDocument document = existing.orElseGet(
                 () -> new HandoverDocument(ownerEmail, ownerName, DRAFT, Instant.now(clock)));
+        document.setStatus(statusOf(parsedEntries, parsedBundles));
         document.setUpdatedAt(Instant.now(clock));
         return write(document, parsedEntries, parsedBundles);
     }
 
-    /** The author hands the document to their part leader. */
+    /** Replaces the live editor with a separately stored working copy. */
     @Transactional
-    public DocumentResponse submit(String ownerEmail) {
+    public DocumentResponse replaceWithDraft(String ownerEmail, String ownerName, DocumentRequests.SaveRequest request) {
         HandoverDocument document = documents.findById(ownerEmail)
                 .orElseThrow(() -> ApiException.notFound("저장된 인수인계서가 없습니다."));
-        if (!isEditableStatus(document.getStatus())) {
-            throw ApiException.conflict("이미 제출된 문서입니다.");
+        DocumentRequests.SaveRequest body = request == null ? new DocumentRequests.SaveRequest(null, null) : request;
+        List<DocumentResponse.Entry> parsedEntries = parseEntries(body.entries());
+        List<DocumentResponse.Bundle> parsedBundles = parseBundles(body.bundles(), parsedEntries).stream()
+                .map(bundle -> new DocumentResponse.Bundle(bundle.id(), bundle.title(), bundle.entryIds(), null, "", ""))
+                .toList();
+        document.setOwnerName(ownerName);
+        document.setStatus(DRAFT);
+        document.setUpdatedAt(Instant.now(clock));
+        document.setSubmittedAt(null);
+        document.setReviewedAt(null);
+        document.setReviewedBy(null);
+        return write(document, parsedEntries, parsedBundles);
+    }
+
+    /** The author hands the selected ready units to their part leader. */
+    @Transactional
+    public DocumentResponse submit(String ownerEmail, List<String> bundleIds) {
+        HandoverDocument document = documents.findById(ownerEmail)
+                .orElseThrow(() -> ApiException.notFound("저장된 인수인계서가 없습니다."));
+        if (APPROVED.equals(document.getStatus())) {
+            throw ApiException.conflict("승인된 문서는 다시 제출할 수 없습니다.");
         }
 
         List<DocumentResponse.Entry> storedEntries = readEntries(ownerEmail);
         List<DocumentResponse.Bundle> storedBundles = readBundles(ownerEmail);
-        requireSubmittable(storedEntries, storedBundles);
+        Set<String> selectedIds = selectedBundleIds(bundleIds, storedBundles);
+        List<DocumentResponse.Bundle> selected = storedBundles.stream()
+                .filter(bundle -> selectedIds.contains(bundle.id()))
+                .toList();
+        requireSubmittable(selected);
 
         Instant now = Instant.now(clock);
-        document.setStatus(PENDING);
         document.setUpdatedAt(now);
         document.setSubmittedAt(now);
         document.setReviewedAt(null);
@@ -183,18 +201,34 @@ public class DocumentService {
         /* Approved units survive a correction round; only returned units go back to review, and the
          * rejection they are answering moves aside so the reviewer can still read it. */
         List<DocumentResponse.Bundle> cleared = storedBundles.stream()
-                .map(bundle -> APPROVED.equals(bundle.decision())
+                .map(bundle -> selectedIds.contains(bundle.id())
                         ? new DocumentResponse.Bundle(
-                                bundle.id(), bundle.title(), bundle.entryIds(), APPROVED, "", "")
-                        : new DocumentResponse.Bundle(
                                 bundle.id(),
                                 bundle.title(),
                                 bundle.entryIds(),
-                                null,
+                                PENDING,
                                 "",
-                                REJECTED.equals(bundle.decision()) ? bundle.comment() : bundle.previousComment()))
+                                REJECTED.equals(bundle.decision()) ? bundle.comment() : bundle.previousComment())
+                        : bundle)
                 .toList();
+        document.setStatus(statusOf(storedEntries, cleared));
         return write(document, storedEntries, cleared);
+    }
+
+    /** Compatibility helper for in-process callers: submit every unit that is still editable. */
+    @Transactional
+    public DocumentResponse submit(String ownerEmail) {
+        Optional<HandoverDocument> document = documents.findById(ownerEmail);
+        if (document.isPresent() && PENDING.equals(document.get().getStatus())
+                && readBundles(ownerEmail).stream()
+                        .noneMatch(bundle -> !PENDING.equals(bundle.decision()) && !APPROVED.equals(bundle.decision()))) {
+            throw ApiException.conflict("이미 제출된 문서입니다.");
+        }
+        List<String> allOpenBundleIds = readBundles(ownerEmail).stream()
+                .filter(bundle -> !PENDING.equals(bundle.decision()) && !APPROVED.equals(bundle.decision()))
+                .map(DocumentResponse.Bundle::id)
+                .toList();
+        return submit(ownerEmail, allOpenBundleIds);
     }
 
     /** Turns an approved document into the editable base for the next academic year. */
@@ -236,19 +270,33 @@ public class DocumentService {
 
         Map<String, DecisionInput> verdicts = parseDecisions(decisions);
         List<DocumentResponse.Bundle> storedBundles = readBundles(ownerEmail);
+        /* V14 promotes previously submitted rows (whose pending state used to be represented by
+         * null) during migration. Keep this guard for a rolling deployment where the application
+         * reaches a row before that data migration has run. */
+        if (storedBundles.stream().noneMatch(bundle -> PENDING.equals(bundle.decision()))) {
+            storedBundles = storedBundles.stream()
+                    .map(bundle -> bundle.decision() == null
+                            ? new DocumentResponse.Bundle(
+                                    bundle.id(), bundle.title(), bundle.entryIds(), PENDING,
+                                    bundle.comment(), bundle.previousComment())
+                            : bundle)
+                    .toList();
+        }
         Set<String> expectedBundleIds = storedBundles.stream()
-                .filter(bundle -> !APPROVED.equals(bundle.decision()))
+                .filter(bundle -> PENDING.equals(bundle.decision()))
                 .map(DocumentResponse.Bundle::id)
                 .collect(Collectors.toSet());
 
-        /* Older clients may echo an already-approved verdict. Accept that harmless echo, but never
-         * let a later review overturn the approval. */
+        /* Older clients may echo a settled verdict. It is harmless, but no later review may
+         * overturn an approval or decide a unit that was not submitted in this round. */
         storedBundles.stream()
-                .filter(bundle -> APPROVED.equals(bundle.decision()))
+                .filter(bundle -> !PENDING.equals(bundle.decision()))
                 .forEach(bundle -> {
                     DecisionInput repeated = verdicts.remove(bundle.id());
-                    if (repeated != null && !APPROVED.equals(repeated.decision())) {
-                        throw ApiException.conflict("이미 승인된 담당업무 단위는 검토 결과를 변경할 수 없습니다.");
+                    if (repeated != null) {
+                        throw ApiException.conflict(APPROVED.equals(bundle.decision())
+                                ? "이미 승인된 담당업무 단위는 검토 결과를 변경할 수 없습니다."
+                                : "이번에 제출된 담당업무 단위만 검토할 수 있습니다.");
                     }
                 });
         if (!verdicts.keySet().equals(expectedBundleIds)) {
@@ -257,7 +305,7 @@ public class DocumentService {
 
         List<DocumentResponse.Bundle> reviewed = storedBundles.stream()
                 .map(bundle -> {
-                    if (APPROVED.equals(bundle.decision())) {
+                    if (!PENDING.equals(bundle.decision())) {
                         return bundle;
                     }
                     DecisionInput verdict = verdicts.get(bundle.id());
@@ -269,8 +317,7 @@ public class DocumentService {
                 .toList();
 
         Instant now = Instant.now(clock);
-        document.setStatus(
-                reviewed.stream().anyMatch(bundle -> REJECTED.equals(bundle.decision())) ? REJECTED : APPROVED);
+        document.setStatus(statusOf(readEntries(ownerEmail), reviewed));
         document.setUpdatedAt(now);
         document.setReviewedAt(now);
         document.setReviewedBy(reviewerName);
@@ -335,7 +382,7 @@ public class DocumentService {
                 .toList();
     }
 
-    /** A correction save keeps the previous verdict visible; resubmission clears it explicitly. */
+    /** A working save never changes a unit's workflow state; submit/review own those transitions. */
     private static List<DocumentResponse.Bundle> preserveReview(
             List<DocumentResponse.Bundle> incoming, List<DocumentResponse.Bundle> stored) {
         Map<String, DocumentResponse.Bundle> previous = stored.stream()
@@ -356,8 +403,8 @@ public class DocumentService {
                 .toList();
     }
 
-    /** A returned document may change only the units the reviewer rejected. */
-    private static void requireApprovedContentUnchanged(
+    /** Units with a reviewer or an approval must remain a stable snapshot. */
+    private static void requireLockedContentUnchanged(
             List<DocumentResponse.Entry> incomingEntries,
             List<DocumentResponse.Bundle> incomingBundles,
             List<DocumentResponse.Entry> storedEntries,
@@ -370,18 +417,22 @@ public class DocumentService {
                 .collect(Collectors.toMap(DocumentResponse.Bundle::id, bundle -> bundle));
 
         for (DocumentResponse.Bundle approved : storedBundles) {
-            if (!APPROVED.equals(approved.decision())) {
+            if (!APPROVED.equals(approved.decision()) && !PENDING.equals(approved.decision())) {
                 continue;
             }
             DocumentResponse.Bundle incoming = incomingBundleById.get(approved.id());
             if (incoming == null
                     || !approved.title().equals(incoming.title())
                     || !approved.entryIds().equals(incoming.entryIds())) {
-                throw ApiException.conflict("승인된 담당업무 단위는 수정할 수 없습니다.");
+                throw ApiException.conflict(APPROVED.equals(approved.decision())
+                        ? "승인된 담당업무 단위는 수정할 수 없습니다."
+                        : "검토 중인 담당업무 단위는 수정할 수 없습니다.");
             }
             for (String entryId : approved.entryIds()) {
                 if (!storedEntryById.get(entryId).equals(incomingEntryById.get(entryId))) {
-                    throw ApiException.conflict("승인된 담당업무 단위의 항목은 수정할 수 없습니다.");
+                    throw ApiException.conflict(APPROVED.equals(approved.decision())
+                            ? "승인된 담당업무 단위의 항목은 수정할 수 없습니다."
+                            : "검토 중인 담당업무 단위의 항목은 수정할 수 없습니다.");
                 }
             }
         }
@@ -579,26 +630,62 @@ public class DocumentService {
         return parsed;
     }
 
-    private void requireSubmittable(
-            List<DocumentResponse.Entry> entryList, List<DocumentResponse.Bundle> bundleList) {
-        if (entryList.isEmpty()) {
-            throw ApiException.badRequest("작성된 항목이 없습니다.");
-        }
-        if (bundleList.isEmpty()) {
-            throw ApiException.badRequest("담당업무 단위를 하나 이상 만들어 주세요.");
-        }
+    private void requireSubmittable(List<DocumentResponse.Bundle> bundleList) {
         if (bundleList.stream().anyMatch(bundle -> bundle.title().isBlank())) {
             throw ApiException.badRequest("이름이 비어 있는 담당업무 단위가 있습니다.");
         }
         if (bundleList.stream().anyMatch(bundle -> bundle.entryIds().isEmpty())) {
             throw ApiException.badRequest("항목이 없는 담당업무 단위가 있습니다.");
         }
+    }
+
+    private static Set<String> selectedBundleIds(
+            List<String> requestedIds, List<DocumentResponse.Bundle> storedBundles) {
+        if (requestedIds == null || requestedIds.isEmpty()) {
+            throw ApiException.badRequest("제출할 담당업무 단위를 하나 이상 선택해 주세요.");
+        }
+        Set<String> selected = new LinkedHashSet<>();
+        Set<String> known = storedBundles.stream().map(DocumentResponse.Bundle::id).collect(Collectors.toSet());
+        for (String raw : requestedIds) {
+            String id = text(raw, "제출 업무 단위 id", MAX_ID, true);
+            if (!known.contains(id)) {
+                throw ApiException.badRequest("존재하지 않는 담당업무 단위를 제출할 수 없습니다.");
+            }
+            if (!selected.add(id)) {
+                throw ApiException.badRequest("같은 담당업무 단위를 중복 제출할 수 없습니다.");
+            }
+        }
+        Map<String, DocumentResponse.Bundle> byId = storedBundles.stream()
+                .collect(Collectors.toMap(DocumentResponse.Bundle::id, bundle -> bundle));
+        for (String id : selected) {
+            String state = byId.get(id).decision();
+            if (PENDING.equals(state)) {
+                throw ApiException.conflict("이미 검토 중인 담당업무 단위가 포함되어 있습니다.");
+            }
+            if (APPROVED.equals(state)) {
+                throw ApiException.conflict("승인된 담당업무 단위는 다시 제출할 수 없습니다.");
+            }
+        }
+        return selected;
+    }
+
+    /** The document row remains a summary for queues; a unit's state is the source of truth. */
+    private static String statusOf(
+            List<DocumentResponse.Entry> entryList, List<DocumentResponse.Bundle> bundleList) {
+        if (bundleList.stream().anyMatch(bundle -> PENDING.equals(bundle.decision()))) {
+            return PENDING;
+        }
+        if (bundleList.stream().anyMatch(bundle -> REJECTED.equals(bundle.decision()))) {
+            return REJECTED;
+        }
         Set<String> assigned = bundleList.stream()
                 .flatMap(bundle -> bundle.entryIds().stream())
                 .collect(Collectors.toSet());
-        if (entryList.stream().anyMatch(entry -> !assigned.contains(entry.id()))) {
-            throw ApiException.badRequest("모든 항목을 담당업무 단위에 배치해야 제출할 수 있습니다.");
-        }
+        boolean allEntriesApproved = !entryList.isEmpty()
+                && !bundleList.isEmpty()
+                && entryList.stream().allMatch(entry -> assigned.contains(entry.id()))
+                && bundleList.stream().allMatch(bundle -> APPROVED.equals(bundle.decision()));
+        return allEntriesApproved ? APPROVED : DRAFT;
     }
 
     private Map<String, DecisionInput> parseDecisions(List<DecisionInput> decisions) {

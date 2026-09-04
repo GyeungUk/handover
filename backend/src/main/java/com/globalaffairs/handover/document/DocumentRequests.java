@@ -42,5 +42,6 @@ public final class DocumentRequests {
 
     /** {@code POST /api/handover} — a workflow transition. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ActionRequest(String action, String ownerEmail, List<DecisionInput> decisions) {}
+    public record ActionRequest(
+            String action, String ownerEmail, List<DecisionInput> decisions, List<String> bundleIds) {}
 }

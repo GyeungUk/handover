@@ -6,7 +6,7 @@ import { acceptedImportTypes, extractText, supportedNote } from '../../file-text
 import { categories } from '../categories';
 import { Button, Modal } from '../../ui';
 
-export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: ImportItem) => void; onClose: () => void }) {
+export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: ImportItem) => void | Promise<void>; onClose: () => void }) {
   const [source, setSource] = useState('');
   const [fileName, setFileName] = useState('');
   const [reading, setReading] = useState(false);
@@ -14,6 +14,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const [error, setError] = useState('');
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [adopted, setAdopted] = useState<string[]>([]);
+  const [adopting, setAdopting] = useState('');
   /* The author's own correction of a section the model chose, kept until the modal closes. */
   const [moved, setMoved] = useState<Record<string, HandoverCategory>>({});
   const [dropActive, setDropActive] = useState(false);
@@ -85,15 +86,31 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
     }
   };
 
-  const adopt = (item: ImportItem) => {
-    onAdopt(filed(item));
-    setAdopted((current) => [...current, item.id]);
+  const adopt = async (item: ImportItem) => {
+    setAdopting(item.id);
+    setError('');
+    try {
+      await onAdopt(filed(item));
+      setAdopted((current) => current.includes(item.id) ? current : [...current, item.id]);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '분류된 항목을 추가하지 못했습니다.');
+    } finally {
+      setAdopting('');
+    }
   };
 
-  const adoptAll = () => {
+  const adoptAll = async () => {
     if (!result) return;
-    result.items.filter((item) => !adopted.includes(item.id)).forEach((item) => onAdopt(filed(item)));
-    setAdopted(result.items.map((item) => item.id));
+    setAdopting('all');
+    setError('');
+    try {
+      for (const item of result.items.filter((item) => !adopted.includes(item.id))) await onAdopt(filed(item));
+      setAdopted(result.items.map((item) => item.id));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '분류된 항목을 추가하지 못했습니다.');
+    } finally {
+      setAdopting('');
+    }
   };
 
   const remaining = result ? result.items.filter((item) => !adopted.includes(item.id)).length : 0;
@@ -103,14 +120,14 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
     onClose={onClose}
     width="lg"
     className="ho-draft-modal"
-    dismissable={!loading && !reading}
+    dismissable={!loading && !reading && !adopting}
     title="기존 자료 불러오기"
-    description="예전에 쓰던 인수인계 문서를 올리면 담당업무·계획·현안·미결 네 개 섹션으로 나누어 초안을 제안합니다. 섹션은 채택 전에 카드에서 바꿀 수 있고, 채택하기 전까지 아무것도 저장되지 않습니다."
+    description="예전에 쓰던 인수인계 문서를 올리면 담당업무·계획·현안·미결 네 개 섹션으로 나누어 초안을 제안합니다. 채택한 카드도 남아 있어, 분류를 바꾸거나 같은 내용을 다시 항목으로 추가해 계속 활용할 수 있습니다."
     footer={<>
       <p className="ho-modal-note"><span aria-hidden="true">ⓘ</span> 원문에 없는 내용은 만들지 않습니다. 비어 있는 부분은 ‘확인이 필요한 내용’ 질문으로 남습니다.</p>
       <span className="spacer" />
-      <Button onClick={onClose}>닫기</Button>
-      <Button variant="primary" onClick={adoptAll} disabled={!result || remaining === 0}>남은 {remaining}건 모두 채택</Button>
+      <Button onClick={onClose} disabled={Boolean(adopting)}>닫기</Button>
+      <Button variant="primary" onClick={() => void adoptAll()} disabled={!result || remaining === 0 || Boolean(adopting)}>{adopting === 'all' ? '추가하는 중…' : `남은 ${remaining}건 모두 채택`}</Button>
     </>}
   >
 
@@ -152,11 +169,11 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
         <div className="ho-draft-list">{result.items.map((item) => {
           const meta = categories.find((category) => category.id === sectionOf(item))!;
           const isAdopted = adopted.includes(item.id);
-          return <article className={`ho-draft-card ${isAdopted ? 'is-adopted' : ''}`} key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
+          return <article className="ho-draft-card" key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
             <div className="ho-draft-card-head">
               <label className="ho-draft-chip ho-import-section">
                 <i /><span className="sr-only">섹션</span>
-                <select value={sectionOf(item)} disabled={isAdopted}
+                <select value={sectionOf(item)}
                   onChange={(event) => setMoved((current) => ({ ...current, [item.id]: event.target.value as HandoverCategory }))}>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.short}</option>)}
                 </select>
@@ -169,7 +186,8 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
             <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />
             {item.sourceQuote && <p className="ho-import-quote"><span>원문</span>“{item.sourceQuote}”</p>}
             <div className="ho-draft-card-actions">
-              {isAdopted ? <span className="ho-draft-done">✓ 항목으로 추가됨</span> : <button type="button" onClick={() => adopt(item)}>이 항목 채택</button>}
+              {isAdopted && <span className="ho-draft-done">✓ 추가됨 · 다시 추가 가능</span>}
+              <button type="button" onClick={() => void adopt(item)} disabled={Boolean(adopting)}>{adopting === item.id ? '추가하는 중…' : isAdopted ? '이 항목 다시 추가' : '이 항목 채택'}</button>
             </div>
           </article>;
         })}</div>

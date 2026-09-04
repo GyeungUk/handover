@@ -150,6 +150,8 @@ export type AnnualResponse = {
 
 export type WorkflowStatus = 'draft' | 'pending' | 'rejected' | 'approved';
 export type ReviewDecision = 'approved' | 'rejected';
+/** `pending` belongs to an individual unit; the document status is only a queue summary. */
+export type BundleState = 'pending' | ReviewDecision;
 
 export const workflowStatuses: WorkflowStatus[] = ['draft', 'pending', 'rejected', 'approved'];
 
@@ -180,16 +182,17 @@ export type HandoverEntry = {
 /**
  * A group of entries reviewed and approved as one unit.
  *
+ * `decision` is null while drafting, `pending` while the reviewer has it, then the final verdict.
  * `comment` is the verdict standing on it now; `previousComment` is the rejection a resubmitted
- * unit is answering. Submitting clears the verdict so the unit can be judged afresh, and without
- * the second field the reviewer would re-read a correction with no record of what they asked for.
+ * unit is answering. Without the second field the reviewer would re-read a correction with no
+ * record of what they asked for.
  * Both are set only by the server: a save never sends them.
  */
 export type WorkBundle = {
   id: string;
   title: string;
   entryIds: string[];
-  decision: ReviewDecision | null;
+  decision: BundleState | null;
   comment: string;
   previousComment: string;
 };

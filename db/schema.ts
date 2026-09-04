@@ -177,7 +177,7 @@ export const createHandoverBundlesTable = `
     PRIMARY KEY (owner_email, bundle_id),
     UNIQUE (owner_email, position),
     CHECK (position >= 0),
-    CHECK (decision IS NULL OR decision IN ('approved', 'rejected')),
+    CHECK (decision IS NULL OR decision IN ('pending', 'approved', 'rejected')),
     FOREIGN KEY (owner_email) REFERENCES handover_documents(owner_email) ON DELETE CASCADE
   )
 `;
