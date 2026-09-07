@@ -136,7 +136,7 @@ public class ImportService {
                 skip(skipped, SKIPPED_UNGROUNDED);
                 continue;
             }
-            if (!usedQuotes.add(quote)) {
+            if (usedQuotes.contains(quote)) {
                 skip(skipped, SKIPPED_REUSED_QUOTE);
                 continue;
             }
@@ -152,7 +152,6 @@ public class ImportService {
                 skip(skipped, SKIPPED_REPEATED_TITLE);
                 continue;
             }
-            sectionTitles.add(title);
             Map<String, String> properties = support.cleanImportProperties(
                     category, ModelJson.propertyPairs(item.path("properties")), source, IMPORT_PROPERTY_KEYS::contains);
             String prose = title + " " + String.join(" ", paragraphs) + " "
@@ -174,6 +173,10 @@ public class ImportService {
                 continue;
             }
 
+            /* Only accepted items claim evidence and titles. An invalid proposal must not hide
+               a later, valid account of the same fact, including at a chunk boundary. */
+            usedQuotes.add(quote);
+            sectionTitles.add(title);
             items.add(new ImportResponse.ImportItem(
                     "import-" + items.size(),
                     category,

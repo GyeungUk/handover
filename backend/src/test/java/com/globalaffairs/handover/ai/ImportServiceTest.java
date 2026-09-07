@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.globalaffairs.handover.ai.dto.ImportResponse;
 import com.globalaffairs.handover.domain.AcademicCalendar;
@@ -246,6 +247,115 @@ class ImportServiceTest {
         assertThat(response.items()).extracting(ImportResponse.ImportItem::category)
                 .containsExactly("responsibility", "plan");
         assertThat(response.skipped()).isEmpty();
+    }
+
+    @Test
+    void rejectedProposalDoesNotConsumeEvidenceNeededByAValidProposal() {
+        modelAnswers("""
+                {"items":[
+                  {"category":"plan","title":"접수 추진 일정","paragraphs":["999명을 접수합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"9월 중 단체 접수를 신청할 예정입니다","confidence":"high"},
+                  {"category":"plan","title":"접수 추진 일정","paragraphs":["[대상·일정] 단체접수 신청은 9월 중 진행할 예정입니다."],
+                   "properties":[],"questions":[],"sourceQuote":"9월 중 단체 접수를 신청할 예정입니다","confidence":"high"}
+                ],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(SOURCE, "a.txt");
+
+        assertThat(response.items()).extracting(ImportResponse.ImportItem::title).containsExactly("접수 추진 일정");
+        assertThat(response.skipped()).containsExactly(new ImportResponse.Skipped("원문에 없는 숫자가 들어간 항목", 1));
+    }
+
+    @Test
+    void rejectedProposalDoesNotReserveATitleWhenTheValidProposalUsesAnotherQuote() {
+        modelAnswers("""
+                {"items":[
+                  {"category":"plan","title":"체류기간 연장 단체접수 진행","paragraphs":["999명을 접수합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"2학기 체류기간 연장 단체접수","confidence":"high"},
+                  {"category":"plan","title":"체류기간 연장 단체접수 일정","paragraphs":["[대상·일정] 단체접수 신청은 9월 중 진행할 예정입니다."],
+                   "properties":[],"questions":[],"sourceQuote":"9월 중 단체 접수를 신청할 예정입니다","confidence":"high"}
+                ],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(SOURCE, "a.txt");
+
+        assertThat(response.items()).extracting(ImportResponse.ImportItem::title)
+                .containsExactly("체류기간 연장 단체접수 일정");
+        assertThat(response.skipped()).containsExactly(new ImportResponse.Skipped("원문에 없는 숫자가 들어간 항목", 1));
+    }
+
+    @Test
+    void preservesFourDistinctFactsAboutTheSameWorkAcrossAllSections() {
+        String source = """
+                교환학생 선발 기준을 매 학기 안내한다.
+                이번 교환학생 선발 면접은 9월 중 진행한다.
+                교환학생 선발시스템 저장 오류가 반복 발생한다.
+                교환학생 선발 추가합격 승인은 결재 보류 중이다.
+                """;
+        modelAnswers("""
+                {"items":[
+                  {"category":"responsibility","title":"교환학생 선발 기준 안내","paragraphs":["[처리 절차] 학기마다 선발 기준을 안내합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"교환학생 선발 기준을 매 학기 안내한다","confidence":"high"},
+                  {"category":"plan","title":"교환학생 선발 면접 일정","paragraphs":["[대상·일정] 이번 면접은 9월에 진행합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"이번 교환학생 선발 면접은 9월 중 진행한다","confidence":"high"},
+                  {"category":"issue","title":"교환학생 선발 저장 오류","paragraphs":["[현재 상태] 선발시스템의 저장 오류가 되풀이되고 있습니다."],
+                   "properties":[],"questions":[],"sourceQuote":"교환학생 선발시스템 저장 오류가 반복 발생한다","confidence":"high"},
+                  {"category":"pending","title":"교환학생 선발 승인 보류","paragraphs":["[현재 상태] 추가합격을 승인하는 결재가 보류되어 있습니다."],
+                   "properties":[],"questions":[],"sourceQuote":"교환학생 선발 추가합격 승인은 결재 보류 중이다","confidence":"high"}
+                ],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(source, "a.txt");
+
+        assertThat(response.items()).extracting(ImportResponse.ImportItem::category)
+                .containsExactly("responsibility", "plan", "issue", "pending");
+        assertThat(response.skipped()).isEmpty();
+    }
+
+    /** Replay real model answers through all production filters; never spends API credits in tests. */
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "IMPORT_EVAL_REPORT", matches = ".+")
+    void recordedEvaluationAnswersRetainEveryExpectedFactAfterServiceFiltering() throws Exception {
+        var fixtures = new java.util.ArrayList<JsonNode>();
+        for (String name : java.util.List.of("classification.json", "advanced-classification.json")) {
+            objectMapper.readTree(java.nio.file.Path.of("tools/fixtures/import", name).toFile()).forEach(fixtures::add);
+        }
+        JsonNode reports = objectMapper.readTree(java.nio.file.Path.of(System.getenv("IMPORT_EVAL_REPORT")).toFile());
+        assertThat(reports.size()).isEqualTo(fixtures.size());
+        for (JsonNode fixture : fixtures) {
+            JsonNode report = reports.valueStream()
+                    .filter(candidate -> candidate.path("id").equals(fixture.path("id"))).findFirst().orElseThrow();
+            modelAnswers(report.path("answer").toString());
+            ImportResponse response = service.classify(fixture.path("source").asText(), fixture.path("id").asText());
+            assertThat(response.skipped()).as("%s: accepted facts", fixture.path("id")).isEmpty();
+            assertThat(response.items()).hasSize(fixture.path("expected").size());
+            var matchedIds = new java.util.HashSet<String>();
+            for (JsonNode expected : fixture.path("expected")) {
+                var pattern = java.util.regex.Pattern.compile(expected.path("match").asText());
+                var matches = response.items().stream()
+                        .filter(item -> pattern.matcher(item.title() + " " + item.detail()).find()).toList();
+                assertThat(matches)
+                        .as("%s / %s", fixture.path("id"), expected.path("id"))
+                        .singleElement().extracting(ImportResponse.ImportItem::category)
+                        .isEqualTo(expected.path("category").asText());
+                var item = matches.get(0);
+                assertThat(matchedIds.add(item.id())).as("independent facts must not share one item").isTrue();
+                if (expected.has("confidence")) {
+                    assertThat(item.confidence()).isEqualTo(expected.path("confidence").asText());
+                }
+                String prose = item.title() + " " + item.detail().replaceAll("<[^>]+>", " ");
+                for (JsonNode required : expected.path("contentMustMatch")) {
+                    assertThat(java.util.regex.Pattern.compile(required.asText()).matcher(prose).find())
+                            .as("%s: required fact %s", expected.path("id"), required).isTrue();
+                }
+                for (JsonNode forbidden : expected.path("contentMustNotMatch")) {
+                    assertThat(java.util.regex.Pattern.compile(forbidden.asText()).matcher(prose).find())
+                            .as("%s: incorrect fact %s", expected.path("id"), forbidden).isFalse();
+                }
+            }
+            for (JsonNode required : fixture.path("unmappedMatch")) {
+                assertThat(java.util.regex.Pattern.compile(required.asText())
+                        .matcher(String.join(" ", response.unmapped())).find())
+                        .as("%s: unclassifiable source %s", fixture.path("id"), required).isTrue();
+            }
+        }
     }
 
     @Test

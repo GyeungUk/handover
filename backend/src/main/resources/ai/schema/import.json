@@ -6,9 +6,10 @@
       "items": {
         "type": "object",
         "properties": {
-          "category": { "type": "string", "$enumFrom": "categories" },
-          "title": { "type": "string", "description": "문서 제목. 40자 이내." },
-          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "원문에 근거한 상세 본문. 구조화된 2~6개 문단." },
+          "sourceQuote": { "type": "string", "description": "대상과 분류를 지지하는 상태·역할의 연속 원문 인용. 보통 10~100자, 문맥·부정어 보존에 필요하면 160자까지. 짧은 완전한 사실은 10자 미만도 가능. 줄바꿈·표기 그대로, 최신 정정 상태 우선, 항목 간 핵심 구절 재사용 금지." },
+          "category": { "type": "string", "$enumFrom": "categories", "description": "대상·회차·최신 상태·완료 조건을 확인한 뒤 네 기준 비교. responsibility=상시 역할·일반 절차, plan=구체적 실행·정상 진행·완료 기록, issue=실제 문제·확인된 제약의 해결, pending=특정 미결 건과 남은 종결 조건. 대응 일정은 issue, 미결 처리 예정일은 pending에 포함. 균등 배분과 subtype 출력 금지." },
+          "title": { "type": "string", "description": "독립적인 인계 사실의 대상과 성격을 나타내는 제목. 40자 이내." },
+          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "원문에 근거한 상세 본문. 정보량에 따라 구조화된 1~6개 문단. 다른 섹션의 독립 사실을 흡수하거나 반복하지 않는다." },
           "properties": {
             "type": "array",
             "items": {
@@ -19,14 +20,13 @@
             }
           },
           "questions": { "type": "array", "items": { "type": "string" }, "description": "원문에 없어 작성자가 채워야 할 질문. 최대 3개." },
-          "sourceQuote": { "type": "string", "description": "원문에 그대로 있는 근거 구절" },
-          "confidence": { "type": "string", "enum": ["high", "low"] }
+          "confidence": { "type": "string", "enum": ["high", "low"], "description": "대상·핵심 사실·상태와 섹션이 분명하면 high. 사실은 확인되나 시점·상태 또는 섹션 경계에 제한적 불확실성이 남으면 low. 날짜 없음·짧은 문장은 감점 사유 아님. 판정 자체가 불가능하면 low로 꾸미지 말고 unmapped." }
         },
         "required": ["category", "title", "paragraphs", "properties", "questions", "sourceQuote", "confidence"],
         "additionalProperties": false
       }
     },
-    "unmapped": { "type": "array", "items": { "type": "string" }, "description": "어느 섹션에도 넣지 못한 내용" }
+    "unmapped": { "type": "array", "items": { "type": "string" }, "description": "업무 관련이지만 끊긴 조건·불분명한 대상·분류를 좌우하는 미해결 충돌·실행 여부 미확인으로 배정할 수 없는 원문 사실. 목차·지시문·개인정보·채움말은 제외. 없으면 빈 배열." }
   },
   "required": ["items", "unmapped"],
   "additionalProperties": false

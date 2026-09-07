@@ -19,6 +19,7 @@
  * The entry JSON for quality and annual is a list of
  *   [{ "id": "e1", "category": "plan", "title": "…", "text": "…" }]
  * which is what the workspace posts. `--json` prints the raw answer instead of the report.
+ * `--prompt=/path/import.txt` and `--schema=/path/import.json` compare saved resource revisions.
  *
  * The key comes from OPENAI_API_KEY, or from OPENAI_API_KEY in `.dev.vars` as run-local.sh reads
  * it. Node validates TLS against its own bundled roots; behind a proxy that rewrites certificates
@@ -56,8 +57,10 @@ const org = readJson('backend/src/main/resources/domain/org-data.json');
 const calendar = readJson('backend/src/main/resources/domain/academic-calendar.json');
 
 /* --- the prompt and the schema the route sends, with the enum markers resolved --- */
-const system = read(`backend/src/main/resources/ai/prompt/${route}.txt`);
-const schema = readJson(`backend/src/main/resources/ai/schema/${route}.json`);
+/* Optional snapshots let the same fixtures compare two prompt revisions without editing resources. */
+const option = (name) => [...flags].find((flag) => flag.startsWith(`--${name}=`))?.slice(name.length + 3);
+const system = read(option('prompt') ?? `backend/src/main/resources/ai/prompt/${route}.txt`);
+const schema = readJson(option('schema') ?? `backend/src/main/resources/ai/schema/${route}.json`);
 const enumSources = {
   categories: domain.categories,
   findingKinds: domain.findingKinds,
@@ -386,20 +389,24 @@ function importVerdicts(items, source) {
   };
 
   const used = new Set();
-  const titles = [];
+  const titles = new Map();
   return items.map((item) => {
     const quote = grounded(item.sourceQuote);
+    const sectionTitles = titles.get(item.category) ?? [];
     const prose = [item.title, ...(item.paragraphs ?? []), ...(item.properties ?? []).map((pair) => pair.value)].join(' ');
     let dropped = null;
     if (!quote) dropped = '원문에서 근거 구절을 확인하지 못한 항목';
     else if (used.has(quote)) dropped = '같은 원문 구절을 다시 사용한 항목';
-    else if (titles.some((seen) => titleOverlap(seen, item.title) >= 0.6)) dropped = '같은 업무를 다시 제안한 항목';
+    else if (sectionTitles.some((seen) => titleOverlap(seen, item.title) >= 0.6)) dropped = '같은 업무를 다시 제안한 항목';
     else if (!numbers(prose).every((token) => recorded.has(token))) dropped = '원문에 없는 숫자가 들어간 항목';
     else if (markup.test(item.title) || (item.paragraphs ?? []).some((line) => markup.test(line) || copied(line))) {
       dropped = '원문을 그대로 옮긴 항목';
     }
-    if (quote) used.add(quote);
-    if (!dropped) titles.push(item.title);
+    if (!dropped) {
+      used.add(quote);
+      sectionTitles.push(item.title);
+      titles.set(item.category, sectionTitles);
+    }
     return { item, dropped };
   });
 }
