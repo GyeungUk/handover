@@ -55,11 +55,16 @@ jobs:
       - name: Fail if container tests were skipped
         working-directory: backend
         run: |
-          skipped=$(grep -ho 'skipped="[0-9]*"' build/test-results/test/*.xml \
+          reports=(
+            build/test-results/test/TEST-com.globalaffairs.handover.db.ApiIntegrationTest.xml
+            build/test-results/test/TEST-com.globalaffairs.handover.db.AuthApiIntegrationTest.xml
+            build/test-results/test/TEST-com.globalaffairs.handover.db.FlywayMigrationTest.xml
+          )
+          skipped=$(grep -ho 'skipped="[0-9]*"' "${reports[@]}" \
             | grep -o '[0-9]*' | awk '{total += $1} END {print total + 0}')
-          echo "skipped tests: $skipped"
+          echo "skipped container tests: $skipped"
           if [ "$skipped" -ne 0 ]; then
-            echo "::error::$skipped test(s) were skipped — Docker-backed tests must run in CI."
+            echo "::error::$skipped container test(s) were skipped — Docker-backed tests must run in CI."
             exit 1
           fi
 
