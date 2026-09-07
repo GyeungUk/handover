@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS handover_bundles (
     CONSTRAINT handover_bundles_owner_fkey
         FOREIGN KEY (owner_email) REFERENCES handover_documents (owner_email) ON DELETE CASCADE,
     CONSTRAINT handover_bundles_decision_check
-        CHECK (decision IS NULL OR decision IN ('pending', 'approved', 'rejected'))
+        CHECK (decision IS NULL OR decision IN ('approved', 'rejected'))
 );
 
 -- Every read is "one owner's rows in author order".
