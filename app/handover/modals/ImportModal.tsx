@@ -5,6 +5,7 @@ import type { HandoverCategory, ImportItem, ImportResponse, ImportWorkflowGroup 
 import { acceptedImportTypes, extractText, supportedNote } from '../../file-text';
 import { categories } from '../categories';
 import { Button, Modal } from '../../ui';
+import ItemPager, { CategoryFilter, useCategoryPager } from '../ItemPager';
 
 /**
  * The cards grouped under the work unit that runs them, in execution order.
@@ -53,6 +54,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const [adopting, setAdopting] = useState('');
   const [moved, setMoved] = useState<Record<string, HandoverCategory>>({});
   const [dropActive, setDropActive] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Synchronous locks also cover a second event arriving before React paints disabled controls.
   const busyRef = useRef(false);
@@ -60,11 +62,19 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const activeRequest = useRef<AbortController | null>(null);
   const adoptedIds = useRef(new Set<string>());
   const busy = reading || loading || Boolean(adopting);
+  const sections = result ? workflowSections(result) : [];
+  const orderedItems = sections.flatMap((section) => section.items.map((item) => ({ ...item, category: moved[item.id] ?? item.category })));
+  const pager = useCategoryPager(orderedItems);
+  const browserRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => {
     requestVersion.current += 1;
     activeRequest.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (result) browserRef.current?.closest('.ui-modal-body')?.scrollTo({ top: 0 });
+  }, [result]);
 
   const reset = () => {
     setResult(null);
@@ -72,6 +82,8 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
     setAdopted([]);
     setMoved({});
     setError('');
+    pager.reset();
+    setSourceOpen(true);
   };
 
   const sectionOf = (item: ImportItem) => moved[item.id] ?? item.category;
@@ -133,6 +145,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
       else {
         // Preserve verification and omissions even when every proposed card was rejected.
         setResult(data);
+        setSourceOpen(data.items.length === 0);
         if (!data.items.length) {
           const note = skippedNote(data.skipped);
           setError(note
@@ -150,8 +163,6 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
       }
     }
   };
-
-  const sections = result ? workflowSections(result) : [];
 
   const markAdopted = (id: string) => {
     adoptedIds.current.add(id);
@@ -212,11 +223,16 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const groups = sections.filter((section) => section.id !== 'unassigned');
   const groupTitles = new Map(groups.map((group) => [group.id, group.title]));
   const verification = result?.verification;
-  const firstItemByCategory = new Map<HandoverCategory, string>();
-  sections.forEach((section) => section.items.forEach((item) => {
-    const category = sectionOf(item);
-    if (!firstItemByCategory.has(category)) firstItemByCategory.set(category, item.id);
-  }));
+  const activeMeta = categories.find((category) => category.id === pager.activeCategory)!;
+  // Read the original item so filing into a different category still removes incompatible fields.
+  const activeItem = result?.items.find((item) => item.id === pager.activeItem?.id);
+  const activeGroup = sections.find((section) => section.items.some((item) => item.id === activeItem?.id));
+  const activeWorkUnit = activeGroup?.unitTitle ?? '';
+  const adoptCurrent = () => { if (activeItem) void adopt(activeItem, activeWorkUnit); };
+  const openItem = (item: ImportItem) => {
+    pager.selectItem({ ...item, category: sectionOf(item) });
+    browserRef.current?.scrollIntoView({ block: 'start' });
+  };
 
   return <Modal
     onClose={onClose}
@@ -224,7 +240,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
     className="ho-draft-modal ho-import-modal"
     dismissable={!busy}
     title="기존 자료 불러오기"
-    description="문서와 일정표를 실행 가능한 업무단위로 묶고, 업무 순서·마감·주의사항·확인 질문을 정리합니다. 업무 흐름과 원문 반영 결과를 검토한 뒤 필요한 항목을 채택하세요."
+    description="분류별로 한 항목씩 확인하고, 필요한 내용을 채택하세요."
     footer={<>
       <p className="ho-modal-note"><span aria-hidden="true">ⓘ</span> 원문에 없는 실행 정보는 ‘확인 필요’ 질문으로 구분합니다.</p>
       <span className="spacer" />
@@ -232,6 +248,8 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
       <Button variant="primary" onClick={() => void adoptAll()} disabled={!result || remaining === 0 || busy}>{adopting === 'all' ? `추가하는 중… ${result ? result.items.length - remaining : 0}/${result?.items.length ?? 0}` : `남은 ${remaining}건 모두 채택`}</Button>
     </>}
   >
+    <details className="ho-import-source" open={sourceOpen} onToggle={(event) => setSourceOpen(event.currentTarget.open)}>
+    <summary><b>{result ? '원문 자료' : '1. 자료 입력'}</b><span>{result ? '내용 보기 · 다시 정리' : '파일 업로드 또는 내용 붙여넣기'}</span></summary>
     <div className="ho-import-input" aria-busy={reading || loading}>
       <div
         className={`ho-dropzone ${dropActive ? 'active' : ''} ${busy ? 'is-disabled' : ''}`}
@@ -253,6 +271,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
         <button type="button" onClick={() => void classify()} disabled={!ready || busy}>{loading ? '업무를 정리하는 중…' : result ? '다시 정리' : '업무 구조화 시작'}</button>
       </div>
     </div>
+    </details>
 
     {loading && <div className="ho-draft-loading" role="status"><i /><i /><i /><p>본문과 일정표를 연결하고, 업무 흐름과 원문 누락을 검증하고 있습니다.</p></div>}
     {error && <p className="ho-draft-error" role="alert">{error}</p>}
@@ -261,44 +280,16 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
       <div className="ho-import-summary" role="status">
         <p><b>{result.fileName}</b> · {result.charCount.toLocaleString()}자에서 {groups.length > 0 ? `${groups.length}개 업무단위 · ` : ''}{result.items.length}개 항목을 정리했습니다.</p>
         {skippedNote(result.skipped) && <p className="ho-import-skipped">초안에 넣지 않은 제안: {skippedNote(result.skipped)}</p>}
-        <div className="ho-import-counts">{categories.map((category) => {
-          const count = result.items.filter((item) => sectionOf(item) === category.id).length;
-          const target = firstItemByCategory.get(category.id);
-          const content = <><i />{category.short}<b>{count}</b></>;
-          return target
-            ? <a key={category.id} href={`#import-item-${target}`} style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties} aria-label={`${category.short} ${count}건으로 이동`}>{content}</a>
-            : <span key={category.id} className="empty" style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties}>{content}</span>;
-        })}</div>
-        <p className="ho-import-classification-note">현재 발생한 문제와 미결 건은 원문에 명시된 경우에만 제안합니다. 조건부 위험과 확인 질문은 각 업무에 포함됩니다.</p>
+        <p className="ho-import-adoption-progress">{adopted.length}개 채택 완료 · {remaining}개 남음</p>
       </div>
 
-      {groups.length > 0 && <section className="ho-import-workflow" aria-label="업무 흐름">
-        <div className="ho-import-section-heading"><h3>업무 흐름</h3><span>{groups.length}개 업무단위</span></div>
-        <ol>{groups.map((group, index) => <li key={group.id}>
-          <span className="ho-import-step-number" aria-hidden="true">{index + 1}</span>
-          <div>
-            <h4><a href={`#import-group-${group.id}`}>{group.title}</a></h4>
-            <p className="ho-import-dependency">{group.after.length ? `선행 업무: ${group.after.map((id) => groupTitles.get(id) ?? '연결 확인 필요').join(' · ')}` : '시작 업무 · 선행 업무 지정 없음'}</p>
-            <ul>{group.items.map((item) => <li key={item.id}><a href={`#import-item-${item.id}`}>{item.title}</a><span>{categories.find((category) => category.id === sectionOf(item))!.short}</span></li>)}</ul>
-          </div>
-        </li>)}</ol>
-      </section>}
-
-      {verification && <section className={`ho-import-verification ${verification.uncovered.length || verification.warnings.length ? 'needs-review' : ''}`} aria-label="원문 반영 검증">
-        <div className="ho-import-section-heading"><h3>원문 반영 검증</h3><span>{verification.coveredCount}/{verification.sourceCount}개 원문 단위 연결</span></div>
-        <p>목차·본문·일정표의 원문 근거가 업무에 연결되었는지 점검한 결과입니다.</p>
-        {verification.uncovered.length > 0 && <div className="ho-import-verification-findings">
-          <h4>반영하지 못한 원문 {verification.uncovered.length}건</h4>
-          <ul>{verification.uncovered.map((entry, index) => <li key={`${entry.sourceId}-${index}`}><blockquote>{entry.excerpt}</blockquote><p>{entry.reason}</p></li>)}</ul>
-        </div>}
-        {verification.warnings.length > 0 && <div className="ho-import-verification-findings"><h4>검토할 내용</h4><ul>{verification.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
-        {verification.uncovered.length === 0 && verification.warnings.length === 0 && <p className="ho-import-verified">모든 원문 단위가 연결되었으며, 누락·중복·분류 검증에서 추가 검토 사항이 없습니다.</p>}
-      </section>}
-
-      {(result.unmapped ?? []).length > 0 && <div className="ho-import-unmapped"><b>섹션에 넣지 못한 내용</b><ul>{result.unmapped.map((line, index) => <li key={index}>{line}</li>)}</ul></div>}
-      <div className="ho-import-results">{sections.map((group, groupIndex) => <section key={group.id} id={`import-group-${group.id}`} className="ho-import-result-group" aria-label={group.title || '정리된 항목'}>
-        {group.title && <div className="ho-import-result-heading"><span>{group.id === 'unassigned' ? '확인 필요' : `업무단위 ${groupIndex + 1}`}</span><h3>{group.title}</h3><small>{group.items.length}개 항목</small></div>}
-        <div className="ho-draft-list">{group.items.map((item) => {
+      <div ref={browserRef} className="ho-focus-browser" style={{ '--category': activeMeta.accent, '--category-soft': activeMeta.soft } as CSSProperties}>
+        <div className="ho-focus-toolbar">
+          <CategoryFilter items={orderedItems} activeCategory={pager.activeCategory} onSelect={pager.selectCategory} disabled={busy} />
+          <ItemPager items={pager.categoryItems} activeIndex={pager.activeIndex} onSelect={(index) => pager.selectItem(pager.categoryItems[index])} label={activeMeta.short} controls="ho-import-current" disabled={busy} />
+        </div>
+        <div id="ho-import-current" className="ho-focus-content">
+          {activeItem ? [activeItem].map((item) => {
           const meta = categories.find((category) => category.id === sectionOf(item))!;
           const isAdopted = adopted.includes(item.id);
           const evidence = item.evidence?.length ? item.evidence : item.sourceQuote ? [{ sourceId: '', quote: item.sourceQuote }] : [];
@@ -306,24 +297,57 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
             <div className="ho-draft-card-head">
               <label className="ho-draft-chip ho-import-section">
                 <i /><span className="sr-only">{item.title} 섹션</span>
-                <select value={sectionOf(item)} disabled={busy} onChange={(event) => setMoved((current) => ({ ...current, [item.id]: event.target.value as HandoverCategory }))}>
+                <select value={sectionOf(item)} disabled={busy} onChange={(event) => {
+                  const category = event.target.value as HandoverCategory;
+                  setMoved((current) => ({ ...current, [item.id]: category }));
+                  pager.selectItem({ ...item, category });
+                }}>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.short}</option>)}
                 </select>
               </label>
               <span className={`ho-draft-basis ${item.confidence === 'high' ? 'record' : 'inferred'}`}>{item.confidence === 'high' ? '섹션 확실' : '섹션 확인 필요'}</span>
               <small>{evidence.length ? `원문 근거 ${evidence.length}건` : '원문 요약'}</small>
             </div>
+            {activeGroup?.title && <p className="ho-item-context">{activeGroup.id === 'unassigned' ? '연결 확인 필요' : '업무단위'} · {activeGroup.title}</p>}
             <h4>{item.title}</h4>
             {Object.keys(filed(item).properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
-            <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />
+            <div className="ho-draft-body" role="region" aria-label={`${item.title} 본문`} tabIndex={0} dangerouslySetInnerHTML={{ __html: item.detail }} />
             {evidence.length > 0 && <details className="ho-import-evidence"><summary>연결된 원문 근거 {evidence.length}건 보기</summary>{evidence.map((entry, index) => <blockquote className="ho-import-quote" key={`${entry.sourceId}-${index}`}><span>원문{index + 1}</span>{entry.quote}</blockquote>)}</details>}
             <div className="ho-draft-card-actions">
               {isAdopted && <span className="ho-draft-done" role="status">✓ 추가됨</span>}
-              <button type="button" onClick={() => void adopt(item, group.unitTitle)} disabled={busy}>{adopting === item.id ? '추가하는 중…' : isAdopted ? '이 항목 다시 추가' : '이 항목 채택'}</button>
+              <button type="button" onClick={adoptCurrent} disabled={busy}>{adopting === item.id ? '추가하는 중…' : isAdopted ? '이 항목 다시 추가' : '이 항목 채택'}</button>
             </div>
           </article>;
-        })}</div>
-      </section>)}</div>
+          }) : <div className="ho-focus-empty"><b>{activeMeta.short} 항목이 없습니다.</b><p>다른 분류를 선택해 정리된 항목을 확인하세요.</p></div>}
+        </div>
+      </div>
+
+      <p className="ho-import-context-note">현재 발생한 문제와 미결 건은 원문에 명시된 경우에만 제안합니다. 조건부 위험과 확인 질문은 각 업무에 포함됩니다.</p>
+      {groups.length > 0 && <details className="ho-import-workflow ho-import-disclosure">
+        <summary><b>업무 흐름</b><span>{groups.length}개 업무단위 · 연결 관계 보기</span></summary>
+        <ol>{groups.map((group, index) => <li key={group.id}>
+          <span className="ho-import-step-number" aria-hidden="true">{index + 1}</span>
+          <div>
+            <h4><button type="button" disabled={busy} onClick={() => openItem(group.items[0])}>{group.title}</button></h4>
+            <p className="ho-import-dependency">{group.after.length ? `선행 업무: ${group.after.map((id) => groupTitles.get(id) ?? '연결 확인 필요').join(' · ')}` : '시작 업무 · 선행 업무 지정 없음'}</p>
+            <ul>{group.items.map((item) => <li key={item.id}><button type="button" disabled={busy} onClick={() => openItem(item)}>{item.title}</button><span>{categories.find((category) => category.id === sectionOf(item))!.short}</span></li>)}</ul>
+          </div>
+        </li>)}</ol>
+      </details>}
+
+      {verification && <details className={`ho-import-verification ho-import-disclosure ${verification.uncovered.length || verification.warnings.length ? 'needs-review' : ''}`}>
+        <summary><b>원문 반영 검증</b><span>{verification.uncovered.length + verification.warnings.length > 0 ? `확인 필요 ${verification.uncovered.length + verification.warnings.length}건 · ` : ''}{verification.coveredCount}/{verification.sourceCount}개 연결</span></summary>
+        <p>목차·본문·일정표의 원문 근거가 업무에 연결되었는지 점검한 결과입니다.</p>
+        {verification.uncovered.length > 0 && <div className="ho-import-verification-findings">
+          <h4>반영하지 못한 원문 {verification.uncovered.length}건</h4>
+          <ul>{verification.uncovered.map((entry, index) => <li key={`${entry.sourceId}-${index}`}><blockquote>{entry.excerpt}</blockquote><p>{entry.reason}</p></li>)}</ul>
+        </div>}
+        {verification.warnings.length > 0 && <div className="ho-import-verification-findings"><h4>검토할 내용</h4><ul>{verification.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
+        {verification.uncovered.length === 0 && verification.warnings.length === 0 && <p className="ho-import-verified">모든 원문 단위가 연결되었으며, 누락·중복·분류 검증에서 추가 검토 사항이 없습니다.</p>}
+      </details>}
+
+      {(result.unmapped ?? []).length > 0 && <details className="ho-import-unmapped ho-import-disclosure"><summary><b>섹션에 넣지 못한 내용</b><span>{result.unmapped.length}건 확인 필요</span></summary><ul>{result.unmapped.map((line, index) => <li key={index}>{line}</li>)}</ul></details>}
+
     </>}
   </Modal>;
 }

@@ -5,6 +5,7 @@ import type { DraftItem, DraftResponse } from '../../handover-schema';
 import { categories } from '../categories';
 import { Button, Modal } from '../../ui';
 import { useTeams } from '../../workspace/context';
+import ItemPager, { CategoryFilter, useCategoryPager } from '../ItemPager';
 
 /** Turns a person's calendar into proposed entries. Nothing is saved until the author adopts it. */
 export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: DraftItem) => void | Promise<void>; onClose: () => void }) {
@@ -17,11 +18,14 @@ export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: Draft
   const [result, setResult] = useState<DraftResponse | null>(null);
   const [adopted, setAdopted] = useState<string[]>([]);
   const [adopting, setAdopting] = useState('');
+  const pager = useCategoryPager(result?.drafts ?? []);
+  const activeMeta = categories.find((category) => category.id === pager.activeCategory)!;
 
   const generate = async () => {
     setLoading(true);
     setError('');
     setResult(null);
+    pager.reset();
     setAdopted([]);
     try {
       const response = await fetch('/api/draft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ personId }) });
@@ -92,7 +96,12 @@ export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: Draft
           <p><b>{result.person.name}</b> · {result.person.team} · 오늘 기준 {result.todayLabel}</p>
           <span>{result.drafts.length}건 제안 · {adopted.length}건 1회 이상 추가됨</span>
         </div>
-        <div className="ho-draft-list">{result.drafts.map((item) => {
+        <div className="ho-focus-browser" style={{ '--category': activeMeta.accent, '--category-soft': activeMeta.soft } as CSSProperties}>
+          <div className="ho-focus-toolbar">
+            <CategoryFilter items={result.drafts} activeCategory={pager.activeCategory} onSelect={pager.selectCategory} disabled={Boolean(adopting)} />
+            <ItemPager items={pager.categoryItems} activeIndex={pager.activeIndex} onSelect={(index) => pager.selectItem(pager.categoryItems[index])} label={activeMeta.short} controls="ho-draft-current" disabled={Boolean(adopting)} />
+          </div>
+        <div id="ho-draft-current" className="ho-focus-content">{(pager.activeItem ? [pager.activeItem] : []).map((item) => {
           const meta = categories.find((category) => category.id === item.category)!;
           const isAdopted = adopted.includes(item.id);
           return <article className="ho-draft-card" key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
@@ -103,13 +112,14 @@ export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: Draft
             </div>
             <h4>{item.title}</h4>
             {Object.keys(item.properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
-            <div className="ho-draft-body" dangerouslySetInnerHTML={{ __html: item.detail }} />
+            <div className="ho-draft-body" role="region" aria-label={`${item.title} 본문`} tabIndex={0} dangerouslySetInnerHTML={{ __html: item.detail }} />
             <div className="ho-draft-card-actions">
               {isAdopted && <span className="ho-draft-done">✓ 추가됨 · 다시 추가 가능</span>}
               <button type="button" onClick={() => void adopt(item)} disabled={Boolean(adopting)}>{adopting === item.id ? '추가하는 중…' : isAdopted ? '이 초안 다시 추가' : '이 초안 채택'}</button>
             </div>
           </article>;
-        })}</div>
+        })}{!pager.activeItem && <div className="ho-focus-empty"><b>{activeMeta.short} 초안이 없습니다.</b><p>다른 분류를 선택해 제안된 내용을 확인하세요.</p></div>}</div>
+        </div>
       </>}
 
   </Modal>;

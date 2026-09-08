@@ -7,6 +7,7 @@ import { CategoryIcon, SaveIndicator, StatusBadge, type SaveState } from './hand
 import { categories, defaultFormatting, initialBundles, initialEntries } from './handover/categories';
 import { plainText, sanitizeRichHtml, savePayload, snapshotOf } from './handover/format';
 import EntryEditor from './handover/EntryEditor';
+import ItemPager, { useCategoryPager } from './handover/ItemPager';
 import BundleReadOnly from './handover/BundleReadOnly';
 import EntryDetailModal from './handover/modals/EntryDetailModal';
 import DraftModal from './handover/modals/DraftModal';
@@ -39,8 +40,9 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   currentUser: { email: string };
 }) {
   const [tab, setTab] = useState<WorkspaceTab>('write');
-  const [activeCategory, setActiveCategory] = useState<HandoverCategory>('responsibility');
   const [entries, setEntries] = useState(initialEntries);
+  const entryPager = useCategoryPager(entries);
+  const { activeCategory, selectCategory: setActiveCategory, reset: resetEntryPager } = entryPager;
   const [bundles, setBundles] = useState(initialBundles);
   const [status, setStatus] = useState<WorkflowStatus>('draft');
   const [role, setRole] = useState<'author' | 'manager'>('author');
@@ -159,6 +161,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   const applyDocument = useCallback((document: HandoverDocument) => {
     const safeEntries = document.entries.map((entry) => ({ ...entry, detail: sanitizeRichHtml(entry.detail) }));
     setEntries(safeEntries);
+    resetEntryPager();
     setBundles(document.bundles);
     setPendingBundleIds(new Set(document.bundles.filter((bundle) => bundle.decision === 'pending').map((bundle) => bundle.id)));
     setSubmissionBundleIds(new Set(document.bundles
@@ -173,7 +176,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     savedSnapshot.current = snapshotOf(safeEntries, document.bundles);
     setSaveState('saved');
     setSaveMessage('');
-  }, []);
+  }, [resetEntryPager]);
 
   const persist = useCallback((nextEntries: HandoverEntry[], nextBundles: WorkBundle[]) => {
     const snapshot = snapshotOf(nextEntries, nextBundles);
@@ -322,6 +325,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     } else {
       const id = `${editor.category}-${crypto.randomUUID()}`;
       setEntries((current) => [...current, { id, category: editor.category, title, detail: sanitizeRichHtml(detail), properties, attachments, formatting }]);
+      entryPager.selectItem({ id, category: editor.category });
       flash('새 항목을 추가했습니다.');
     }
     setEditor(null);
@@ -355,7 +359,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       flash('승인된 항목은 수정할 수 없습니다.');
       return;
     }
-    setActiveCategory(entry.category);
+    entryPager.selectItem(entry);
     setTab('write');
     setEditor({ category: entry.category, entry });
   };
@@ -384,7 +388,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     const id = `${item.category}-${crypto.randomUUID()}`;
     setEntries((current) => [...current, { id, category: item.category, title: item.title, detail: sanitizeRichHtml(item.detail), properties: item.properties, attachments: [], formatting: defaultFormatting }]);
     if (workUnit) placeInWorkUnit(id, workUnit);
-    setActiveCategory(item.category);
+    entryPager.selectItem({ id, category: item.category });
     setQuality(null);
     flash(workUnit ? `${message} ‘${workUnit}’ 업무 단위에 넣었습니다.` : message);
   };
@@ -601,18 +605,19 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
           </button>
         </div>
       </div>
-      <div className="ho-category-tabs">{categories.map((category) => {
+      <div className="ho-category-tabs" role="group" aria-label="작성 항목 분류">{categories.map((category) => {
         const count = entries.filter((entry) => entry.category === category.id).length;
-        return <button type="button" key={category.id} className={activeCategory === category.id ? 'active' : ''} onClick={() => setActiveCategory(category.id)} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><span className="ho-category-icon"><CategoryIcon category={category.id} /></span><span><small>{category.step}</small><b>{category.short}</b><em>{count}개</em></span></button>;
+        return <button type="button" key={category.id} className={activeCategory === category.id ? 'active' : ''} aria-pressed={activeCategory === category.id} onClick={() => setActiveCategory(category.id)} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><span className="ho-category-icon"><CategoryIcon category={category.id} /></span><span><small>{category.step}</small><b>{category.short}</b><em>{count}개</em></span></button>;
       })}</div>
       <div className="ho-entry-panel" style={{ '--category': activeMeta.accent, '--category-soft': activeMeta.soft } as React.CSSProperties}>
         <div className="ho-entry-head"><div className="ho-category-icon large"><CategoryIcon category={activeMeta.id} /></div><div><span className="ho-step">{activeMeta.step}번 섹션</span><h3>{activeMeta.label}</h3><p>{activeMeta.description}</p></div><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span>＋</span> 새 항목 추가</button></div>
-        <div className="ho-entry-list">{entries.filter((entry) => entry.category === activeMeta.id).map((entry, index) => {
+        <ItemPager items={entryPager.categoryItems} activeIndex={entryPager.activeIndex} onSelect={(index) => entryPager.selectItem(entryPager.categoryItems[index])} label={activeMeta.short} controls="ho-entry-current" />
+        <div id="ho-entry-current" className="ho-entry-list ho-entry-focus">{(entryPager.activeItem ? [entryPager.activeItem] : []).map((entry) => {
           const entryLocked = isEntryLocked(entry.id);
           const approvedFixed = approvedEntryIds.has(entry.id);
           const pendingReview = pendingEntryIds.has(entry.id);
           const needsFix = status === 'rejected' && rejectedEntryIds.has(entry.id);
-          return <article className={`${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`.trim()} key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><p>{plainText(entry.detail)}</p><span className={`ho-linked ${approvedFixed ? 'approved' : needsFix ? 'returned' : ''}`}>{approvedFixed ? '✓ 승인 완료 · 수정 불가' : pendingReview ? '⌛ 검토 중 · 수정 불가' : needsFix ? '↩ 반려됨 · 다시 작성' : assignedIds.has(entry.id) ? '업무 단위에 연결됨' : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => editEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>;
+          return <article className={`${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`.trim()} key={entry.id}><span className="ho-entry-number">{String(entryPager.activeIndex + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><div className="ho-focused-document ho-draft-body" role="region" aria-label={`${entry.title} 본문`} tabIndex={0} dangerouslySetInnerHTML={{ __html: entry.detail }} /><span className={`ho-linked ${approvedFixed ? 'approved' : needsFix ? 'returned' : ''}`}>{approvedFixed ? '✓ 승인 완료 · 수정 불가' : pendingReview ? '⌛ 검토 중 · 수정 불가' : needsFix ? '↩ 반려됨 · 다시 작성' : assignedIds.has(entry.id) ? '업무 단위에 연결됨' : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => editEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>;
         })}{entries.every((entry) => entry.category !== activeMeta.id) && <div className="ho-empty"><div className="ho-category-icon"><CategoryIcon category={activeMeta.id} /></div><b>아직 작성된 항목이 없습니다.</b><p>{activeMeta.description}</p><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span aria-hidden="true">＋</span> 첫 항목 작성하기</button></div>}</div>
       </div>
       <aside className="ho-writing-tip"><span>TIP</span><p>한 항목에는 하나의 주제를 적어두면, 최종 조합 단계에서 여러 담당업무 단위로 정리하기 쉽습니다.</p><div>{categories.map((category) => <span key={category.id}><i style={{ background: category.accent }} />{category.short}<b>{entries.filter((entry) => entry.category === category.id).length}</b></span>)}</div></aside>
