@@ -6227,7 +6227,7 @@ small, .caption { font-size: var(--t-caption); }
   .member-create-actions button { height: 40px; font-size: 12.5px; }
 }
 
-/* Focused handover reading: one item per category, with persistent navigation. */
+/* Each handover category scrolls independently, with persistent item navigation. */
 .ho-draft-modal > .ui-modal-body { padding: 0 0 24px; }
 .ho-item-pager {
   display: flex;
@@ -6268,6 +6268,7 @@ small, .caption { font-size: var(--t-caption); }
 .ho-import-modal summary:focus-visible,
 .ho-import-workflow button:focus-visible,
 .ho-focused-document:focus-visible,
+.ho-category-scroll:focus-visible,
 .ho-focus-content .ho-draft-body:focus-visible {
   outline: 2px solid var(--category, var(--navy)); outline-offset: 3px;
 }
@@ -6324,6 +6325,27 @@ small, .caption { font-size: var(--t-caption); }
 .ho-entry-focus .ho-entry-actions button { min-height: 44px; padding-inline: 16px; border: 1px solid var(--line); border-radius: 8px; }
 .ho-entry-focus .ho-entry-actions button:first-child { color: var(--category); background: var(--category-soft); border-color: transparent; }
 .ho-entry-focus .ho-entry-property-row > span { border-radius: 6px; overflow-wrap: anywhere; }
+.ho-category-scroll {
+  position: relative;
+  height: var(--ho-category-height, clamp(240px, 52dvh, 640px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+  border-radius: 0 0 12px 12px;
+}
+/* A short final item can still reach the top, so every arrow target and number agree. */
+.ho-category-scroll > [data-pager-item] { min-height: 100%; align-content: start; }
+.ho-category-scroll > .ho-draft-card { border-radius: 0; }
+.ho-category-scroll > .ho-draft-card + .ho-draft-card { border-top: 1px solid var(--line); }
+.ho-category-scroll .ho-draft-body {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+  scrollbar-gutter: auto;
+}
+.ho-category-scroll .ho-draft-body table { display: block; max-width: 100%; overflow-x: auto; }
+.ho-category-scroll:has(> .ho-empty), .ho-category-scroll:has(> .ho-focus-empty) { height: auto; }
 @media (max-width: 640px) {
   .ho-item-pager { flex-wrap: wrap; gap: 12px; padding: 14px 18px; }
   .ho-item-jump { flex-basis: 100%; }

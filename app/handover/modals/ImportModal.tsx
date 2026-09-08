@@ -65,16 +65,13 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const sections = result ? workflowSections(result) : [];
   const orderedItems = sections.flatMap((section) => section.items.map((item) => ({ ...item, category: moved[item.id] ?? item.category })));
   const pager = useCategoryPager(orderedItems);
+  const { setScrollViewport } = pager;
   const browserRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => {
     requestVersion.current += 1;
     activeRequest.current?.abort();
   }, []);
-
-  useEffect(() => {
-    if (result) browserRef.current?.closest('.ui-modal-body')?.scrollTo({ top: 0 });
-  }, [result]);
 
   const reset = () => {
     setResult(null);
@@ -224,11 +221,9 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const groupTitles = new Map(groups.map((group) => [group.id, group.title]));
   const verification = result?.verification;
   const activeMeta = categories.find((category) => category.id === pager.activeCategory)!;
-  // Read the original item so filing into a different category still removes incompatible fields.
-  const activeItem = result?.items.find((item) => item.id === pager.activeItem?.id);
-  const activeGroup = sections.find((section) => section.items.some((item) => item.id === activeItem?.id));
-  const activeWorkUnit = activeGroup?.unitTitle ?? '';
-  const adoptCurrent = () => { if (activeItem) void adopt(activeItem, activeWorkUnit); };
+  // Read originals so moving an item still removes properties from its previous category.
+  const originalItems = new Map(result?.items.map((item) => [item.id, item]));
+  const itemGroups = new Map(sections.flatMap((section) => section.items.map((item) => [item.id, section] as const)));
   const openItem = (item: ImportItem) => {
     pager.selectItem({ ...item, category: sectionOf(item) });
     browserRef.current?.scrollIntoView({ block: 'start' });
@@ -240,7 +235,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
     className="ho-draft-modal ho-import-modal"
     dismissable={!busy}
     title="기존 자료 불러오기"
-    description="분류별로 한 항목씩 확인하고, 필요한 내용을 채택하세요."
+    description="각 분류 안에서 스크롤하거나 화살표로 항목을 이동하고, 필요한 내용을 채택하세요."
     footer={<>
       <p className="ho-modal-note"><span aria-hidden="true">ⓘ</span> 원문에 없는 실행 정보는 ‘확인 필요’ 질문으로 구분합니다.</p>
       <span className="spacer" />
@@ -288,12 +283,14 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
           <CategoryFilter items={orderedItems} activeCategory={pager.activeCategory} onSelect={pager.selectCategory} disabled={busy} />
           <ItemPager items={pager.categoryItems} activeIndex={pager.activeIndex} onSelect={(index) => pager.selectItem(pager.categoryItems[index])} label={activeMeta.short} controls="ho-import-current" disabled={busy} />
         </div>
-        <div id="ho-import-current" className="ho-focus-content">
-          {activeItem ? [activeItem].map((item) => {
+        <div ref={setScrollViewport} id="ho-import-current" className="ho-focus-content ho-category-scroll" role="region" aria-label={`${activeMeta.short} 항목 목록`} tabIndex={0}>
+          {pager.categoryItems.length ? pager.categoryItems.map((visibleItem) => {
+          const item = originalItems.get(visibleItem.id)!;
+          const group = itemGroups.get(item.id);
           const meta = categories.find((category) => category.id === sectionOf(item))!;
           const isAdopted = adopted.includes(item.id);
           const evidence = item.evidence?.length ? item.evidence : item.sourceQuote ? [{ sourceId: '', quote: item.sourceQuote }] : [];
-          return <article id={`import-item-${item.id}`} className="ho-draft-card" key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
+          return <article id={`import-item-${item.id}`} data-pager-item={item.id} className="ho-draft-card" key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
             <div className="ho-draft-card-head">
               <label className="ho-draft-chip ho-import-section">
                 <i /><span className="sr-only">{item.title} 섹션</span>
@@ -308,14 +305,14 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
               <span className={`ho-draft-basis ${item.confidence === 'high' ? 'record' : 'inferred'}`}>{item.confidence === 'high' ? '섹션 확실' : '섹션 확인 필요'}</span>
               <small>{evidence.length ? `원문 근거 ${evidence.length}건` : '원문 요약'}</small>
             </div>
-            {activeGroup?.title && <p className="ho-item-context">{activeGroup.id === 'unassigned' ? '연결 확인 필요' : '업무단위'} · {activeGroup.title}</p>}
+            {group?.title && <p className="ho-item-context">{group.id === 'unassigned' ? '연결 확인 필요' : '업무단위'} · {group.title}</p>}
             <h4>{item.title}</h4>
             {Object.keys(filed(item).properties).length > 0 && <div className="ho-draft-properties">{meta.propertyFields.map((field) => item.properties[field.key] && <span key={field.key}><b>{field.label}</b>{item.properties[field.key]}</span>)}</div>}
             <div className="ho-draft-body" role="region" aria-label={`${item.title} 본문`} tabIndex={0} dangerouslySetInnerHTML={{ __html: item.detail }} />
             {evidence.length > 0 && <details className="ho-import-evidence"><summary>연결된 원문 근거 {evidence.length}건 보기</summary>{evidence.map((entry, index) => <blockquote className="ho-import-quote" key={`${entry.sourceId}-${index}`}><span>원문{index + 1}</span>{entry.quote}</blockquote>)}</details>}
             <div className="ho-draft-card-actions">
               {isAdopted && <span className="ho-draft-done" role="status">✓ 추가됨</span>}
-              <button type="button" onClick={adoptCurrent} disabled={busy}>{adopting === item.id ? '추가하는 중…' : isAdopted ? '이 항목 다시 추가' : '이 항목 채택'}</button>
+              <button type="button" onClick={() => void adopt(item, group?.unitTitle ?? '')} disabled={busy}>{adopting === item.id ? '추가하는 중…' : isAdopted ? '이 항목 다시 추가' : '이 항목 채택'}</button>
             </div>
           </article>;
           }) : <div className="ho-focus-empty"><b>{activeMeta.short} 항목이 없습니다.</b><p>다른 분류를 선택해 정리된 항목을 확인하세요.</p></div>}

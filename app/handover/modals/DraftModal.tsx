@@ -19,6 +19,7 @@ export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: Draft
   const [adopted, setAdopted] = useState<string[]>([]);
   const [adopting, setAdopting] = useState('');
   const pager = useCategoryPager(result?.drafts ?? []);
+  const { setScrollViewport } = pager;
   const activeMeta = categories.find((category) => category.id === pager.activeCategory)!;
 
   const generate = async () => {
@@ -101,10 +102,10 @@ export default function DraftModal({ onAdopt, onClose }: { onAdopt: (item: Draft
             <CategoryFilter items={result.drafts} activeCategory={pager.activeCategory} onSelect={pager.selectCategory} disabled={Boolean(adopting)} />
             <ItemPager items={pager.categoryItems} activeIndex={pager.activeIndex} onSelect={(index) => pager.selectItem(pager.categoryItems[index])} label={activeMeta.short} controls="ho-draft-current" disabled={Boolean(adopting)} />
           </div>
-        <div id="ho-draft-current" className="ho-focus-content">{(pager.activeItem ? [pager.activeItem] : []).map((item) => {
+        <div ref={setScrollViewport} id="ho-draft-current" className="ho-focus-content ho-category-scroll" role="region" aria-label={`${activeMeta.short} 초안 목록`} tabIndex={0}>{pager.categoryItems.map((item) => {
           const meta = categories.find((category) => category.id === item.category)!;
           const isAdopted = adopted.includes(item.id);
-          return <article className="ho-draft-card" key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
+          return <article data-pager-item={item.id} className="ho-draft-card" key={item.id} style={{ '--category': meta.accent, '--category-soft': meta.soft } as CSSProperties}>
             <div className="ho-draft-card-head">
               <span className="ho-draft-chip"><i />{meta.short}</span>
               <span className={`ho-draft-basis ${item.basis}`}>{item.basis === 'record' ? '기록 기반' : '확인 필요'}</span>
