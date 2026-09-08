@@ -30,6 +30,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The uploaded-document reader decides what the model ever sees; a table it flattens is
+      # a deadline the import can no longer attach to the work it belongs to.
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
 

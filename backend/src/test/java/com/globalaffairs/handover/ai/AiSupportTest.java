@@ -124,6 +124,74 @@ class AiSupportTest {
     }
 
     @Test
+    void writesTheOperationOutAsLabelledBlocksWithTheControlsAsATable() {
+        var operation = new com.globalaffairs.handover.ai.dto.ImportResponse.Operation(
+                "입력 마감까지 성적입력 현황을 통제한다",
+                new com.globalaffairs.handover.ai.dto.ImportResponse.Timing("매 학기", "입력 기간 시작", "12월 26일 17시"),
+                List.of(new com.globalaffairs.handover.ai.dto.ImportResponse.Collaborator("정보화팀", "시스템 상태 확인")),
+                new com.globalaffairs.handover.ai.dto.ImportResponse.Resources(
+                        List.of("학사정보시스템"), List.of("성적평가표"), List.of("마감 확인 결과")),
+                List.of("입력 현황을 대조한다", "보완을 요청한다"),
+                List.of("입력 안내문 배포"),
+                List.of("이의신청 안내"),
+                List.of(new com.globalaffairs.handover.ai.dto.ImportResponse.Control(
+                                "마감 직전 시스템 문제", "학사팀", "시스템 상태 확인 요청", "정보화팀에 긴급 대응 요청"),
+                        new com.globalaffairs.handover.ai.dto.ImportResponse.Control(
+                                "미입력 교원 확인", "학사팀", "단과대학에 독려 요청", "")));
+
+        String body = AiSupport.importDetailHtml(
+                List.of("[현재 상태] 현재 미입력 건은 기록되어 있지 않습니다."), operation,
+                List.of("반복 미입력의 횟수 기준은 무엇입니까?"), 20000);
+
+        assertThat(body)
+                .contains("<p><strong>업무 목적</strong><br>입력 마감까지 성적입력 현황을 통제한다</p>")
+                .contains("발생 주기: 매 학기 · 시작 조건: 입력 기간 시작 · 마감: 12월 26일 17시")
+                .contains("<li><strong>정보화팀</strong> — 시스템 상태 확인</li>")
+                .contains("<li><strong>시스템</strong> — 학사정보시스템</li>")
+                /* An ordered list, because the steps are a sequence and a bullet list hides that. */
+                .contains("<ol><li>입력 현황을 대조한다</li><li>보완을 요청한다</li></ol>")
+                .contains("<p><strong>선행조건</strong></p><ul><li>입력 안내문 배포</li></ul>")
+                .contains("<td>마감 직전 시스템 문제</td><td>학사팀</td>")
+                .contains("<td>정보화팀에 긴급 대응 요청</td>")
+                /* An escalation the source never set says so, rather than borrowing the row above. */
+                .contains("<td>단과대학에 독려 요청</td><td>기재 없음</td>");
+        /* The narrative keeps its place above the operation, and the questions stay last so the
+           quality route can still tell the record from the gaps in it. */
+        assertThat(body.indexOf("현재 상태")).isLessThan(body.indexOf("주기·시작·마감"));
+        assertThat(body.indexOf(AiSupport.OPEN_QUESTIONS_HEADING)).isGreaterThan(body.indexOf("통제 포인트"));
+        assertThat(AiSupport.splitOpenQuestions(body).openQuestions()).contains("횟수 기준");
+    }
+
+    @Test
+    void dropsWholeBlocksRatherThanReturnBodyTheEditorCannotStore() {
+        var many = new java.util.ArrayList<String>();
+        for (int at = 0; at < 12; at++) {
+            many.add("가".repeat(280));
+        }
+        var operation = new com.globalaffairs.handover.ai.dto.ImportResponse.Operation(
+                "목적", new com.globalaffairs.handover.ai.dto.ImportResponse.Timing("매 학기", "", "12월"),
+                List.of(), new com.globalaffairs.handover.ai.dto.ImportResponse.Resources(many, many, many),
+                many, many, many, List.of());
+
+        String body = AiSupport.importDetailHtml(List.of("[현재 상태] 상태입니다."), operation,
+                List.of("무엇을 확인해야 합니까?"), 2000);
+
+        assertThat(body.length()).isLessThanOrEqualTo(2000);
+        /* Purpose, narrative, timing and the questions survive; the bulk lists are what goes. */
+        assertThat(body).contains("업무 목적").contains("현재 상태").contains("주기·시작·마감")
+                .contains("무엇을 확인해야 합니까?")
+                .doesNotContain("시스템·문서·산출물").doesNotContain("선행조건");
+        /* Whole tags, never a body cut in half. */
+        assertThat(body).endsWith("</ul>");
+    }
+
+    @Test
+    void leavesAnEmptyOperationOutOfTheBodyEntirely() {
+        assertThat(AiSupport.importDetailHtml(List.of("[업무 개요] 접수를 진행합니다."), null, List.of(), 20000))
+                .isEqualTo("<p><strong>업무 개요</strong><br>접수를 진행합니다.</p>");
+    }
+
+    @Test
     void escapesModelTextInsideTheBodyItBuilds() {
         assertThat(AiSupport.detailHtml(List.of("a<script>b"), List.of("c&d")))
                 .contains("a&lt;script&gt;b")

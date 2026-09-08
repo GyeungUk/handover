@@ -6,28 +6,320 @@
       "items": {
         "type": "object",
         "properties": {
-          "sourceQuote": { "type": "string", "description": "대상과 분류를 지지하는 상태·역할의 연속 원문 인용. 보통 10~100자, 문맥·부정어 보존에 필요하면 160자까지. 짧은 완전한 사실은 10자 미만도 가능. 줄바꿈·표기 그대로, 최신 정정 상태 우선, 항목 간 핵심 구절 재사용 금지." },
-          "category": { "type": "string", "$enumFrom": "categories", "description": "대상·회차·최신 상태·완료 조건을 확인한 뒤 네 기준 비교. responsibility=상시 역할·일반 절차, plan=구체적 실행·정상 진행·완료 기록, issue=실제 문제·확인된 제약의 해결, pending=특정 미결 건과 남은 종결 조건. 대응 일정은 issue, 미결 처리 예정일은 pending에 포함. 균등 배분과 subtype 출력 금지." },
-          "title": { "type": "string", "description": "독립적인 인계 사실의 대상과 성격을 나타내는 제목. 40자 이내." },
-          "paragraphs": { "type": "array", "items": { "type": "string" }, "description": "원문에 근거한 상세 본문. 정보량에 따라 구조화된 1~6개 문단. 다른 섹션의 독립 사실을 흡수하거나 반복하지 않는다." },
+          "sourceQuote": {
+            "type": "string",
+            "description": "대상과 분류를 지지하는 상태·역할의 연속 원문 인용. 보통 10~100자, 문맥·부정어 보존에 필요하면 160자까지. 짧은 완전한 사실은 10자 미만도 가능. 줄바꿈·표기 그대로, 최신 정정 상태 우선, 항목 간 핵심 구절 재사용 금지."
+          },
+          "category": {
+            "type": "string",
+            "$enumFrom": "categories",
+            "description": "대상·회차·최신 상태·완료 조건을 확인한 뒤 네 기준 비교. responsibility=상시 역할·일반 절차, plan=구체적 실행·정상 진행·완료 기록, issue=실제 문제·확인된 제약의 해결, pending=특정 미결 건과 남은 종결 조건. 대응 일정은 issue, 미결 처리 예정일은 pending에 포함. 균등 배분과 subtype 출력 금지."
+          },
+          "title": {
+            "type": "string",
+            "description": "독립적인 인계 사실의 대상과 성격을 나타내는 제목. 40자 이내."
+          },
+          "paragraphs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "operation에 담을 수 없는 원문 현재 상태·원인·영향·예외만 보충. 구조 필드를 다시 요약하지 않는다. 없으면 빈 배열."
+          },
           "properties": {
             "type": "array",
             "items": {
               "type": "object",
-              "properties": { "key": { "type": "string" }, "value": { "type": "string" } },
-              "required": ["key", "value"],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
               "additionalProperties": false
             }
           },
-          "questions": { "type": "array", "items": { "type": "string" }, "description": "원문에 없어 작성자가 채워야 할 질문. 최대 3개." },
-          "confidence": { "type": "string", "enum": ["high", "low"], "description": "대상·핵심 사실·상태와 섹션이 분명하면 high. 사실은 확인되나 시점·상태 또는 섹션 경계에 제한적 불확실성이 남으면 low. 날짜 없음·짧은 문장은 감점 사유 아님. 판정 자체가 불가능하면 low로 꾸미지 말고 unmapped." }
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "실행에 필수지만 원문에 없는 정보의 확인 질문. 최대 8개. 실제 미결 항목으로 만들지 않는다. 원문에 답이 있으면 질문하지 않는다."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "low"
+            ],
+            "description": "대상·핵심 사실·상태와 섹션이 분명하면 high. 사실은 확인되나 시점·상태 또는 섹션 경계에 제한적 불확실성이 남으면 low. 날짜 없음·짧은 문장은 감점 사유 아님. 판정 자체가 불가능하면 low로 꾸미지 말고 unmapped."
+          },
+          "id": {
+            "type": "string",
+            "description": "문서 내 고유 항목 ID. i1, i2 등. 원문 사실인 숫자와 구분한다."
+          },
+          "workflowId": {
+            "type": "string",
+            "description": "이 항목이 소속된 workflowGroups의 ID. 모든 항목은 정확히 한 업무단위에 소속."
+          },
+          "operation": {
+            "type": "object",
+            "properties": {
+              "purpose": {
+                "type": "string",
+                "description": "업무 목적과 담당 범위. 원문으로 확인할 수 없는 책임은 만들지 않는다."
+              },
+              "timing": {
+                "type": "object",
+                "properties": {
+                  "cycle": {
+                    "type": "string"
+                  },
+                  "trigger": {
+                    "type": "string"
+                  },
+                  "deadline": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cycle",
+                  "trigger",
+                  "deadline"
+                ],
+                "additionalProperties": false,
+                "description": "반복 주기, 시작 조건, 업무별 마감. 정보가 없으면 빈 문자열."
+              },
+              "collaborators": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "department": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "department",
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "resources": {
+                "type": "object",
+                "properties": {
+                  "systems": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "documents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "outputs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "systems",
+                  "documents",
+                  "outputs"
+                ],
+                "additionalProperties": false
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "실제 수행 순서. 같은 목표의 세부 행동은 여러 카드로 쪼개지 않고 여기에 결합."
+              },
+              "prerequisites": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "원문에 근거한 선행조건과 연결된 업무명."
+              },
+              "followUp": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "후속 업무와 전달할 결과물. 원문에 없는 절차를 권장하지 않는다."
+              },
+              "controls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "condition": {
+                      "type": "string"
+                    },
+                    "owner": {
+                      "type": "string"
+                    },
+                    "action": {
+                      "type": "string"
+                    },
+                    "escalation": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "condition",
+                    "owner",
+                    "action",
+                    "escalation"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "조건부 위험의 발생 조건·확인 시점, 통제 주체, 점검 행동, 원문에 있는 보고·대응 기준. 미상은 빈 문자열."
+              }
+            },
+            "required": [
+              "purpose",
+              "timing",
+              "collaborators",
+              "resources",
+              "steps",
+              "prerequisites",
+              "followUp",
+              "controls"
+            ],
+            "additionalProperties": false
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sourceId": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sourceId",
+                "quote"
+              ],
+              "additionalProperties": false
+            },
+            "description": "이 업무의 목적·일정·절차·통제를 뒷받침하는 근거. sourceId는 <조각 id=\"...\">의 id를 그대로 쓰고, quote는 그 조각 안에서 연속된 원문 구절만 쓴다. 태그·id는 quote에 넣지 않는다. 서로 떨어진 구절은 별도 evidence로 보존. 일정표는 행마다 조각이므로 해당 행도 포함."
+          }
         },
-        "required": ["category", "title", "paragraphs", "properties", "questions", "sourceQuote", "confidence"],
+        "required": [
+          "sourceQuote",
+          "category",
+          "title",
+          "paragraphs",
+          "properties",
+          "questions",
+          "confidence",
+          "id",
+          "workflowId",
+          "operation",
+          "evidence"
+        ],
         "additionalProperties": false
       }
     },
-    "unmapped": { "type": "array", "items": { "type": "string" }, "description": "업무 관련이지만 끊긴 조건·불분명한 대상·분류를 좌우하는 미해결 충돌·실행 여부 미확인으로 배정할 수 없는 원문 사실. 목차·지시문·개인정보·채움말은 제외. 없으면 빈 배열." }
+    "unmapped": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "업무 관련이지만 끊긴 조건·불분명한 대상·분류를 좌우하는 미해결 충돌·실행 여부 미확인으로 배정할 수 없는 원문 사실. 목차·지시문·개인정보·채움말은 제외. 없으면 빈 배열."
+    },
+    "workflowGroups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "실제 목적·산출물·완료 경계로 묶은 업무단위명. 목차 제목을 복사하지 않는다."
+          },
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "after": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "원문 흐름에 근거한 직접 선행 업무단위 ID. 독립 업무는 빈 배열. 자기참조와 순환 금지."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "itemIds",
+          "after"
+        ],
+        "additionalProperties": false
+      },
+      "description": "전체 결과를 실제 업무 흐름으로 조합한 단위. 선행→후속 순서로 배열. 단위별 카드 수를 맞추지 않는다."
+    },
+    "coverage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string"
+          },
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string",
+            "description": "어떤 업무·단계·통제에 반영했는지, 배정하지 않았다면 구체적 사유. 빈 reason 금지."
+          }
+        },
+        "required": [
+          "sourceId",
+          "itemIds",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "description": "이 부분에 주어진 모든 <조각> id를 정확히 한 번 대조한다. 일정표는 행 단위로 대조한다. 원문 목차와 일정표 행의 누락·중복·분류·근거를 검증한 후 기록. 반영된 itemIds는 해당 sourceId evidence를 포함해야 한다. 목차·표 머리글 등은 itemIds=[]와 사유."
+    }
   },
-  "required": ["items", "unmapped"],
+  "required": [
+    "items",
+    "unmapped",
+    "workflowGroups",
+    "coverage"
+  ],
   "additionalProperties": false
 }

@@ -443,6 +443,244 @@ class ImportServiceTest {
                 .contains(new ImportResponse.Skipped("같은 원문 구절을 다시 사용한 항목", ImportService.chunk(long_.trim()).size() - 1));
     }
 
+    /* ------------------------------------------------------------ operable work units */
+
+    /** A manual whose facts are all procedure: cycle, steps and control points, with no narrative. */
+    private static final String MANUAL = """
+            성적처리 인수인계
+
+            1. 성적입력 현황 점검
+            학사팀은 입력 기간에 학사정보시스템의 입력 현황을 대조하여 마감을 통제한다.
+            미입력 교원이 확인되면 학사팀이 단과대학에 독려를 요청한다.
+            반복 미입력 교원이 확인되면 학사팀이 인사팀에 통보한다.
+
+            2. 성적 확정
+            교무팀이 최종 성적을 확정하며 학사팀은 확정자료를 보관한다.
+
+            기준 일정표
+            | 업무 | 마감 | 담당부서 |
+            |---|---|---|
+            | 성적입력 현황 점검 | 12월 26일 | 학사팀 |
+            | 성적 확정 | 1월 5일 | 교무팀 |
+            """;
+
+    private static final String CONTROL_CARD = """
+            {"id":"i1","workflowId":"g1","category":"responsibility","title":"성적입력 마감 통제","paragraphs":[],
+             "properties":[],"questions":[],"sourceQuote":"학사팀은 입력 기간에 학사정보시스템의 입력 현황을 대조하여 마감을 통제한다",
+             "confidence":"high",
+             "operation":{"purpose":"입력 마감까지 성적입력 현황을 통제한다","timing":{"cycle":"매 학기","trigger":"입력 기간 시작","deadline":"12월 26일"},
+              "collaborators":[{"department":"단과대학","role":"소속 교원 입력 독려"},{"department":"인사팀","role":"반복 미입력 교원 통보 접수"}],
+              "resources":{"systems":["학사정보시스템"],"documents":["입력 현황"],"outputs":["마감 확인 결과"]},
+              "steps":["입력 현황을 대조한다","미입력을 확인한다"],"prerequisites":["입력 안내"],"followUp":["성적 확정"],
+              "controls":[{"condition":"미입력 교원 확인","owner":"학사팀","action":"단과대학에 독려를 요청","escalation":""},
+                          {"condition":"반복 미입력 교원 확인","owner":"학사팀","action":"사실을 확인","escalation":"인사팀에 통보"}]},
+             "evidence":[{"sourceId":"s2","quote":"미입력 교원이 확인되면 학사팀이 단과대학에 독려를 요청한다"}]}""";
+
+    @Test
+    void keepsACardWhoseRecordIsEntirelyOperationWithNoProse() {
+        modelAnswers("{\"items\":[" + CONTROL_CARD + "],\"unmapped\":[],"
+                + "\"workflowGroups\":[{\"id\":\"g1\",\"title\":\"입력 통제\",\"itemIds\":[\"i1\"],\"after\":[]}]}");
+
+        ImportResponse.ImportItem item = service.classify(MANUAL, "매뉴얼.docx").items().get(0);
+
+        assertThat(item.operation()).isNotNull();
+        assertThat(item.operation().controls()).hasSize(2);
+        assertThat(item.detail())
+                .contains("업무 목적").contains("주기·시작·마감").contains("12월 26일")
+                .contains("협업 부서와 역할").contains("학사정보시스템")
+                .contains("실행 절차").contains("주의사항·통제 포인트")
+                .contains("<td>반복 미입력 교원 확인</td>").contains("<td>인사팀에 통보</td>");
+    }
+
+    @Test
+    void dropsACardThatCarriesNeitherProseNorOperation() {
+        modelAnswers("""
+                {"items":[{"id":"i1","category":"plan","title":"제목만 있는 항목","paragraphs":[],
+                  "properties":[],"questions":[],"sourceQuote":"2학기 체류기간 연장 단체접수","confidence":"high",
+                  "operation":{"purpose":"","timing":{"cycle":"","trigger":"","deadline":""},"collaborators":[],
+                   "resources":{"systems":[],"documents":[],"outputs":[]},"steps":[],"prerequisites":[],
+                   "followUp":[],"controls":[]},"evidence":[]}],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(SOURCE, "a.txt");
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.skipped()).containsExactly(new ImportResponse.Skipped("형식이 불완전한 항목", 1));
+    }
+
+    @Test
+    void rejectsAnEscalationThresholdTheSourceNeverRecorded() {
+        /* "반복" in the source sets no count. A control that supplies one invents the rule. */
+        modelAnswers("""
+                {"items":[{"id":"i1","category":"responsibility","title":"성적입력 마감 통제","paragraphs":[],
+                  "properties":[],"questions":[],"sourceQuote":"반복 미입력 교원이 확인되면 학사팀이 인사팀에 통보한다","confidence":"high",
+                  "operation":{"purpose":"입력 마감을 통제한다","timing":{"cycle":"","trigger":"","deadline":""},"collaborators":[],
+                   "resources":{"systems":[],"documents":[],"outputs":[]},"steps":[],"prerequisites":[],"followUp":[],
+                   "controls":[{"condition":"3회 이상 미입력","owner":"학사팀","action":"인사팀에 통보","escalation":""}]},
+                  "evidence":[]}],"unmapped":[]}""");
+
+        ImportResponse response = service.classify(MANUAL, "매뉴얼.docx");
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.skipped()).containsExactly(new ImportResponse.Skipped("원문에 없는 숫자가 들어간 항목", 1));
+    }
+
+    @Test
+    void combinesTheCardsIntoWorkPhasesInDependencyOrder() {
+        modelAnswers("""
+                {"items":[
+                  {"id":"i1","workflowId":"g2","category":"responsibility","title":"성적 확정 요청","paragraphs":["[처리 절차] 확정을 요청합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"교무팀이 최종 성적을 확정하며","confidence":"high"},
+                  {"id":"i2","workflowId":"g1","category":"responsibility","title":"성적입력 마감 통제","paragraphs":["[처리 절차] 입력 현황을 대조합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"학사팀은 입력 기간에 학사정보시스템의 입력 현황을 대조","confidence":"high"}],
+                 "unmapped":[],
+                 "workflowGroups":[
+                   {"id":"g2","title":"성적 확정","itemIds":["i1"],"after":["g1"]},
+                   {"id":"g1","title":"입력 통제","itemIds":["i2"],"after":[]}]}""");
+
+        ImportResponse response = service.classify(MANUAL, "매뉴얼.docx");
+
+        assertThat(response.workflowGroups()).extracting(ImportResponse.WorkflowGroup::title)
+                .containsExactly("입력 통제", "성적 확정");
+        assertThat(response.workflowGroups().get(0).after()).isEmpty();
+        assertThat(response.workflowGroups().get(1).after())
+                .containsExactly(response.workflowGroups().get(0).id());
+        /* Every card names the phase it runs in, so the modal never has to guess. */
+        assertThat(response.items()).allSatisfy(item -> assertThat(item.workflowId()).isNotBlank());
+        assertThat(response.verification().warnings()).isEmpty();
+    }
+
+    @Test
+    void mergesTheSamePhaseProposedByTwoPartsOfOneDocument() {
+        /* Every part of a split document gets the same stubbed answer, ids and all. */
+        modelAnswers("""
+                {"items":[{"id":"i1","workflowId":"g1","category":"responsibility","title":"체류기간 연장 단체접수 안내",
+                  "paragraphs":["[처리 절차] 단체접수를 안내합니다."],"properties":[],"questions":[],
+                  "sourceQuote":"체류기간 연장 단체접수","confidence":"high"}],"unmapped":[],
+                 "workflowGroups":[{"id":"g1","title":"체류 연장 접수 운영","itemIds":["i1"],"after":[]}]}""");
+
+        String long_ = "체류기간 연장 단체접수를 진행합니다. 출입국관리사무소와 협의하여 접수합니다.\n\n".repeat(400);
+        ImportResponse response = service.classify(long_, "인수인계.docx");
+
+        assertThat(ImportService.chunk(long_.trim())).hasSizeGreaterThan(1);
+        assertThat(response.workflowGroups()).singleElement()
+                .extracting(ImportResponse.WorkflowGroup::title).isEqualTo("체류 연장 접수 운영");
+        assertThat(response.workflowGroups().get(0).itemIds()).containsExactly("import-0");
+    }
+
+    @Test
+    void breaksAndReportsPhasesThatDependOnEachOther() {
+        modelAnswers("""
+                {"items":[
+                  {"id":"i1","workflowId":"g1","category":"responsibility","title":"성적입력 마감 통제","paragraphs":["[처리 절차] 대조합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"학사팀은 입력 기간에 학사정보시스템의 입력 현황을 대조","confidence":"high"},
+                  {"id":"i2","workflowId":"g2","category":"responsibility","title":"성적 확정 요청","paragraphs":["[처리 절차] 확정을 요청합니다."],
+                   "properties":[],"questions":[],"sourceQuote":"교무팀이 최종 성적을 확정하며","confidence":"high"}],
+                 "unmapped":[],
+                 "workflowGroups":[
+                   {"id":"g1","title":"입력 통제","itemIds":["i1"],"after":["g2"]},
+                   {"id":"g2","title":"성적 확정","itemIds":["i2"],"after":["g1"]}]}""");
+
+        ImportResponse response = service.classify(MANUAL, "매뉴얼.docx");
+
+        assertThat(response.workflowGroups()).hasSize(2);
+        assertThat(response.verification().warnings())
+                .anyMatch(warning -> warning.contains("순환"));
+    }
+
+    /* ------------------------------------------------------------ source coverage */
+
+    @Test
+    void numbersEveryParagraphAndEveryScheduleRowSeparately() {
+        var segments = ImportService.segments(ImportService.chunk(MANUAL.strip())).get(0);
+
+        assertThat(segments).extracting(ImportService.Segment::id).startsWith("s1", "s2", "s3");
+        /* Each row of the schedule is its own unit, and the rule under the header is not one. */
+        assertThat(segments).extracting(ImportService.Segment::text)
+                .contains("| 성적입력 현황 점검 | 12월 26일 | 학사팀 |", "| 성적 확정 | 1월 5일 | 교무팀 |")
+                .doesNotContain("|---|---|---|");
+    }
+
+    @Test
+    void sendsTheSourceToTheModelAsNumberedUnits() {
+        java.util.List<String> chunks = ImportService.chunk(MANUAL.strip());
+        String message = ImportService.userMessage("{}", "매뉴얼.docx", chunks, ImportService.segments(chunks), 0);
+
+        assertThat(message)
+                .contains("<조각 id=\"s1\">")
+                .contains("<조각 id=\"s2\">\n1. 성적입력 현황 점검")
+                .contains("| 성적 확정 | 1월 5일 | 교무팀 |\n</조각>");
+    }
+
+    @Test
+    void reportsTheScheduleRowNoSurvivingCardWasBuiltOn() {
+        modelAnswers("""
+                {"items":[{"id":"i1","workflowId":"g1","category":"responsibility","title":"성적입력 마감 통제",
+                  "paragraphs":["[처리 절차] 입력 현황을 대조합니다."],"properties":[],"questions":[],
+                  "sourceQuote":"학사팀은 입력 기간에 학사정보시스템의 입력 현황을 대조","confidence":"high",
+                  "evidence":[{"sourceId":"s6","quote":"| 성적입력 현황 점검 | 12월 26일 | 학사팀 |"}]}],
+                 "unmapped":[],
+                 "workflowGroups":[{"id":"g1","title":"입력 통제","itemIds":["i1"],"after":[]}],
+                 "coverage":[{"sourceId":"s1","itemIds":[],"reason":"문서 제목입니다."}]}""");
+
+        ImportResponse.Verification verification = service.classify(MANUAL, "매뉴얼.docx").verification();
+
+        assertThat(verification.sourceCount()).isGreaterThan(verification.coveredCount());
+        /* The row the card cited is credited; the row for a phase nobody wrote is reported. */
+        assertThat(verification.uncovered()).extracting(ImportResponse.Uncovered::excerpt)
+                .anyMatch(excerpt -> excerpt.contains("성적 확정 | 1월 5일"))
+                .noneMatch(excerpt -> excerpt.contains("성적입력 현황 점검 | 12월 26일"));
+        /* A unit the model explained keeps its explanation instead of reading as an omission. */
+        assertThat(verification.uncovered()).anySatisfy(entry ->
+                assertThat(entry.reason()).isEqualTo("문서 제목입니다."));
+    }
+
+    @Test
+    void doesNotCreditAUnitOnEvidenceThatFailedTheAcceptanceChecks() {
+        /* The card is dropped for an invented number, so the paragraph it cited stays unreflected
+           rather than being covered by a claim that did not survive. */
+        modelAnswers("""
+                {"items":[{"id":"i1","category":"responsibility","title":"성적 확정","paragraphs":["[처리 절차] 999건을 확정합니다."],
+                  "properties":[],"questions":[],"sourceQuote":"교무팀이 최종 성적을 확정하며","confidence":"high",
+                  "evidence":[{"sourceId":"s3","quote":"교무팀이 최종 성적을 확정하며 학사팀은 확정자료를 보관한다"}]}],
+                 "unmapped":[],"workflowGroups":[],
+                 "coverage":[{"sourceId":"s3","itemIds":["i1"],"reason":"성적 확정 업무에 반영했습니다."}]}""");
+
+        ImportResponse response = service.classify(MANUAL, "매뉴얼.docx");
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.verification().coveredCount()).isZero();
+        assertThat(response.verification().uncovered()).extracting(ImportResponse.Uncovered::excerpt)
+                .anyMatch(excerpt -> excerpt.contains("교무팀이 최종 성적을 확정하며"));
+    }
+
+    @Test
+    void ignoresAUnitNumberTheServiceNeverIssued() {
+        modelAnswers("""
+                {"items":[{"id":"i1","category":"plan","title":"체류기간 연장 단체접수","paragraphs":["[업무 개요] 접수를 진행합니다."],
+                  "properties":[],"questions":[],"sourceQuote":"2학기 체류기간 연장 단체접수","confidence":"high",
+                  "evidence":[{"sourceId":"s999","quote":"원문에 없는 인용입니다"}]}],
+                 "unmapped":[],"coverage":[{"sourceId":"s999","itemIds":["i1"],"reason":"반영했습니다."}]}""");
+
+        ImportResponse response = service.classify(SOURCE, "a.txt");
+
+        /* The ungrounded quote is dropped, the item keeps the evidence it could prove. */
+        assertThat(response.items().get(0).evidence()).hasSize(1);
+        assertThat(response.items().get(0).evidence().get(0).quote()).isEqualTo("2학기 체류기간 연장 단체접수");
+        assertThat(response.verification().warnings()).anyMatch(warning -> warning.contains("조각 번호"));
+    }
+
+    @Test
+    void keepsEveryOpenQuestionTheSchemaAllows() {
+        modelAnswers("""
+                {"items":[{"id":"i1","category":"plan","title":"체류기간 연장 단체접수","paragraphs":["[업무 개요] 접수를 진행합니다."],
+                  "properties":[],
+                  "questions":["첫째 질문입니까?","둘째 질문입니까?","셋째 질문입니까?","넷째 질문입니까?",
+                               "다섯째 질문입니까?","여섯째 질문입니까?","일곱째 질문입니까?","여덟째 질문입니까?","아홉째 질문입니까?"],
+                  "sourceQuote":"2학기 체류기간 연장 단체접수","confidence":"high"}],"unmapped":[]}""");
+
+        assertThat(service.classify(SOURCE, "a.txt").items().get(0).questions()).hasSize(8);
+    }
+
     @Test
     void namesPastedContentWhenNoFileNameWasSent() {
         modelAnswers("{\"items\":[],\"unmapped\":[]}");

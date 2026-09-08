@@ -30,6 +30,8 @@ export function tidyExtractedText(value: string) {
   const cleaned = lines.map((raw) => {
     /* A table row carries its meaning in the pipes, so only the emphasis inside it is removed. */
     if (/^\s*\|.*\|\s*$/.test(raw)) return dropEmphasis(raw).trimEnd();
+    /* Tabs are cell boundaries in a pasted spreadsheet. Keep empty cells as well as values. */
+    if (raw.includes('\t')) return raw.split('\t').map((cell) => dropEmphasis(cell).trim()).join('\t');
     const line = dropEmphasis(raw
       .replace(/^\s{0,3}#{1,6}\s*/, '')
       .replace(/^\s{0,3}>\s?/, '')
@@ -37,8 +39,9 @@ export function tidyExtractedText(value: string) {
       .replace(/^\s*[-*_=]{3,}\s*$/, ''))
       .replace(/[ \t]+/g, ' ')
       .trim();
-    /* A bare page number is the only thing on its line; it never belongs to a task. */
-    return /^[-–(\[]?\s*\d{1,3}\s*(?:\/\s*\d{1,3}\s*)?[-–)\]]?$/.test(line) ? '' : line;
+    /* Bare numbers can be a deadline, count, or single-column table cell. Only remove an
+       explicit page-number ornament; guessing from the number alone loses recorded facts. */
+    return /^[-–]\s*\d{1,3}\s*[-–]$/.test(line) ? '' : line;
   });
 
   return cleaned.join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -57,7 +60,9 @@ export function tidyExtractedText(value: string) {
  */
 function dropEmphasis(value: string) {
   return value
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    /* A system/document URL is execution information, not disposable Markdown syntax. */
+    .replace(/\[([^\]]*)\]\(([^)]*)\)/g, (_, label, target) => label === target ? label : `${label} (${target})`)
     .replace(/\*\*([\s\S]+?)\*\*/g, '$1')
     .replace(/__([\s\S]+?)__/g, '$1')
     .replace(/`{1,3}([^`]*)`{1,3}/g, '$1')
@@ -73,7 +78,19 @@ export async function extractText(file: File): Promise<string> {
     if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') return await readPdf(file);
     if (spreadsheetLike.test(file.name)) return await readSpreadsheet(file);
     if (imageLike.test(file.name) || /^image\/(png|jpeg|webp)$/i.test(file.type)) return await readImage(file);
-    if (textLike.test(file.name) || file.type.startsWith('text/')) return tidyExtractedText(decodeEntities(stripTags(await file.text())));
+    if (textLike.test(file.name) || file.type.startsWith('text/')) {
+      const raw = await file.text();
+      /* CSV/TSV/JSON/XML carry their own structure. Removing markup or normalising whitespace
+         changes literal values, quoted multiline cells, and empty spreadsheet columns. */
+      if (/\.(csv|tsv|json|xml)$/i.test(file.name) || /^(?:text\/(?:csv|tab-separated-values)|(?:text|application)\/xml)$/i.test(file.type)) {
+        return raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+      }
+      if (/\.(htm|html)$/i.test(file.name) || file.type === 'text/html') {
+        return tidyExtractedText(decodeEntities(stripTags(raw)));
+      }
+      /* A literal <미제출> or an inequality in TXT/Markdown is document content, not HTML. */
+      return tidyExtractedText(raw);
+    }
   } catch (failure) {
     const detail = failure instanceof Error ? failure.message : '';
     if (/encrypt|password|암호/i.test(detail)) {
@@ -129,11 +146,38 @@ function ensureReadable(value: string, kind: string, hint = '') {
 
 const extensionOf = (file: File) => file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '이';
 
-const stripTags = (value: string) =>
-  value.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, '');
+/** Keep rows, cells, headings and list boundaries when a handover was exported as HTML.
+ * Plain tag removal used to join "업무마감담당부서입력12월20일학사지원팀" into one word.
+ * Merge attributes stay visible so a shared deadline/department is not assigned to one row only.
+ */
+const stripTags = (value: string) => value
+  .replace(/<!--[^]*?-->/g, '')
+  .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+  .replace(/<tr\b[^>]*>([\s\S]*?)<\/tr\s*>/gi, (_, row: string) => {
+    const cells = [...row.matchAll(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1\s*>/gi)].map((cell) => {
+      const merged = [...cell[2].matchAll(/\b(rowspan|colspan)\s*=\s*["']?(\d+)/gi)].map((match) =>
+        Number(match[2]) > 1 ? `[${match[1].toLowerCase() === 'rowspan' ? '행' : '열'} 병합 ${match[2]}] ` : '',
+      ).join('');
+      const content = cell[3].replace(/<\/?(?:p|div|br|li)\b[^>]*>/gi, ' ')
+        .replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+      return merged + content;
+    });
+    /* No trailing newline: consecutive rows have to stay consecutive lines, or the tidier's
+       blank-line collapse turns one schedule into a run of unrelated single-row fragments. */
+    return cells.length ? `\n| ${cells.join(' | ')} |` : `\n${row}`;
+  })
+  .replace(/<li\b[^>]*>/gi, '\n- ')
+  .replace(/<\/li\s*>/gi, '')
+  .replace(/<\/?(?:p|div|h[1-6]|br|table|caption|thead|tbody|tfoot|ul|ol|section|article|header|footer|dl|dt|dd)\b[^>]*>/gi, '\n')
+  .replace(/<[^>]+>/g, '');
 
 function decodeEntities(value: string) {
   return value
+    .replace(/&#(x[\da-f]+|\d+);/gi, (entity, code: string) => {
+      const point = code.toLowerCase().startsWith('x') ? parseInt(code.slice(1), 16) : Number(code);
+      return point > 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff)
+        ? String.fromCodePoint(point) : entity;
+    })
     .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')

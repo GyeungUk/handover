@@ -378,14 +378,43 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
   };
 
   /** Every proposal from an external source lands here. */
-  const adoptProposal = async (item: AdoptableItem, message = '초안을 항목으로 추가했습니다.') => {
+  const adoptProposal = async (item: AdoptableItem, message = '초안을 항목으로 추가했습니다.', workUnit = '') => {
     if (!loaded || !isOwnDocument) throw new Error('내 인수인계서에서만 초안을 추가할 수 있습니다.');
     await ensureNextAcademicYearDraft();
     const id = `${item.category}-${crypto.randomUUID()}`;
     setEntries((current) => [...current, { id, category: item.category, title: item.title, detail: sanitizeRichHtml(item.detail), properties: item.properties, attachments: [], formatting: defaultFormatting }]);
+    if (workUnit) placeInWorkUnit(id, workUnit);
     setActiveCategory(item.category);
     setQuality(null);
-    flash(message);
+    flash(workUnit ? `${message} ‘${workUnit}’ 업무 단위에 넣었습니다.` : message);
+  };
+
+  /**
+   * Files an adopted card under the work unit the import named for it.
+   *
+   * <p>The import's whole point is that eight headings become four units of work, and that
+   * regrouping is lost the moment the cards land in a flat list for the author to re-sort by hand.
+   * An existing unit of the same name is reused so a phase adopted card by card stays one unit;
+   * a submitted or approved unit is never touched, and a card that finds only locked units of its
+   * name starts a fresh one rather than being dropped.
+   */
+  const placeInWorkUnit = (entryId: string, title: string) => {
+    const name = title.slice(0, documentLimits.bundleTitle);
+    const freshId = `bundle-${crypto.randomUUID()}`;
+    setBundles((current) => {
+      const existing = current.find((bundle) => bundle.title === name && !isBundleLocked(bundle));
+      /* Reading `current` rather than the render's `bundles`, because adopting every card runs
+         this in a loop and each pass has to see the unit the pass before it created. */
+      if (existing) {
+        return current.map((bundle) => bundle.id === existing.id
+          ? { ...bundle, entryIds: [...bundle.entryIds, entryId] }
+          : bundle);
+      }
+      return [...current, { id: freshId, title: name, entryIds: [entryId], decision: null, comment: '', previousComment: '' }];
+    });
+    /* Selecting an id no unit ends up having is harmless: submission sends the units that are
+       both selected and submittable, never the raw set. */
+    setSubmissionBundleIds((current) => new Set([...current, freshId]));
   };
 
   /** Starts another working copy without replacing drafts that were already made from this source. */
@@ -446,7 +475,9 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       if (!await persist(entries, bundles)) return;
       /* The queue this document just joined is refetched when the reviewer view opens, so there is
        * nothing to patch in here — see showManager. */
-      if (!await runAction({ action: 'submit', bundleIds: [...submissionBundleIds] }, '제출하지 못했습니다.')) return;
+      /* The units `canSubmit` was decided from, so a selection left over from a unit that has
+         since been deleted or approved cannot fail the request the button just enabled. */
+      if (!await runAction({ action: 'submit', bundleIds: selectedSubmissionBundles.map((bundle) => bundle.id) }, '제출하지 못했습니다.')) return;
       setTab('review');
       setRole('author');
       flash(correcting ? '보완한 업무 단위를 다시 제출했습니다.' : '인수인계서를 제출했습니다.');
@@ -693,7 +724,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       </>}
     </section>}
     {draftOpen && <DraftModal onAdopt={adoptProposal} onClose={() => setDraftOpen(false)} />}
-    {importOpen && <ImportModal onAdopt={(item) => adoptProposal(item, '분류된 항목을 추가했습니다.')} onClose={() => setImportOpen(false)} />}
+    {importOpen && <ImportModal onAdopt={(item, workUnit) => adoptProposal(item, '정리한 항목을 추가했습니다.', workUnit)} onClose={() => setImportOpen(false)} />}
     {archiveOpen && <ArchiveModal viewerRole={viewerRole} currentEmail={currentUser.email.toLowerCase()} onClose={() => setArchiveOpen(false)} />}
     {approvedDraftOpen && <ApprovedDraftModal entryCount={entries.length} bundleCount={bundles.length} reviewedAt={reviewedAt} reviewedBy={reviewedBy} canCreate={status !== 'pending'} onStart={ensureNextAcademicYearDraft} onOpen={openApprovedDraft} onClose={() => setApprovedDraftOpen(false)} />}
     {editor && <EntryEditor category={categories.find((category) => category.id === editor.category)!} entry={editor.entry} onSave={saveEntry} onClose={() => setEditor(null)} />}

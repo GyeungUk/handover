@@ -80,6 +80,39 @@ export type QualityFinding = {
 export type QualityResponse = { checked: number; findings: QualityFinding[] };
 
 /**
+ * The operational information behind an imported card. Missing facts stay empty or become
+ * confirmation questions; conditional controls do not establish that an incident happened.
+ */
+export type ImportOperation = {
+  purpose: string;
+  timing: { cycle: string; trigger: string; deadline: string };
+  collaborators: { department: string; role: string }[];
+  resources: { systems: string[]; documents: string[]; outputs: string[] };
+  steps: string[];
+  prerequisites: string[];
+  followUp: string[];
+  controls: { condition: string; owner: string; action: string; escalation: string }[];
+};
+
+export type ImportEvidence = { sourceId: string; quote: string };
+
+/** A real work phase can contain cards filed in different handover sections. */
+export type ImportWorkflowGroup = {
+  id: string;
+  title: string;
+  itemIds: string[];
+  /** IDs of work phases that must happen before this phase. */
+  after: string[];
+};
+
+export type ImportVerification = {
+  sourceCount: number;
+  coveredCount: number;
+  uncovered: { sourceId: string; excerpt: string; reason: string }[];
+  warnings: string[];
+};
+
+/**
  * One entry proposed from an uploaded document.
  * `sourceQuote` is verified to appear in the uploaded text before it is returned; when the model
  * paraphrased instead of quoting, it comes back empty and the card shows no evidence line.
@@ -94,6 +127,11 @@ export type ImportItem = {
   sourceQuote: string;
   /** `high` — the source clearly belongs in this section. `low` — the section was a judgement call. */
   confidence: 'high' | 'low';
+  /** Optional so results from a previous backend can still be reviewed and adopted. */
+  workflowId?: string;
+  /** Null when the source recorded nothing operational — a card can still be pure narrative. */
+  operation?: ImportOperation | null;
+  evidence?: ImportEvidence[];
 };
 
 export type ImportResponse = {
@@ -107,6 +145,8 @@ export type ImportResponse = {
    * instead of looking like the feature failed. Optional, so an older backend still parses.
    */
   skipped?: { reason: string; count: number }[];
+  workflowGroups?: ImportWorkflowGroup[];
+  verification?: ImportVerification;
 };
 
 /** What next year's document should do with a current entry. */

@@ -170,27 +170,55 @@ function sourcePieces(source, target) {
   return pieces;
 }
 
-function importMessage(fileName, chunks, part) {
+const MAX_SEGMENTS = 150;
+const SEPARATOR_ROW = /^\|[\s|:-]*\|$/;
+
+/** ImportService#segments: paragraph blocks, and a schedule's rows one at a time. */
+function sourceSegments(chunks) {
+  let next = 1;
+  return chunks.map((chunk) => {
+    const units = [];
+    for (const block of chunk.split(/\n\s*\n/)) {
+      const trimmed = block.trim();
+      if (!trimmed) continue;
+      if (!isTable(trimmed)) { units.push(trimmed); continue; }
+      for (const line of trimmed.split('\n')) {
+        const row = line.trim();
+        if (row && !SEPARATOR_ROW.test(row)) units.push(row);
+      }
+    }
+    const capped = [];
+    const perUnit = Math.ceil(units.length / MAX_SEGMENTS);
+    if (units.length > MAX_SEGMENTS) {
+      for (let at = 0; at < units.length; at += perUnit) capped.push(units.slice(at, at + perUnit).join('\n'));
+    } else capped.push(...units);
+    return capped.map((text) => ({ id: `s${next++}`, text }));
+  });
+}
+
+function importMessage(fileName, chunks, segments, part) {
   const safeImportProperties = new Set(['cycle', 'department', 'due', 'progress', 'response', 'owner', 'next']);
   const allowed = JSON.stringify(allowedProperties((key) => safeImportProperties.has(key)));
-  const body = chunks[part];
-  if (chunks.length === 1) return `섹션별 허용속성: ${allowed}\n\n<원문 파일="${fileName}">\n${body}\n</원문>`;
+  const body = segments[part].map((segment) => `<조각 id="${segment.id}">\n${segment.text}\n</조각>\n`).join('');
+  if (chunks.length === 1) return `섹션별 허용속성: ${allowed}\n\n<원문 파일="${fileName}">\n${body}</원문>`;
   const previous = part === 0 ? '' : chunks[part - 1];
   const tail = previous.length <= CHUNK_OVERLAP ? previous : previous.slice(-CHUNK_OVERLAP);
   return `섹션별 허용속성: ${allowed}\n\n`
     + `이 원문은 한 문서를 나눈 ${chunks.length}개 부분 중 ${part + 1}번째다. 이 부분에 있는 업무만 정리한다. `
     + '<앞부분끝>은 문장이 잘리지 않도록 붙인 직전 부분의 꼬리이므로, 그 안에서만 근거를 찾은 항목은 만들지 않는다.\n\n'
     + `${tail ? `<앞부분끝>\n${tail}\n</앞부분끝>\n\n` : ''}`
-    + `<원문 파일="${fileName}" 부분="${part + 1}/${chunks.length}">\n${body}\n</원문>`;
+    + `<원문 파일="${fileName}" 부분="${part + 1}/${chunks.length}">\n${body}</원문>`;
 }
 
 async function buildUser() {
   if (route === 'import') {
     const source = await extractFile(subject);
     const chunks = chunkSource(source);
+    const segments = sourceSegments(chunks);
     return {
       source,
-      users: chunks.map((_, part) => importMessage(subject.split('/').pop(), chunks, part)),
+      segments: segments.flat(),
+      users: chunks.map((_, part) => importMessage(subject.split('/').pop(), chunks, segments, part)),
     };
   }
 
@@ -393,13 +421,19 @@ function importVerdicts(items, source) {
   return items.map((item) => {
     const quote = grounded(item.sourceQuote);
     const sectionTitles = titles.get(item.category) ?? [];
-    const prose = [item.title, ...(item.paragraphs ?? []), ...(item.properties ?? []).map((pair) => pair.value)].join(' ');
+    const steps = item.operation?.steps ?? [];
+    /* ImportService#operationProse: an invented threshold lands in a control, never in prose. */
+    const operationText = operationProse(item.operation);
+    const prose = [item.title, ...(item.paragraphs ?? []),
+      ...(item.properties ?? []).map((pair) => pair.value), operationText].join(' ');
     let dropped = null;
-    if (!quote) dropped = '원문에서 근거 구절을 확인하지 못한 항목';
+    if (!(item.paragraphs ?? []).length && !operationText.trim()) dropped = '형식이 불완전한 항목';
+    else if (!quote) dropped = '원문에서 근거 구절을 확인하지 못한 항목';
     else if (used.has(quote)) dropped = '같은 원문 구절을 다시 사용한 항목';
     else if (sectionTitles.some((seen) => titleOverlap(seen, item.title) >= 0.6)) dropped = '같은 업무를 다시 제안한 항목';
     else if (!numbers(prose).every((token) => recorded.has(token))) dropped = '원문에 없는 숫자가 들어간 항목';
-    else if (markup.test(item.title) || (item.paragraphs ?? []).some((line) => markup.test(line) || copied(line))) {
+    else if (markup.test(item.title) || (item.paragraphs ?? []).some((line) => markup.test(line) || copied(line))
+      || steps.some((step) => copied(step))) {
       dropped = '원문을 그대로 옮긴 항목';
     }
     if (!dropped) {
@@ -409,6 +443,35 @@ function importVerdicts(items, source) {
     }
     return { item, dropped };
   });
+}
+
+/** The operation fields as one indented block under a card. */
+function printOperation(operation) {
+  if (!operation) return;
+  const { timing = {}, resources = {} } = operation;
+  const line = (label, value) => { if (value) console.log(`   · ${label}: ${value}`); };
+  line('목적', operation.purpose);
+  line('주기·시작·마감', [timing.cycle, timing.trigger, timing.deadline].filter(Boolean).join(' / '));
+  line('협업', (operation.collaborators ?? []).map((one) => `${one.department}(${one.role})`).join(', '));
+  line('자원', [...(resources.systems ?? []), ...(resources.documents ?? []), ...(resources.outputs ?? [])].join(', '));
+  line('절차', (operation.steps ?? []).join(' → '));
+  line('선행', (operation.prerequisites ?? []).join(', '));
+  line('후속', (operation.followUp ?? []).join(', '));
+  (operation.controls ?? []).forEach((one) => console.log(
+    `   · 통제: [${one.condition}] ${one.owner} → ${one.action}${one.escalation ? ` (보고: ${one.escalation})` : ''}`));
+}
+
+/** Every word an operation states, as ImportService assembles it for the number check. */
+function operationProse(operation) {
+  if (!operation) return '';
+  const { timing = {}, resources = {} } = operation;
+  return [
+    operation.purpose, timing.cycle, timing.trigger, timing.deadline,
+    ...(operation.collaborators ?? []).flatMap((one) => [one.department, one.role]),
+    ...(resources.systems ?? []), ...(resources.documents ?? []), ...(resources.outputs ?? []),
+    ...(operation.steps ?? []), ...(operation.prerequisites ?? []), ...(operation.followUp ?? []),
+    ...(operation.controls ?? []).flatMap((one) => [one.condition, one.owner, one.action, one.escalation]),
+  ].filter(Boolean).join(' ');
 }
 
 function report(answer, source) {
@@ -422,13 +485,24 @@ function report(answer, source) {
     const kept = verdicts.filter((verdict) => !verdict.dropped);
     const counts = {};
     kept.forEach(({ item }) => { counts[item.category] = (counts[item.category] ?? 0) + 1; });
-    console.log(`원문 ${source.length}자 · 제안 ${verdicts.length}건 · 채택 ${kept.length}건`);
+    const groups = answer.workflowGroups ?? [];
+    console.log(`원문 ${source.length}자 · 제안 ${verdicts.length}건 · 채택 ${kept.length}건 · 업무단위 ${groups.length}개`);
     console.log(`섹션: ${domain.categories.map((c) => `${domain.categoryLabels[c]} ${counts[c] ?? 0}`).join(' · ')}\n`);
+    if (groups.length) {
+      console.log('--- 업무 흐름 ---');
+      groups.forEach((group, at) => console.log(`  ${at + 1}. ${group.title}`
+        + `  [항목 ${(group.itemIds ?? []).join(', ')}]`
+        + `${group.after?.length ? `  ← ${group.after.join(', ')}` : ''}`));
+      console.log();
+    }
     for (const { item } of kept) {
-      console.log(`[${item.category}] ${item.title}`);
+      console.log(`[${item.category}] ${item.title}  (${item.id ?? '-'} / ${item.workflowId ?? '-'})`);
       (item.paragraphs ?? []).forEach((line) => console.log(`   ${line}`));
+      printOperation(item.operation);
       if (item.questions?.length) console.log(`   확인필요: ${item.questions.join(' / ')}`);
-      console.log(`   근거: "${item.sourceQuote}"  properties=${JSON.stringify(item.properties)}\n`);
+      console.log(`   근거: "${item.sourceQuote}"`
+        + `${(item.evidence ?? []).length ? ` (+근거 ${item.evidence.length}건: ${item.evidence.map((one) => one.sourceId).join(',')})` : ''}`
+        + `  properties=${JSON.stringify(item.properties)}\n`);
     }
     const dropped = verdicts.filter((verdict) => verdict.dropped);
     if (dropped.length) {
@@ -441,8 +515,16 @@ function report(answer, source) {
       });
     }
     console.log(`\nunmapped: ${JSON.stringify(answer.unmapped)}`);
+    /* Which units of the source no card claims: the whole point of numbering them. */
+    const claimed = new Set((answer.items ?? []).flatMap((item) => (item.evidence ?? []).map((one) => one.sourceId)));
+    const missed = (answer.segments ?? []).filter((segment) => !claimed.has(segment.id));
+    if (missed.length) {
+      console.log(`\n--- 근거로 쓰이지 않은 조각 ${missed.length}/${(answer.segments ?? []).length} ---`);
+      missed.slice(0, 20).forEach((segment) => console.log(`  ${segment.id}: ${normalize(segment.text).slice(0, 100)}`));
+    }
     return;
   }
+
 
   if (route === 'quality') {
     (answer.findings ?? []).forEach((finding) => {
@@ -470,7 +552,7 @@ function report(answer, source) {
   }
 }
 
-const { user, users, source } = await buildUser();
+const { user, users, source, segments } = await buildUser();
 const messages = users ?? [user];
 const started = Date.now();
 /* The parts run together, as the service runs them, so the clock reads what a caller would wait. */
@@ -487,5 +569,8 @@ console.error(`${route} · ${((Date.now() - started) / 1000).toFixed(0)}초 · $
 report({
   ...answers[0],
   items: answers.flatMap((answer) => answer.items ?? []),
+  workflowGroups: answers.flatMap((answer) => answer.workflowGroups ?? []),
+  coverage: answers.flatMap((answer) => answer.coverage ?? []),
+  ...(segments ? { segments } : {}),
   ...(answers[0].unmapped ? { unmapped: [...new Set(answers.flatMap((answer) => answer.unmapped ?? []))] } : {}),
 }, source);

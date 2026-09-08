@@ -196,6 +196,100 @@ public class AiSupport {
     /** The entry body: escaped paragraphs, then the open questions as a list when there are any. */
     public static String detailHtml(List<String> paragraphs, List<String> questions) {
         StringBuilder body = new StringBuilder();
+        appendParagraphs(body, paragraphs);
+        appendQuestions(body, questions);
+        return body.toString();
+    }
+
+    /**
+     * The body of an imported entry: what the work is for, how it is run, and what to watch.
+     *
+     * <p>An import that returns prose alone hands the successor a description of a document rather
+     * than a job they can pick up. The operation fields carry the parts that make it runnable —
+     * the cycle and the deadline, the departments and what each one does, the systems and forms,
+     * the order of the steps, what has to be finished first and what this work hands on — and they
+     * are written out as their own labelled blocks so none of it dissolves back into a paragraph.
+     *
+     * <p>Control points get a table because their whole value is in the four columns being told
+     * apart: the condition that triggers a check, who performs it, what they do, and the threshold
+     * at which it leaves the team. A control written as a sentence reads as an incident; written
+     * as a row it reads as the rule it is. Open questions stay last, so
+     * {@link #splitOpenQuestions} still finds the boundary between the record and its gaps.
+     */
+    public static String importDetailHtml(
+            List<String> paragraphs,
+            com.globalaffairs.handover.ai.dto.ImportResponse.Operation operation,
+            List<String> questions,
+            int max) {
+        /* Display order, each block with what it costs to lose. A card this long is a document
+           that recorded a great deal about one duty, not an error, so the body is trimmed by
+           dropping whole blocks rather than cut mid-tag into markup the editor cannot store. */
+        List<Block> blocks = new ArrayList<>();
+        if (operation != null) {
+            blocks.add(block(1, body -> {
+                if (!operation.purpose().isBlank()) {
+                    labelled(body, "업무 목적", operation.purpose());
+                }
+            }));
+        }
+        blocks.add(block(1, body -> appendParagraphs(body, paragraphs)));
+        if (operation != null) {
+            blocks.add(block(2, body -> appendTiming(body, operation.timing())));
+            blocks.add(block(4, body -> appendCollaborators(body, operation.collaborators())));
+            blocks.add(block(5, body -> appendResources(body, operation.resources())));
+            blocks.add(block(3, body -> appendList(body, "실행 절차", operation.steps(), true)));
+            blocks.add(block(6, body -> appendList(body, "선행조건", operation.prerequisites(), false)));
+            blocks.add(block(6, body -> appendList(body, "후속 업무와 전달물", operation.followUp(), false)));
+            blocks.add(block(2, body -> appendControls(body, operation.controls())));
+        }
+        /* The questions are the record of what the source never said, and the quality route finds
+           them by this heading being last. They are never the block that gets dropped. */
+        blocks.add(block(0, body -> appendQuestions(body, questions)));
+
+        int total = blocks.stream().mapToInt(one -> one.html().length()).sum();
+        for (int priority = 6; priority > 0 && total > max; priority--) {
+            for (Block one : blocks) {
+                if (one.priority() == priority && !one.html().isEmpty() && total > max) {
+                    total -= one.html().length();
+                    one.drop();
+                }
+            }
+        }
+        StringBuilder body = new StringBuilder();
+        blocks.forEach(one -> body.append(one.html()));
+        return body.toString();
+    }
+
+    /** One labelled section of a card body, and how readily it is given up when the body is too long. */
+    private static final class Block {
+        private final int priority;
+        private String html;
+
+        private Block(int priority, String html) {
+            this.priority = priority;
+            this.html = html;
+        }
+
+        private int priority() {
+            return priority;
+        }
+
+        private String html() {
+            return html;
+        }
+
+        private void drop() {
+            html = "";
+        }
+    }
+
+    private static Block block(int priority, java.util.function.Consumer<StringBuilder> render) {
+        StringBuilder body = new StringBuilder();
+        render.accept(body);
+        return new Block(priority, body.toString());
+    }
+
+    private static void appendParagraphs(StringBuilder body, List<String> paragraphs) {
         java.util.regex.Pattern labeledParagraph = java.util.regex.Pattern.compile("^\\[([^\\]\\r\\n]{1,30})\\]\\s*(.*)$");
         for (String line : paragraphs) {
             java.util.regex.Matcher labeled = labeledParagraph.matcher(line);
@@ -203,21 +297,120 @@ public class AiSupport {
                 body.append("<p>").append(escapeHtml(line)).append("</p>");
                 continue;
             }
-            String detail = labeled.group(2).trim();
-            body.append("<p><strong>").append(escapeHtml(labeled.group(1).trim())).append("</strong>");
-            if (!detail.isEmpty()) {
-                body.append("<br>").append(escapeHtml(detail));
-            }
-            body.append("</p>");
+            labelled(body, labeled.group(1).trim(), labeled.group(2).trim());
         }
+    }
+
+    private static void appendQuestions(StringBuilder body, List<String> questions) {
         if (questions.isEmpty()) {
-            return body.toString();
+            return;
         }
-        body.append("<p><strong>확인이 필요한 내용</strong></p><ul>");
+        body.append("<p><strong>").append(OPEN_QUESTIONS_HEADING).append("</strong></p><ul>");
         for (String line : questions) {
             body.append("<li>").append(escapeHtml(line)).append("</li>");
         }
-        return body.append("</ul>").toString();
+        body.append("</ul>");
+    }
+
+    /** A bold label and, when there is one, the sentence under it. */
+    private static void labelled(StringBuilder body, String label, String detail) {
+        body.append("<p><strong>").append(escapeHtml(label)).append("</strong>");
+        if (!detail.isEmpty()) {
+            body.append("<br>").append(escapeHtml(detail));
+        }
+        body.append("</p>");
+    }
+
+    /** Cycle, trigger and deadline on one line, naming each so a date is never read as the other. */
+    private static void appendTiming(
+            StringBuilder body, com.globalaffairs.handover.ai.dto.ImportResponse.Timing timing) {
+        if (timing == null || timing.isEmpty()) {
+            return;
+        }
+        List<String> parts = new ArrayList<>();
+        if (!timing.cycle().isBlank()) {
+            parts.add("발생 주기: " + timing.cycle());
+        }
+        if (!timing.trigger().isBlank()) {
+            parts.add("시작 조건: " + timing.trigger());
+        }
+        if (!timing.deadline().isBlank()) {
+            parts.add("마감: " + timing.deadline());
+        }
+        labelled(body, "주기·시작·마감", String.join(" · ", parts));
+    }
+
+    private static void appendCollaborators(
+            StringBuilder body,
+            List<com.globalaffairs.handover.ai.dto.ImportResponse.Collaborator> collaborators) {
+        if (collaborators.isEmpty()) {
+            return;
+        }
+        body.append("<p><strong>협업 부서와 역할</strong></p><ul>");
+        for (var collaborator : collaborators) {
+            body.append("<li><strong>").append(escapeHtml(collaborator.department())).append("</strong>");
+            if (!collaborator.role().isBlank()) {
+                body.append(" — ").append(escapeHtml(collaborator.role()));
+            }
+            body.append("</li>");
+        }
+        body.append("</ul>");
+    }
+
+    private static void appendResources(
+            StringBuilder body, com.globalaffairs.handover.ai.dto.ImportResponse.Resources resources) {
+        if (resources == null || resources.isEmpty()) {
+            return;
+        }
+        body.append("<p><strong>시스템·문서·산출물</strong></p><ul>");
+        resourceLine(body, "시스템", resources.systems());
+        resourceLine(body, "입력 문서·서식", resources.documents());
+        resourceLine(body, "산출물", resources.outputs());
+        body.append("</ul>");
+    }
+
+    private static void resourceLine(StringBuilder body, String label, List<String> values) {
+        if (values.isEmpty()) {
+            return;
+        }
+        body.append("<li><strong>").append(escapeHtml(label)).append("</strong> — ")
+                .append(escapeHtml(String.join(", ", values))).append("</li>");
+    }
+
+    private static void appendList(StringBuilder body, String label, List<String> values, boolean ordered) {
+        if (values.isEmpty()) {
+            return;
+        }
+        String tag = ordered ? "ol" : "ul";
+        body.append("<p><strong>").append(escapeHtml(label)).append("</strong></p><").append(tag).append(">");
+        for (String value : values) {
+            body.append("<li>").append(escapeHtml(value)).append("</li>");
+        }
+        body.append("</").append(tag).append(">");
+    }
+
+    private static void appendControls(
+            StringBuilder body, List<com.globalaffairs.handover.ai.dto.ImportResponse.Control> controls) {
+        if (controls.isEmpty()) {
+            return;
+        }
+        body.append("<p><strong>주의사항·통제 포인트</strong></p>")
+                .append("<table><thead><tr><th>확인 조건</th><th>담당</th><th>확인·조치</th>")
+                .append("<th>보고 기준</th></tr></thead><tbody>");
+        for (var control : controls) {
+            body.append("<tr>");
+            controlCell(body, control.condition());
+            controlCell(body, control.owner());
+            controlCell(body, control.action());
+            controlCell(body, control.escalation());
+            body.append("</tr>");
+        }
+        body.append("</tbody></table>");
+    }
+
+    /** An empty cell says the source set no threshold; a guess in its place would invent one. */
+    private static void controlCell(StringBuilder body, String value) {
+        body.append("<td>").append(value.isBlank() ? "기재 없음" : escapeHtml(value)).append("</td>");
     }
 
     /**

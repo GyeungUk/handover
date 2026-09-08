@@ -4633,6 +4633,65 @@ small, .caption { font-size: var(--t-caption); }
   background: var(--surface-2); color: var(--ink-2); font-size: 13px; line-height: 1.6;
 }
 .ho-import-quote span { margin-right: 7px; color: var(--ink-3); font-size: 13px; font-weight: 700; letter-spacing: .06em; }
+.ho-import-classification-note { margin-top: 8px; color: var(--ink-3); font-size: 13px; line-height: 1.55; }
+.ho-dropzone.is-disabled { opacity: .55; pointer-events: none; }
+
+/* The work flow, read before any single card: the phases in the order they run, and what each
+   one waits on. A reader who only sees cards cannot tell a sequence from a pile of headings. */
+.ho-import-section-heading { display: flex; align-items: baseline; gap: 10px; }
+.ho-import-section-heading h3 { margin: 0; font-size: 14px; letter-spacing: -.01em; }
+.ho-import-section-heading span { margin-left: auto; color: var(--ink-3); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.ho-import-workflow { margin: 16px 30px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.ho-import-workflow > ol { margin: 11px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.ho-import-workflow > ol > li { display: flex; gap: 11px; }
+.ho-import-step-number {
+  flex: 0 0 auto; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--navy); color: #fff; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.ho-import-workflow h4 { margin: 2px 0 0; font-size: 14px; letter-spacing: -.01em; }
+.ho-import-workflow h4 a { color: inherit; text-decoration: none; }
+.ho-import-workflow h4 a:hover { text-decoration: underline; }
+.ho-import-dependency { margin: 3px 0 0; color: var(--ink-3); font-size: 13px; }
+.ho-import-workflow > ol ul { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.ho-import-workflow > ol ul li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 13px; }
+.ho-import-workflow > ol ul a { color: var(--ink-2); text-decoration: none; }
+.ho-import-workflow > ol ul a:hover { text-decoration: underline; }
+.ho-import-workflow > ol ul span { color: var(--ink-3); font-size: 12px; }
+
+/* What of the upload did not reach a card. Quiet when it is complete, because the section is
+   only worth the author's attention when something is missing. */
+.ho-import-verification { margin: 12px 30px 0; padding: 13px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.ho-import-verification.needs-review { border-color: #ddc9a6; background: #fdf8ee; }
+.ho-import-verification > p { margin: 8px 0 0; color: var(--ink-3); font-size: 13px; line-height: 1.55; }
+.ho-import-verified { color: #356470; }
+.ho-import-verification-findings { margin-top: 10px; }
+.ho-import-verification-findings h4 { margin: 0 0 6px; font-size: 13px; color: #8a6a2b; }
+.ho-import-verification-findings ul { margin: 0; padding-left: 16px; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.ho-import-verification-findings li + li { margin-top: 7px; }
+.ho-import-verification-findings blockquote { margin: 0; color: var(--ink); }
+.ho-import-verification-findings blockquote::before { content: '“'; }
+.ho-import-verification-findings blockquote::after { content: '”'; }
+.ho-import-verification-findings p { margin: 2px 0 0; color: var(--ink-3); }
+
+/* Cards grouped under the phase that runs them, so adopting follows the flow above. */
+.ho-import-results { padding-bottom: 4px; }
+.ho-import-result-heading { padding: 16px 30px 0; display: flex; align-items: baseline; gap: 9px; }
+.ho-import-result-heading span { padding: 3px 9px; border-radius: 999px; background: var(--surface-3, #f1f2f5); color: var(--ink-3); font-size: 12px; font-weight: 700; letter-spacing: .03em; }
+.ho-import-result-heading h3 { margin: 0; font-size: 15px; letter-spacing: -.02em; }
+.ho-import-result-heading small { margin-left: auto; color: var(--ink-3); font-size: 13px; }
+.ho-import-result-group .ho-draft-list { padding-top: 10px; }
+
+.ho-import-evidence { margin-top: 10px; }
+.ho-import-evidence summary { color: var(--ink-3); font-size: 13px; cursor: pointer; }
+.ho-import-evidence .ho-import-quote { margin-top: 7px; }
+
+/* The operation the import now writes into a card: an ordered procedure and a control table. */
+.ho-draft-body ol { margin: 0; padding-left: 19px; }
+.ho-draft-body ol li { margin-bottom: 4px; color: var(--category); }
+.ho-draft-body table { margin: 4px 0 8px; width: 100%; border-collapse: collapse; font-size: 13px; }
+.ho-draft-body th, .ho-draft-body td { padding: 6px 9px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ho-draft-body th { background: var(--surface-2); color: var(--ink); font-weight: 650; white-space: nowrap; }
 
 .ho-annual-summary { padding: 16px 30px 0; }
 .ho-annual-summary p { margin: 0; color: var(--ink-2); font-size: 14px; }
@@ -4658,7 +4717,9 @@ small, .caption { font-size: var(--t-caption); }
   .ho-ai-panel-head em { display: none; }
   .ho-import-input { padding: 16px 20px; }
   .ho-import-summary, .ho-annual-summary { padding-left: 20px; padding-right: 20px; }
-  .ho-import-unmapped { margin-left: 20px; margin-right: 20px; }
+  .ho-import-unmapped, .ho-import-workflow, .ho-import-verification { margin-left: 20px; margin-right: 20px; }
+  .ho-import-result-heading { padding-left: 20px; padding-right: 20px; }
+  .ho-draft-body table { display: block; overflow-x: auto; }
   .ho-import-actions { flex-wrap: wrap; }
   .ho-import-actions > button { width: 100%; }
 }
