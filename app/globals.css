@@ -2123,6 +2123,26 @@ small, .caption { font-size: var(--t-caption); }
   font-family: inherit;
   font-weight: var(--fw-semi);
 }
+/* The keyboard has ESC; the thumb gets the button. Neither screen shows both. */
+.search-close { display: none; }
+@media (max-width: 768px) {
+  .search-input kbd { display: none; }
+  .search-close {
+    width: 40px;
+    height: 40px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    margin-right: calc(var(--s-2) * -1);
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--surface-2);
+    color: var(--ink-3);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+}
 
 .search-modal .ui-modal-body { padding: 0 var(--s-3) var(--s-3); max-height: 56vh; }
 .search-count { padding: var(--s-3) var(--s-3) var(--s-2); }
@@ -4067,8 +4087,10 @@ small, .caption { font-size: var(--t-caption); }
   }
   .create-preview-toggle span { display: grid; gap: 2px; }
   .create-preview-toggle b { color: var(--ink); font-size: var(--t-sm); }
-  .create-preview-toggle small { color: var(--ink-3); font-size: 11px; }
-  .create-preview-toggle i { flex: none; color: var(--blue-700); font-size: 11px; font-style: normal; font-weight: var(--fw-bold); }
+  /* This toggle is the only thing standing between a phone and saving a task
+     whose dates it has not seen. Its label said so at 11px. */
+  .create-preview-toggle small { color: var(--ink-3); font-size: 12.5px; }
+  .create-preview-toggle i { flex: none; color: var(--blue-700); font-size: 13px; font-style: normal; font-weight: var(--fw-bold); }
   .create-preview-toggle:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 2px; }
   .create-schedule-preview:not(.is-open) { display: none; }
   .month-section-actions { gap: 4px; }
@@ -4287,7 +4309,8 @@ small, .caption { font-size: var(--t-caption); }
 @media (max-width: 860px) {
   .ho-quality { padding: 16px; }
   .ho-quality-head { flex-wrap: wrap; }
-  .ho-quality-head > button { width: 100%; }
+  /* Full width already; 36px tall is still short for a primary action on a touch screen. */
+  .ho-quality-head > button { width: 100%; height: 44px; font-size: var(--t-sm); }
   .ho-finding-head { flex-wrap: wrap; }
   .ho-finding-head small { margin-left: 0; width: 100%; text-align: left; }
   .ho-quality-list li > button { width: 100%; }
@@ -4310,7 +4333,12 @@ small, .caption { font-size: var(--t-caption); }
   .site-footer { padding: 40px 20px 36px; }
   .site-footer > div { flex-direction: column; }
   .site-footer p { text-align: left; }
-  footer:not(.site-footer) { height: auto; padding: 20px; flex-direction: column; align-items: flex-start; gap: 6px; }
+  /* The page's own footer, and only that. `.ui-modal-foot` is a `<footer>` too, so this used to
+     catch every modal's action bar on a phone: it stacked the buttons into a left-aligned column at
+     their intrinsic widths, over the sheet footer's own layout, and undid the full-width commit bar
+     `.stack` sets up two rules below. A commit bar is the one place a phone most needs its buttons
+     to be the width of the sheet. */
+  footer:not(.site-footer):not(.ui-modal-foot) { height: auto; padding: 20px; flex-direction: column; align-items: flex-start; gap: 6px; }
   .workspace-page { padding: 24px 20px 56px; }
   .workspace-head h1 { font-size: 24px; }
   .overview-layout { grid-template-columns: 1fr; }
@@ -4425,7 +4453,62 @@ small, .caption { font-size: var(--t-caption); }
      lossless — the counts and the badge take a second line rather than
      squeezing the name to nothing. */
   .ho-review-card-head { min-height: 0; flex-wrap: wrap; }
+
+  /* ------------------------------------------------------------------
+     The compose stage's unit head — [ index | name | state badge | 편집 ].
+     ------------------------------------------------------------------
+     Same shape as the review card above, but it never got the same rule, and it
+     is the worse of the two to lose: the name here is an `<input>`, the one
+     control that names a work unit. `flex: 1` with no `min-width: 0` does not
+     hold a column open — it only says how to share what is left over — so the
+     nowrap badge and the button took what they wanted and the name column
+     settled at 84px on a 390px phone. "새 담당업무 단위" was rendered "새 담당업무
+     단", and the field was too narrow to read, let alone rename.
+
+     Wrapping gives the name the whole second line at full width. Nothing is
+     dropped: the badge and the button keep the first line with the index. */
+  .ho-bundle-head { min-height: 0; flex-wrap: wrap; row-gap: 10px; }
+  .ho-bundle-head > div:nth-child(2) {
+    order: 1;
+    flex: 1 0 100%;
+    min-width: 0;
+  }
+  .ho-bundle-head input { width: 100%; height: 38px; }
+  /* 76x23 is not a target. The label is two glyphs, so it can afford the height. */
+  .ho-bundle-head > button {
+    width: auto;
+    min-height: 40px;
+    padding-inline: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+  }
   .ho-bundle-footer { flex-wrap: wrap; gap: 8px; }
+  /* ------------------------------------------------------------------
+     "파트장 검토를 기다리고 있습니다." — the banner that says where a submitted
+     document stands.
+     ------------------------------------------------------------------
+     [ ⌛ | heading + summary | status badge ] on one row. The badge does not
+     wrap and the middle column had `flex: 1` without `min-width: 0`, so the
+     column that carries the whole message shrank to 76px: a 21px heading came
+     out as four lines of about three glyphs, and the summary under it broke as
+     "담당업무 2개 / 단위 · 총 8개 / 항목" — which reads as a different sentence
+     than the one that was written.
+
+     The symbol keeps the first line with the badge; the message takes the
+     width. It is the only thing here anybody reads. */
+  .ho-review-banner {
+    min-height: 0;
+    flex-wrap: wrap;
+    row-gap: 12px;
+    padding: 18px;
+  }
+  .ho-review-banner > div:nth-child(2) {
+    order: 1;
+    flex: 1 0 100%;
+    min-width: 0;
+  }
+  .ho-review-banner h3 { font-size: var(--t-h3); }
+
   /* Submit and resubmit: the sentence and the action stop competing for one
      line, and the action becomes the full-width thing it already is in intent. */
   .ho-submit-bar, .ho-resubmit {
@@ -4473,6 +4556,18 @@ small, .caption { font-size: var(--t-caption); }
     align-items: start;
   }
   .ho-section-title > button { width: 100%; justify-content: center; }
+  /* The review stage puts its two tools in a wrapper div rather than directly under
+     `.ho-section-title`, so the full-width rule above — written for a direct button —
+     never reached them. Left as a nowrap flex row, "PDF로 저장 · 인쇄" and "파트장 검토
+     화면 보기" side by side measured wider than the screen, and the phone answered the
+     way phones do: it widened the layout viewport to 402px and let the whole page pan
+     sideways. Every screen in the product was suddenly 12px off. */
+  .ho-section-title > .ho-review-tools {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .ho-section-title > .ho-review-tools > button { width: 100%; justify-content: center; }
   /* The section head is [ icon | name | 새 항목 추가 ]. The button's label is one
      nowrap line, so below this width it takes its own line rather than pushing
      the panel past the screen. */
@@ -4617,11 +4712,14 @@ small, .caption { font-size: var(--t-caption); }
 .ho-import-summary { padding: 16px 30px 0; }
 .ho-import-summary p { margin: 0; color: var(--ink-2); font-size: 14px; }
 .ho-import-counts { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }
-.ho-import-counts span {
+.ho-import-counts > span, .ho-import-counts > a {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
-  border-radius: 999px; background: var(--category-soft); color: var(--category); font-size: 13px; font-weight: 650;
+  border: 0; border-radius: 999px; background: var(--category-soft); color: var(--category); font-size: 13px; font-weight: 650; text-decoration: none;
 }
-.ho-import-counts span.empty { background: var(--surface-3, #f1f2f5); color: var(--ink-3); }
+.ho-import-counts > a { cursor: pointer; transition: box-shadow .16s var(--ease), transform .16s var(--ease); }
+.ho-import-counts > a:hover { box-shadow: 0 2px 8px color-mix(in srgb, var(--category) 22%, transparent); transform: translateY(-1px); }
+.ho-import-counts > a:focus-visible { outline: 2px solid var(--category); outline-offset: 2px; }
+.ho-import-counts > span.empty { background: var(--surface-3, #f1f2f5); color: var(--ink-3); }
 .ho-import-counts i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .ho-import-counts b { font-variant-numeric: tabular-nums; }
 .ho-import-skipped { margin-top: 7px; color: var(--ink-3); font-size: 13px; line-height: 1.55; }
@@ -4681,6 +4779,8 @@ small, .caption { font-size: var(--t-caption); }
 .ho-import-result-heading h3 { margin: 0; font-size: 15px; letter-spacing: -.02em; }
 .ho-import-result-heading small { margin-left: auto; color: var(--ink-3); font-size: 13px; }
 .ho-import-result-group .ho-draft-list { padding-top: 10px; }
+.ho-import-result-group .ho-draft-card { scroll-margin-top: 14px; }
+.ho-import-result-group .ho-draft-card:target { box-shadow: 0 0 0 3px color-mix(in srgb, var(--category) 20%, transparent); }
 
 .ho-import-evidence { margin-top: 10px; }
 .ho-import-evidence summary { color: var(--ink-3); font-size: 13px; cursor: pointer; }
@@ -5044,7 +5144,13 @@ small, .caption { font-size: var(--t-caption); }
   .ui-modal-foot .ho-modal-note { display: none; }
   /* The confirmation is the whole point of the footer in that state, so it stays. */
   .task-delete-confirm { flex-basis: 100%; }
+  /* Delete and close are not peers. Side by side at equal width they read as a pair of equally
+     ordinary choices and sit a thumb's width apart, which is the wrong shape for the one action
+     here that cannot be undone. Stacked, close is the button under the thumb and delete is the one
+     you have to reach past it for. DOM order already puts them that way round. */
+  .task-modal .ui-modal-foot { flex-direction: column; align-items: stretch; }
   .task-modal .ui-modal-foot .ui-btn { width: 100%; }
+  .task-modal .ui-modal-foot .task-modal-close-action { margin-left: 0; }
   .task-checklist-items label { grid-template-columns: 24px minmax(0, 1fr); }
   .task-checklist-items label em { grid-column: 2; }
   .task-checklist-items label small { white-space: normal; }
@@ -5696,9 +5802,16 @@ small, .caption { font-size: var(--t-caption); }
   .parts-heading { margin-bottom: var(--s-7); }
   .ui-card.part-card { grid-template-columns: minmax(0, 1fr); }
   .flow-panel { margin-top: var(--s-8); padding: var(--s-4); }
-  .flow-chart { padding: var(--s-4) var(--s-2); overflow-x: auto; }
-  .flow-plot { min-width: 580px; grid-template-rows: 180px auto auto; }
-  .flow-key { min-width: 580px; }
+  /* Forty-eight bars fit a phone once the gap between them stops costing more width than the bars
+     do: at 3px the gaps alone were 141px of a 289px plot, which is the whole reason this used to be
+     pinned at 580px and dragged sideways. At 1px a bar still lands on ~5px, and the year is read
+     the way the rest of the product is read — without moving it. */
+  .flow-chart { padding: var(--s-4) var(--s-2); overflow-x: visible; }
+  .flow-plot { min-width: 0; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: 180px auto auto; }
+  .flow-bars { gap: 1px; }
+  .flow-bars > span i { border-radius: 2px 2px 0 0; }
+  .flow-key { min-width: 0; gap: var(--s-3); }
+  .flow-months span { font-size: 11px; }
   .current-work { padding: var(--s-4); }
   .workspace-page { padding: var(--s-8) 0 var(--s-16); }
   .workspace-page .ui-container { padding-inline: var(--s-4); }
@@ -5716,28 +5829,79 @@ small, .caption { font-size: var(--t-caption); }
   .hero-figures dd { font-size: 24px; }
   .parts-all { padding: var(--s-5); }
 
-  /* This override lives after the desktop enlargement rules so it wins the
-     cascade. The calendar scrolls inside its own card; the page never does. */
-  .monthly-layout { overflow-x: auto; overscroll-behavior-inline: contain; }
-  .monthly-calendar { width: 720px; min-width: 720px; padding: 0 10px 12px; }
-  /* The bands bleed to the cell's edges, so the padding they cancel is a variable rather than the
-     6px written into each of them. */
-  .date-grid { --cell-pad: 5px; }
-  .date-cell { min-height: max(76px, calc(34px + var(--lanes, 0) * (var(--lane-h) + var(--lane-gap)))); }
-  .date-cell > .date-number { font-size: 11px; }
 }
 
-.calendar-scroll-hint { display: none; }
-@media (max-width: 480px) {
-  .calendar-scroll-hint {
-    margin: calc(var(--s-2) * -1) 0 var(--s-3);
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    color: var(--ink-3);
-    font-size: var(--t-caption);
+/* --------------------------------------------------------------------------
+   Month grid — the phone
+   --------------------------------------------------------------------------
+   Seven columns will not carry a Korean task title at 375px. The grid used to
+   keep its desktop 720px here and scroll sideways inside its card, which is the
+   worst of the two options: four of the seven weekdays sat off-screen, so the
+   shape of the month — the thing a month view is for — could not be read at all
+   without dragging it, and the titles it kept were clipped to five characters
+   anyway.
+
+   All seven columns fit now, and each run draws as a bare coloured band. The
+   month reads as a shape at a glance; `MonthAgenda` under the grid carries the
+   titles the bands gave up, at a size and a tap target a thumb can use.
+   -------------------------------------------------------------------------- */
+@media (max-width: 820px) {
+  .monthly-layout { overflow: visible; }
+  .monthly-calendar { width: 100%; min-width: 0; padding: 0 var(--s-2) var(--s-3); }
+
+  .weekday-row { height: 30px; font-size: 12px; }
+  .date-grid { --lane-h: 7px; --lane-gap: 3px; --cell-pad: 2px; }
+  .date-cell {
+    min-height: max(52px, calc(30px + var(--lanes, 0) * (var(--lane-h) + var(--lane-gap))));
+    gap: var(--lane-gap);
+    padding: 4px var(--cell-pad);
   }
-  .calendar-scroll-hint span { color: var(--blue-600); font-size: var(--t-body); }
+  .date-cell > .date-number { width: 20px; height: 20px; font-size: 12px; }
+
+  /* The band is the whole of the mark at this width, so it carries the part's colour at strength
+     rather than the 12% wash it sits behind a title in.
+
+     And at 48x7 it stops being a control. It is still a `<button>` that opens the task, which on a
+     phone means a 7px-tall tap target stacked 3px from the next one — nobody hits the one they
+     meant, and the miss opens the wrong task rather than nothing. So on a phone the grid is a
+     picture of the month and `MonthAgenda` underneath is the interface: one 52px row per task,
+     carrying the title the band gave up. Taps fall through to the day cell instead of landing on a
+     target too small to aim at. Keyboard focus is left alone — a 7px button is only a problem for
+     a thumb, and the desktop grid is the same markup. */
+  .date-task {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--team) 52%, #fff);
+    pointer-events: none;
+  }
+  .date-task.is-confirmed { background: var(--team); }
+  /* Nothing legible fits in 7px. The left rule that marked a run's first day would be the band. */
+  .date-task > b,
+  .date-task > em,
+  .date-task > i,
+  .date-task > mark { display: none; }
+  .date-task.is-start {
+    border-left: 0;
+    padding-left: 0;
+    border-start-start-radius: 3px;
+    border-end-start-radius: 3px;
+  }
+  .date-task.is-fixed.is-start { padding-left: 0; }
+  /* A run carried over from last month keeps its broken edge — it is the one thing the band still
+     has to say beyond where it runs. */
+  .date-task.is-continuation { border-left: 2px dotted color-mix(in srgb, var(--team) 70%, #fff); }
+  .date-task.is-end { border-start-end-radius: 3px; border-end-end-radius: 3px; }
+}
+
+/* The agenda is the phone's reading of the month; the grid keeps the whole of it above 820px. */
+.month-agenda-phone { display: none; }
+@media (max-width: 820px) {
+  .month-agenda-phone {
+    display: grid;
+    gap: var(--s-3);
+    padding: var(--s-4) var(--s-3) var(--s-2);
+    border-top: 1px solid var(--line-soft);
+  }
+  .month-agenda-phone .month-agenda-list > button { padding: var(--s-3) var(--s-2); min-height: 52px; }
 }
 
 /* --------------------------------------------------------------------------
@@ -5867,4 +6031,198 @@ small, .caption { font-size: var(--t-caption); }
 @media (max-width: 820px) {
   .ho-archive-list button { grid-template-columns: 1fr; gap: 6px; }
   .ho-archive-open { display: none; }
+}
+
+/* ==========================================================================
+   Phone — form controls
+   --------------------------------------------------------------------------
+   iOS Safari zooms the page in whenever a text field it is about to focus
+   carries a font under 16px, and it does not zoom back out. The product's
+   fields run from 12px to 15px, so on an iPhone every tap on a search box, a
+   task title or a review note threw the layout to roughly 1.3x and left the
+   reader to pinch their way back — on a form, once per field.
+
+   16px is the whole fix, and it belongs here rather than at each of the twenty
+   declarations that set a smaller one: the size is not a design decision at
+   this width, it is the price of the field not fighting the reader.
+
+   Written as bare element selectors it lost every field that any class had an
+   opinion about: `.ho-entry-modal select` and `.ho-editor-toolbar select` are a
+   class and a type, which outranks a lone type, so most of the entry editor —
+   the 업무 주기 and 중요도 pickers, the font and size pickers — kept their 13–14px
+   and kept zooming the page.
+
+   `!important` rather than a more specific selector, because this is not a
+   design declaration competing with other design declarations. It is a platform
+   constraint: under 16px, iOS zooms, whatever the stylesheet meant. Specificity
+   games would work today and quietly break the next time a field is given a
+   class. The cost is that a field deliberately set larger than 16px on a phone
+   is pulled back to 16px — there is none today, and the floor is the point.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='submit']):not([type='button']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* ==========================================================================
+   Phone — the last of the 11px
+   --------------------------------------------------------------------------
+   The type scale bottoms out at 13px on purpose, and these four objects sit
+   under it because on a desktop they are glanced at rather than read: a week
+   count beside a task, the month numbers on a strip, a breadcrumb. On a phone
+   held at arm's length they are the labels that say when the work happens, and
+   11px is where Korean glyphs start losing their internal strokes.
+
+   The touch targets go up with them. A breadcrumb is how you get back out of a
+   person's calendar, and 28x31 is under half the area a thumb needs.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .month-strip b { font-size: 12px; }
+  .timeline-tasks .when { flex-basis: 74px; }
+  .timeline-tasks .when em,
+  .timeline-tasks .what mark { font-size: 12px; }
+
+  .crumbs { gap: var(--s-2); }
+  .crumbs button,
+  .crumbs b {
+    /* "홈" is one glyph, so height alone left a 28px-wide target. */
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--t-sm);
+  }
+
+  /* The unit head only collapses badly enough to need rearranging under 640px,
+     but its 편집/보기 toggle is 23px tall at every width below this one, and
+     everything from here down is a screen being touched rather than pointed at
+     — the same line `tokens.css` draws when it moves the control heights to
+     thumb sizes. The height belongs on that side of the line, the rearranging
+     does not. */
+  .ho-bundle-head > button { min-height: 44px; }
+
+  /* ------------------------------------------------------------------
+     The rest of the targets a thumb actually has to hit.
+     ------------------------------------------------------------------
+     All of these were drawn for a cursor, which can be placed exactly. A thumb
+     covers roughly 44px and cannot see what is under it, so anything shorter is
+     aimed at rather than pressed. These four are not obscure controls: they are
+     how you change month, how you open a submitted entry, and how a part is
+     added on the admin sheet. */
+  .calendar-tools button,
+  .month-nav button { width: 44px; height: 44px; font-size: 17px; }
+  /* 152px of month label plus two 44px buttons still fits 320px. */
+  .calendar-tools strong,
+  .month-nav strong { min-width: 0; }
+
+  .ho-read-open { height: 44px; }
+  .member-admin-createbar button { min-height: 44px; }
+
+  /* The search sheet's field was 28px inside a 62px row, so two thirds of what
+     looks like the input is padding that does not focus it. It is the one
+     control the sheet exists for. */
+  .search-input input { align-self: stretch; }
+
+  /* The rich-text toolbar scrolls sideways, so height is the only constraint on
+     it and there is no reason for these to stay cursor-sized. */
+  .ho-editor-toolbar button { width: 44px; height: 44px; }
+  .ho-editor-toolbar select { height: 44px; }
+  /* Attaching a file is the whole point of the dropzone on a phone — there is
+     nothing to drop onto, so the button is the only way in. */
+  .ho-dropzone > button { height: 44px; }
+
+  /* 10px and 11px labels that carry meaning rather than decoration: the option
+     that says who a new task lands on, the tick that says which month a bar is,
+     the part number a calendar is filtered by. */
+  .create-target-mode button small { font-size: 12.5px; }
+  .task-when-tick { font-size: 12px; }
+  .team-dot { font-size: 12px; }
+  .flow-bars > .flow-current-flag { font-size: 12px; }
+}
+
+/* ==========================================================================
+   Phone — handover header
+   --------------------------------------------------------------------------
+   The three objects at the top of the handover screen — the breadcrumb out of
+   it, the writer/reviewer switch, and the three-step progress — were all sized
+   for a pointer. On a phone the switch is how a reviewer gets to the queue and
+   the stepper is how anybody moves between the stages, so they are the two
+   controls most likely to be pressed and the two hardest to hit.
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* PDF and last-year sit beside the role switch; at 34px they were the shortest targets on the
+     screen and the two a reader reaches for by mistake. */
+  .ho-hero-tools button { height: 40px; font-size: var(--t-sm); }
+  .ho-breadcrumb button {
+    min-width: 40px;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-inline: var(--s-2);
+  }
+  .ho-role-switch button { height: 40px; font-size: var(--t-sm); }
+}
+
+@media (max-width: 480px) {
+  /* 11.5px is under the floor the rest of the phone layout keeps; the step
+     names fit at 12.5 because `small` under them is already hidden here. */
+  .ho-progress > button b { font-size: 12.5px; }
+  .crumbs button, .crumbs b { padding-inline: var(--s-3); }
+}
+
+/* --------------------------------------------------------------------------
+   Phone — "이번 주 진행 중인 업무"
+   --------------------------------------------------------------------------
+   The row is [ avatar | name + part · role | arrow ]. Name and role share one
+   nowrap line, and on a 320–360px phone the role is the half that loses: "유학
+   생관리 · 체류·비자 관리" was ellipsised to "유학생관리 · 체…", which is the
+   part of the line that says what the person actually does. Stacking them costs
+   one line and keeps both whole.
+   -------------------------------------------------------------------------- */
+@media (max-width: 480px) {
+  .current-work-list p {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .current-work-list p small {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+    font-size: 12px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Phone — 파트 · 담당자 관리
+   --------------------------------------------------------------------------
+   The admin sheet is where people are added to the workspace and taken out of
+   it, and almost all of its copy was written at 11px for a wide desktop dialog.
+   On a phone the row that matters most — a person's part and role, next to the
+   button that removes them — was the smallest text on the screen.
+   -------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .member-admin-summary div span,
+  .member-admin-summary > p,
+  .member-team-title small,
+  .removed-members-title small,
+  .member-admin-row small,
+  .member-admin-modal .ui-modal-foot > span:first-child { font-size: 12.5px; }
+  .member-admin-row b { font-size: var(--t-sm); }
+  /* Removing somebody is the one destructive control in this sheet; it should
+     not also be the hardest to read and the hardest to hit. */
+  .member-admin-row > button {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+  .member-create-actions button { height: 40px; font-size: 12.5px; }
 }

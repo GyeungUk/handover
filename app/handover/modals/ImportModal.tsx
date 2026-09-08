@@ -212,6 +212,11 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
   const groups = sections.filter((section) => section.id !== 'unassigned');
   const groupTitles = new Map(groups.map((group) => [group.id, group.title]));
   const verification = result?.verification;
+  const firstItemByCategory = new Map<HandoverCategory, string>();
+  sections.forEach((section) => section.items.forEach((item) => {
+    const category = sectionOf(item);
+    if (!firstItemByCategory.has(category)) firstItemByCategory.set(category, item.id);
+  }));
 
   return <Modal
     onClose={onClose}
@@ -258,7 +263,11 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
         {skippedNote(result.skipped) && <p className="ho-import-skipped">초안에 넣지 않은 제안: {skippedNote(result.skipped)}</p>}
         <div className="ho-import-counts">{categories.map((category) => {
           const count = result.items.filter((item) => sectionOf(item) === category.id).length;
-          return <span key={category.id} className={count ? '' : 'empty'} style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties}><i />{category.short}<b>{count}</b></span>;
+          const target = firstItemByCategory.get(category.id);
+          const content = <><i />{category.short}<b>{count}</b></>;
+          return target
+            ? <a key={category.id} href={`#import-item-${target}`} style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties} aria-label={`${category.short} ${count}건으로 이동`}>{content}</a>
+            : <span key={category.id} className="empty" style={{ '--category': category.accent, '--category-soft': category.soft } as CSSProperties}>{content}</span>;
         })}</div>
         <p className="ho-import-classification-note">현재 발생한 문제와 미결 건은 원문에 명시된 경우에만 제안합니다. 조건부 위험과 확인 질문은 각 업무에 포함됩니다.</p>
       </div>

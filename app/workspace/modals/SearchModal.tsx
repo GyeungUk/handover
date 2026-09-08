@@ -69,7 +69,12 @@ export default function SearchModal({
             onChange={(event) => setQuery(event.target.value)}
             aria-label="통합 검색"
           />
+          {/* `head` replaces the dialog's own header, and with it the × that every other
+              modal closes by. That left a phone with an ESC hint for a key it does not
+              have, and no way out but guessing that the strip above the sheet is tappable.
+              The hint stays for the pointer; the button is what a thumb needs. */}
           <kbd>ESC</kbd>
+          <button className="search-close" type="button" onClick={onClose} aria-label="검색 닫기">×</button>
         </div>
       }
       labelledBy="workspace-search-title"

@@ -315,6 +315,9 @@
   overflow-x: auto;
   margin: 0 calc(var(--page-pad) * -1);
   padding: var(--s-1) var(--page-pad);
+  /* `ChipRail` scrolls the selected chip back into view; without this it stops
+     with the chip flush against the edge, reading as another clipped row. */
+  scroll-padding-inline: var(--page-pad);
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }

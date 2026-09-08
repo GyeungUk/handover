@@ -1,4 +1,6 @@
-import type { CSSProperties, ReactNode } from 'react';
+'use client';
+
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 
 /* ==========================================================================
    Badge / Chip / Avatar / Stat / Skeleton / Empty
@@ -43,9 +45,32 @@ export function Chip({
  * Wrapping a twelve-part filter onto four lines costs more vertical space on a
  * phone than the content it filters, so it scrolls — bled to the page edge so
  * it reads as a scroller rather than a clipped row.
+ *
+ * The selected chip is scrolled back into view whenever it changes. Without it
+ * the rail answered "which part am I looking at?" only for the parts that
+ * happened to fit: opening the last part of four on a 375px phone left its chip
+ * a hundred pixels past the right edge, so the one chip that was solid ink —
+ * the only thing on the screen naming the current filter — was the one the
+ * reader could not see.
  */
 export function ChipRail({ children, label }: { children: ReactNode; label?: string }) {
-  return <div className="ui-chip-rail" role="group" aria-label={label}>{children}</div>;
+  const rail = useRef<HTMLDivElement>(null);
+  /* The chip this last ran for. The effect has no dependency list — the
+     selection lives in whatever renders the chips, not here — so without this
+     the rail would snap back to the selected chip on every parent render and
+     take away any scrolling the reader had just done by hand. */
+  const settled = useRef<Element | null>(null);
+
+  useEffect(() => {
+    const active = rail.current?.querySelector('.ui-chip.active') ?? null;
+    if (active === settled.current) return;
+    settled.current = active;
+    /* `nearest` so a chip already on screen does not move, and the block stays
+       put — this is a row inside a page that is scrolled independently. */
+    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+
+  return <div className="ui-chip-rail" ref={rail} role="group" aria-label={label}>{children}</div>;
 }
 
 export function Avatar({

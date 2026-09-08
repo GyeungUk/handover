@@ -223,6 +223,83 @@ function MonthGrid({
   );
 }
 
+/**
+ * The month's work as a list, under the grid and only on a phone.
+ *
+ * Seven columns will not carry a Korean task title at 375px — the grid used to keep its desktop
+ * 720px and scroll sideways inside its card, which put four of the seven weekdays off-screen and
+ * made the month unreadable without dragging it. The grid keeps all seven columns now and draws
+ * each run as a bare coloured band, and the titles the bands can no longer hold are read here
+ * instead. Every row opens the same task the band does.
+ */
+function MonthAgenda({
+  monthIndex,
+  person,
+  onTask,
+}: {
+  monthIndex: number;
+  person: Person;
+  onTask?: (task: Task, person: Person) => void;
+}) {
+  const calendar = getCalendarDays(monthIndex);
+  const runs = monthRuns(person.tasks, monthIndex, calendar.days);
+  if (!runs.length) return null;
+
+  /* One row per task, not per run: a task with four settled days is one thing that happens on four
+     days, and four rows of the same title would read as four tasks. */
+  const rows = new Map<string, { task: Task; lane: number; from: number; to: number; days: number[] }>();
+  for (const run of runs) {
+    const seen = rows.get(run.task.title);
+    const day = run.confirmed ? [run.from] : [];
+    if (!seen) {
+      rows.set(run.task.title, { task: run.task, lane: run.lane, from: run.from, to: run.to, days: day });
+      continue;
+    }
+    seen.from = Math.min(seen.from, run.from);
+    seen.to = Math.max(seen.to, run.to);
+    seen.days.push(...day);
+  }
+
+  const ordered = [...rows.values()].sort((a, b) => a.from - b.from || a.lane - b.lane);
+
+  return (
+    <div className="month-agenda month-agenda-phone">
+      <div className="month-agenda-head">
+        <h3>{months[monthIndex]} 일정</h3>
+        <span>{ordered.length}건</span>
+      </div>
+      <div className="month-agenda-list">
+        {ordered.map(({ task, from, to, days }) => {
+          /* Settled days are the days themselves; a planned run is the stretch it covers. */
+          const when = days.length
+            ? days.length <= 3
+              ? days.map((day) => `${day}일`).join(', ')
+              : `${days[0]}일 외 ${days.length - 1}일`
+            : from === to
+              ? `${from}일`
+              : `${from}일 – ${to}일`;
+          return (
+            <button
+              key={task.title}
+              type="button"
+              disabled={!onTask}
+              onClick={onTask ? () => onTask(task, person) : undefined}
+            >
+              <i aria-hidden="true" style={{ background: 'var(--team)' }} />
+              <span>
+                <b>{task.title}</b>
+                <small>
+                  {months[monthIndex]} {when} <em>· {taskLengthLabel(task)}</em>
+                </small>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function MonthCalendar({
   person,
   monthIndex,
@@ -248,9 +325,9 @@ export default function MonthCalendar({
           <MonthNav monthIndex={monthIndex} setMonthIndex={setMonthIndex} />
         </div>
       </div>
-      <p className="calendar-scroll-hint"><span aria-hidden="true">↔</span> 달력을 좌우로 밀어 다른 날짜를 확인하세요.</p>
-      <div className="monthly-layout calendar-card" role="region" aria-label={`${months[monthIndex]} 월간 일정, 가로로 스크롤 가능`} tabIndex={0}>
+      <div className="monthly-layout calendar-card" role="region" aria-label={`${months[monthIndex]} 월간 일정`}>
         <MonthGrid monthIndex={monthIndex} person={person} onTask={onTask} />
+        <MonthAgenda monthIndex={monthIndex} person={person} onTask={onTask} />
       </div>
     </section>
   );
