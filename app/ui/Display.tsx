@@ -70,7 +70,47 @@ export function ChipRail({ children, label }: { children: ReactNode; label?: str
     active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
 
-  return <div className="ui-chip-rail" ref={rail} role="group" aria-label={label}>{children}</div>;
+  /*
+   * Which edges have chips behind them, published as `data-edge` for the mask in
+   * `primitives.css` to fade.
+   *
+   * The rail hides its scrollbar — it is a switcher, not a list — and it opens
+   * scrolled to whichever chip is selected. Select the last part on a phone and
+   * the rail opens at its far end, where the first chip is cut vertically in
+   * half by the viewport edge: that reads as a broken layout rather than as
+   * "there is more this way", and the parts scrolled past are, as far as the
+   * reader can tell, not there at all.
+   *
+   * Pure CSS cannot answer "is this scrolled?" — the background-gradient trick
+   * paints its shadow behind the chips, which are opaque pills, so it shows
+   * nothing here. Measuring is three lines, and the component already holds the
+   * ref and runs an effect.
+   */
+  useEffect(() => {
+    const node = rail.current;
+    if (!node) return;
+    const measure = () => {
+      /* 2px of slack: fractional layout widths make an unscrollable rail report
+         a scrollWidth a hair over its clientWidth, which would fade both ends of
+         a rail that has nothing hidden at either. */
+      const start = node.scrollLeft > 2;
+      const end = node.scrollLeft + node.clientWidth < node.scrollWidth - 2;
+      node.dataset.edge = start && end ? 'both' : start ? 'start' : end ? 'end' : 'none';
+    };
+    measure();
+    node.addEventListener('scroll', measure, { passive: true });
+    /* The rail's own width changes with the viewport, and its content changes
+       when a part is added — one observer covers both. */
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    for (const child of node.children) observer.observe(child);
+    return () => {
+      node.removeEventListener('scroll', measure);
+      observer.disconnect();
+    };
+  });
+
+  return <div className="ui-chip-rail" ref={rail} role="group" aria-label={label} data-edge="none">{children}</div>;
 }
 
 export function Avatar({

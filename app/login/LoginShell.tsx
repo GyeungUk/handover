@@ -23,7 +23,7 @@ export default function LoginShell({ headline, sub, children, footnote }: {
       <div className="auth-mesh" aria-hidden="true" />
 
       <header className="auth-brand">
-        <span className="auth-mark" aria-hidden="true"><i /><i /><i /></span>
+        <span className="brand-mark" aria-hidden="true"><span>SS</span><b>U</b></span>
         <span>
           <strong>국제처 업무·인수인계</strong>
           <small>SOONGSIL GLOBAL AFFAIRS</small>

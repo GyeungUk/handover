@@ -3,6 +3,7 @@
 import type { CSSProperties, Dispatch, ReactNode, SetStateAction } from 'react';
 import { calendarMonth, confirmedDays, dateParts, isoDate, months, taskLengthLabel, taskSpan, type Person, type Task, type TaskDate } from '../../org-data';
 import { useToday } from '../context';
+import { IconRefresh } from '../../ui';
 
 /* ==========================================================================
    Month view
@@ -141,12 +142,14 @@ function MonthNav({ monthIndex, setMonthIndex }: { monthIndex: number; setMonthI
  * The day a task appears on is derived, not stored — the model holds week slots, not dates — so
  * `monthRuns` resolves each task's slots to the days they stand for and hands it a lane.
  *
- * Every day of a run carries the task's name. The grid used to name a run on its first day only
- * and draw the rest as a bare band, which read as one thing crossing the week for anybody who had
- * the first day in view and as an anonymous grey bar for anybody who did not — the second week of a
- * three-week task, the whole of a task that started last month, every day of it in the row below
- * the one it began on. The band is still one band: the days join edge to edge, only its ends are
- * rounded, and only its first day carries the length and the reschedule flag.
+ * A run is named on the first day of every week it touches. Naming only its opening day left the
+ * second week of a three-week task, and the whole of a task that started last month, as an
+ * anonymous grey bar — nobody reading that row could tell what it was. Naming every day fixed that
+ * and bought a different problem: the same six words printed across seven cells, which is the
+ * loudest thing on the screen and still only says one thing. A week row is exactly the unit a
+ * reader takes in at once, so the name appears once per row and the band stays one band — the days
+ * join edge to edge, only the run's true ends are rounded, and only its opening day carries the
+ * length, the fixed-period edge and the reschedule flag.
  */
 function MonthGrid({
   monthIndex,
@@ -186,6 +189,11 @@ function MonthGrid({
 
                     const starts = day === run.from;
                     const ends = day === run.to && run.endsHere;
+                    /* Sunday, or the first cell of the grid — the left edge of a week row, which
+                       is where a band that carried over from the row above has to say its name
+                       again. `index % 7` is the column because the grid is seven wide and the
+                       leading blanks are cells of their own. */
+                    const opensRow = index % 7 === 0;
                     /* The band says which weeks the work covers; a filled day says which day of it
                        somebody has to be somewhere. Both belong on the same lane, so the day the
                        task is actually on is the band in the part's colour rather than a chip
@@ -207,8 +215,10 @@ function MonthGrid({
                         title={`${run.task.title} · ${length}${fixed ? ` · ${fixed.label || '확정 일자'}` : ''}`}
                         onClick={onTask ? () => onTask(run.task, person) : undefined}
                       >
-                        {starts && run.task.movedFrom !== undefined && <i aria-hidden="true">↻</i>}
-                        <b>{run.task.title}</b>
+                        {starts && run.task.movedFrom !== undefined && <i aria-hidden="true"><IconRefresh /></i>}
+                        {/* Empty on the days between: the element stays so the band's flex row
+                            keeps its shape and the length badge stays pinned right. */}
+                        <b>{starts || opensRow ? run.task.title : ''}</b>
                         {fixed ? <mark>{fixed.label || '확정'}</mark> : starts ? <em>{length}</em> : null}
                       </button>
                     );

@@ -35,12 +35,15 @@ export default function WorkspaceHead({
   title,
   description,
   scope = true,
+  actions,
   children,
 }: {
   crumbs: { label: string; onClick?: () => void }[];
   title: ReactNode;
   description?: ReactNode;
   scope?: boolean;
+  /** page-level controls that belong beside the scope — printing the year, today */
+  actions?: ReactNode;
   children?: ReactNode;
 }) {
   return (
@@ -60,7 +63,12 @@ export default function WorkspaceHead({
         {description && <Text tone="muted">{description}</Text>}
         {children}
       </div>
-      {scope && <CalendarScope />}
+      {(scope || actions) && (
+        <div className="workspace-head-tools">
+          {actions}
+          {scope && <CalendarScope />}
+        </div>
+      )}
     </Container>
   );
 }

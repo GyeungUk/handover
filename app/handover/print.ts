@@ -3,18 +3,18 @@
  *
  * The workspace screen is built for writing — steps, pickers, verdict controls — and none of that
  * belongs on the copy an author reads before submitting or a part leader keeps after approving.
- * So printing does not restyle the screen: it builds the document again as a self-contained page
- * and hands that to the browser's own print dialog, which is where "PDF로 저장" lives on every
- * platform the office uses.
+ * So printing does not restyle the screen: it builds the document again as a self-contained sheet
+ * and hands that to `printSheet`, which mounts it, isolates it from the app around it and calls the
+ * browser's own print dialog — the place "PDF로 저장" lives on every platform this office uses.
  *
- * Rendering into an isolated iframe rather than a new window is deliberate. A popup is blocked
- * often enough to be unreliable, and printing the current page would drag 5,000 lines of workspace
- * CSS in with it; a same-origin iframe has neither problem, and it prints without the reader ever
- * seeing a second tab open and close.
+ * `../print-sheet` holds the part this shares with the year plan: the page box, the base face, the
+ * scoping that lets a sheet's rules win against 6,000 lines of workspace CSS, and the mount /
+ * print / clean-up cycle. What is left here is what a handover document says.
  */
 
 import { categories } from './categories';
-import { sanitizeRichHtml } from './format';
+import { plainText, sanitizeRichHtml } from './format';
+import { baseSheetStyles, escapeHtml, printSheet, standaloneDocument, type Sheet } from '../print-sheet';
 import {
   handoverCategoryLabels,
   propertyFieldsByCategory,
@@ -40,13 +40,6 @@ const statusLabels: Record<WorkflowStatus, string> = {
   approved: '승인 완료',
 };
 
-const escapeHtml = (value: string) => value
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#39;');
-
 const onDate = (value: string | null) => value
   ? new Date(value).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' })
   : '—';
@@ -58,66 +51,90 @@ const onDate = (value: string | null) => value
  * where a page may break stated here rather than left to the browser. An entry that splits across
  * two pages is the one failure that makes a printed handover hard to read, so entries and their
  * headings are kept together and a work unit always opens a page of its own.
+ *
+ * `__ROOT__` is the sheet itself and `__SCOPE__` prefixes everything inside it. Mounted in a
+ * document of its own they resolve to `body` and to nothing; mounted in the workspace they both
+ * resolve to the sheet's id, which is what makes these rules win against the app's stylesheet
+ * without a single `!important`.
  */
 const sheetStyles = `
-  @page { size: A4; margin: 18mm 15mm 16mm; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-    font-size: 11pt;
-    line-height: 1.65;
-    color: #14181d;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-  h1, h2, h3, h4 { margin: 0; font-weight: 700; }
-  p { margin: 0 0 6pt; }
+  ${baseSheetStyles({ size: 'A4', margin: '18mm 15mm 16mm' })}
+  __ROOT__ { font-size: 11pt; line-height: 1.65; }
 
-  .cover { border-bottom: 2pt solid #14181d; padding-bottom: 10pt; margin-bottom: 14pt; }
-  .cover-kicker { font-size: 9.5pt; letter-spacing: 0.08em; color: #5b6673; margin-bottom: 4pt; }
-  .cover h1 { font-size: 20pt; letter-spacing: -0.01em; }
-  .cover-year { font-size: 12pt; color: #1d5f92; font-weight: 600; margin-top: 3pt; }
+  __SCOPE__ .cover { border-bottom: 2pt solid #14181d; padding-bottom: 10pt; margin-bottom: 14pt; }
+  /* 0.02em, not 0.08em. This line is the organisation's Korean name, and wide
+     tracking is a Latin device — on Hangul it does not open a word up, it
+     spaces the syllable blocks apart until the name reads as a list of
+     characters. The same correction the screen labels took. */
+  __SCOPE__ .cover-kicker { font-size: 9.5pt; letter-spacing: 0.02em; color: #5b6673; margin-bottom: 4pt; }
+  __SCOPE__ .cover h1 { font-size: 20pt; }
+  __SCOPE__ .cover-year { font-size: 12pt; color: #1d5f92; font-weight: 600; margin-top: 3pt; }
 
-  .facts { width: 100%; border-collapse: collapse; margin-bottom: 16pt; }
-  .facts th, .facts td { border: 0.75pt solid #c8d0d9; padding: 5pt 8pt; font-size: 10pt; text-align: left; }
-  .facts th { background: #f1f4f7; width: 20%; font-weight: 600; color: #3c4756; }
+  __SCOPE__ .facts { width: 100%; margin-bottom: 16pt; }
+  __SCOPE__ .facts th, __SCOPE__ .facts td { border: 0.75pt solid #c8d0d9; padding: 5pt 8pt; font-size: 10pt; text-align: left; vertical-align: top; }
+  __SCOPE__ .facts th { background: #f1f4f7; width: 20%; font-weight: 600; color: #3c4756; }
 
-  .unit { margin-bottom: 18pt; break-inside: auto; }
-  .unit + .unit { break-before: page; }
-  .unit-head {
+  __SCOPE__ .unit { margin-bottom: 18pt; break-inside: auto; }
+  /*
+   * A work unit opens a page of its own — that is what makes a printed handover navigable, and it
+   * is the convention for this document in a Korean office.
+   *
+   * An empty one does not. An author who has made a unit and not filled it yet was getting a whole
+   * sheet of A4 carrying one section number and the sentence "이 담당업무 단위에는 아직 항목이
+   * 없습니다."; a document mid-composition with three of those printed three blank pages. The unit
+   * still prints — the paper has to agree with the screen — it just no longer claims a page for it.
+   */
+  __SCOPE__ .unit + .unit { break-before: page; }
+  __SCOPE__ .unit + .unit.is-empty { break-before: auto; }
+  __SCOPE__ .unit.is-empty { margin-bottom: 14pt; }
+  __SCOPE__ .unit-head {
     display: flex; align-items: baseline; gap: 8pt;
     border-left: 3pt solid #1d5f92; padding: 2pt 0 2pt 8pt; margin-bottom: 10pt;
     break-after: avoid;
   }
-  .unit-head .index { font-size: 9.5pt; color: #5b6673; font-weight: 600; }
-  .unit-head h2 { font-size: 14pt; }
-  .unit-head .verdict { margin-left: auto; font-size: 9.5pt; font-weight: 600; }
-  .verdict.approved { color: #1f7a70; }
-  .verdict.rejected { color: #a0475c; }
+  __SCOPE__ .unit-head .index { font-size: 9.5pt; color: #5b6673; font-weight: 600; }
+  __SCOPE__ .unit-head h2 { font-size: 14pt; }
+  __SCOPE__ .unit-head .verdict { margin-left: auto; font-size: 9.5pt; font-weight: 600; }
+  __SCOPE__ .verdict.approved { color: #1f7a70; }
+  __SCOPE__ .verdict.rejected { color: #a0475c; }
 
-  .comment { border: 0.75pt solid #e0c7ce; background: #fbf3f5; padding: 6pt 9pt; margin-bottom: 10pt; font-size: 10pt; }
-  .comment b { display: block; color: #8d3a4e; margin-bottom: 2pt; }
+  __SCOPE__ .comment { border: 0.75pt solid #e0c7ce; background: #fbf3f5; padding: 6pt 9pt; margin-bottom: 10pt; font-size: 10pt; }
+  __SCOPE__ .comment b { display: block; color: #8d3a4e; margin-bottom: 2pt; }
 
-  .entry { break-inside: avoid; margin-bottom: 12pt; padding-bottom: 10pt; border-bottom: 0.5pt dashed #d5dbe2; }
-  .entry:last-child { border-bottom: 0; }
-  .entry-head { break-after: avoid; margin-bottom: 5pt; }
-  .entry-section { font-size: 9pt; font-weight: 700; color: #1d5f92; letter-spacing: 0.02em; }
-  .entry h3 { font-size: 12pt; margin-top: 2pt; }
-  .entry-properties { margin: 5pt 0 7pt; font-size: 9.5pt; color: #3c4756; }
-  .entry-properties span { display: inline-block; margin-right: 12pt; }
-  .entry-properties b { color: #5b6673; font-weight: 600; margin-right: 4pt; }
-  .entry-body { font-size: 10.5pt; }
-  .entry-body p { margin: 0 0 5pt; }
-  .entry-body strong { color: #14181d; }
-  .entry-body ul, .entry-body ol { margin: 0 0 5pt; padding-left: 16pt; }
-  .entry-body table { border-collapse: collapse; width: 100%; margin: 4pt 0 6pt; font-size: 9.5pt; }
-  .entry-body th, .entry-body td { border: 0.5pt solid #c8d0d9; padding: 3pt 5pt; }
-  .attachments { margin-top: 5pt; font-size: 9.5pt; color: #5b6673; }
-  .attachments b { font-weight: 600; margin-right: 4pt; }
+  /*
+   * An entry moves to the next page rather than splitting across two — that is the one thing that
+   * makes a printed handover hard to read, and it is worth a little white space at a page foot.
+   *
+   * It stops being worth it when the entry is taller than a page. Such an entry has to break
+   * somewhere, and "avoid" does not prevent that; it only makes the entry start on a fresh page
+   * first, which strands most of the previous one. A thirty-paragraph 현안사항 was leaving sixty
+   * percent of a sheet blank and then breaking anyway. "is-long" — decided by the builder, which
+   * is the only place that knows how much text there is — lets those flow, and orphans/widows
+   * make sure a break inside one never leaves a single line by itself.
+   */
+  __SCOPE__ .entry { break-inside: avoid; margin-bottom: 12pt; padding-bottom: 10pt; border-bottom: 0.5pt dashed #d5dbe2; }
+  __SCOPE__ .entry.is-long { break-inside: auto; }
+  __SCOPE__ .entry-body p, __SCOPE__ .entry-body li { orphans: 2; widows: 2; }
+  __SCOPE__ .entry:last-child { border-bottom: 0; }
+  __SCOPE__ .entry-head { break-after: avoid; margin-bottom: 5pt; }
+  __SCOPE__ .entry-section { font-size: 9pt; font-weight: 700; color: #1d5f92; letter-spacing: 0.02em; }
+  __SCOPE__ .entry h3 { font-size: 12pt; margin-top: 2pt; }
+  __SCOPE__ .entry-properties { margin: 5pt 0 7pt; font-size: 9.5pt; color: #3c4756; }
+  __SCOPE__ .entry-properties span { display: inline-block; margin-right: 12pt; }
+  __SCOPE__ .entry-properties b { color: #5b6673; font-weight: 600; margin-right: 4pt; }
+  __SCOPE__ .entry-body { font-size: 10.5pt; }
+  __SCOPE__ .entry-body p { margin: 0 0 5pt; }
+  __SCOPE__ .entry-body strong { color: #14181d; }
+  __SCOPE__ .entry-body ul, __SCOPE__ .entry-body ol { margin: 0 0 5pt; padding-left: 16pt; }
+  __SCOPE__ .entry-body li { margin: 0 0 2pt; }
+  __SCOPE__ .entry-body table { width: 100%; margin: 4pt 0 6pt; font-size: 9.5pt; }
+  __SCOPE__ .entry-body th, __SCOPE__ .entry-body td { border: 0.5pt solid #c8d0d9; padding: 3pt 5pt; }
+  __SCOPE__ .entry-body img { max-width: 100%; }
+  __SCOPE__ .attachments { margin-top: 5pt; font-size: 9.5pt; color: #5b6673; }
+  __SCOPE__ .attachments b { font-weight: 600; margin-right: 4pt; }
 
-  .empty { font-size: 10pt; color: #5b6673; font-style: italic; }
-  .sheet-foot { margin-top: 16pt; padding-top: 8pt; border-top: 0.5pt solid #c8d0d9; font-size: 9pt; color: #5b6673; }
+  __SCOPE__ .empty { font-size: 10pt; color: #5b6673; font-style: italic; }
+  __SCOPE__ .sheet-foot { margin-top: 16pt; padding-top: 8pt; border-top: 0.5pt solid #c8d0d9; font-size: 9pt; color: #5b6673; }
 `;
 
 function propertyLine(entry: HandoverEntry) {
@@ -134,11 +151,20 @@ function attachmentLine(entry: HandoverEntry) {
   return `<p class="attachments"><b>첨부</b>${names}</p>`;
 }
 
+/*
+ * Roughly how much text fits on one A4 page of this sheet: 11pt body at 1.65 leading over a
+ * 263mm × 180mm text area is about forty lines, and a Korean line at that measure runs to around
+ * fifty characters. It does not have to be exact — it only has to separate "this will fit on a
+ * page" from "this cannot", and everything near the boundary is fine either way.
+ */
+const PAGE_OF_TEXT = 1_800;
+
 function entrySheet(entry: HandoverEntry, label: string) {
   /* The body is stored HTML. It was sanitised on the way in, and it is sanitised again here
      because an archived year is read straight off the API rather than through the editor. */
   const body = sanitizeRichHtml(entry.detail) || '<p class="empty">본문이 비어 있습니다.</p>';
-  return `<article class="entry">
+  const long = plainText(entry.detail).length > PAGE_OF_TEXT;
+  return `<article class="entry${long ? ' is-long' : ''}">
     <div class="entry-head">
       <div class="entry-section">${escapeHtml(label)}</div>
       <h3>${escapeHtml(entry.title)}</h3>
@@ -149,8 +175,13 @@ function entrySheet(entry: HandoverEntry, label: string) {
   </article>`;
 }
 
-/** The whole sheet, as one standalone HTML document. Exported so it can be tested and previewed. */
-export function buildPrintHtml(document: HandoverDocument, meta: PrintMeta) {
+/**
+ * Everything inside the sheet — the cover, the facts table, the units — with no `<html>` around it.
+ *
+ * Exported so both mounts build from one function: the standalone document wraps this, and the
+ * in-page sheet sets it as the mounted element's `innerHTML`.
+ */
+export function buildSheetBody(document: HandoverDocument, meta: PrintMeta) {
   const organization = meta.organization ?? '국제처';
   const byId = new Map(document.entries.map((entry) => [entry.id, entry]));
   const placed = new Set(document.bundles.flatMap((bundle) => bundle.entryIds));
@@ -170,7 +201,7 @@ export function buildPrintHtml(document: HandoverDocument, meta: PrintMeta) {
     const body = bundleEntries.length
       ? bundleEntries.map((entry) => entrySheet(entry, handoverCategoryLabels[entry.category])).join('')
       : '<p class="empty">이 담당업무 단위에는 아직 항목이 없습니다.</p>';
-    return `<section class="unit">
+    return `<section class="unit${bundleEntries.length ? '' : ' is-empty'}">
       <div class="unit-head">
         <span class="index">A-${String(index + 1).padStart(2, '0')}</span>
         <h2>${escapeHtml(bundle.title || '이름 없는 담당업무 단위')}</h2>
@@ -200,17 +231,7 @@ export function buildPrintHtml(document: HandoverDocument, meta: PrintMeta) {
     .map((section) => `${section.short} ${section.count}`)
     .join(' · ');
 
-  const title = `${meta.academicYearLabel} 업무 인수인계서 - ${document.ownerName || '작성자'}`;
-
-  return `<!doctype html>
-<html lang="ko">
-<head>
-<meta charset="utf-8">
-<title>${escapeHtml(title)}</title>
-<style>${sheetStyles}</style>
-</head>
-<body>
-  <header class="cover">
+  return `<header class="cover">
     <div class="cover-kicker">${escapeHtml(organization)}${meta.archived ? ' · 연도별 보관 기록' : ''}</div>
     <h1>업무 인수인계서</h1>
     <div class="cover-year">${escapeHtml(meta.academicYearLabel)}</div>
@@ -228,42 +249,24 @@ export function buildPrintHtml(document: HandoverDocument, meta: PrintMeta) {
   ${units || '<p class="empty">작성된 담당업무 단위가 없습니다.</p>'}
   ${unplaced}
 
-  <footer class="sheet-foot">${escapeHtml(organization)} 업무 인수인계 워크스페이스에서 출력 · ${escapeHtml(onDate(new Date().toISOString()))}</footer>
-</body>
-</html>`;
+  <footer class="sheet-foot">${escapeHtml(organization)} 업무 인수인계 워크스페이스에서 출력 · ${escapeHtml(onDate(new Date().toISOString()))}</footer>`;
 }
 
-/**
- * Hands the sheet to the browser's print dialog, where the reader saves it as PDF.
- *
- * The iframe is removed once printing has been dismissed. Chrome and Safari fire `afterprint` on
- * the iframe's own window; the timer is there for the browsers that do not, so a dialog the reader
- * leaves open for a while never leaves an orphan node behind either way.
- */
-export function printHandoverDocument(handover: HandoverDocument, meta: PrintMeta) {
-  const frame = window.document.createElement('iframe');
-  frame.setAttribute('aria-hidden', 'true');
-  frame.setAttribute('title', '인수인계서 인쇄');
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
-  frame.srcdoc = buildPrintHtml(handover, meta);
-
-  frame.onload = () => {
-    const view = frame.contentWindow;
-    if (!view) {
-      frame.remove();
-      return;
-    }
-    let removed = false;
-    const cleanUp = () => {
-      if (removed) return;
-      removed = true;
-      window.setTimeout(() => frame.remove(), 0);
-    };
-    view.addEventListener('afterprint', cleanUp);
-    window.setTimeout(cleanUp, 60000);
-    view.focus();
-    view.print();
+/** The document as a printable sheet: what it is called, how it is set, and what is on it. */
+function handoverSheet(handover: HandoverDocument, meta: PrintMeta): Sheet {
+  return {
+    title: `${meta.academicYearLabel} 업무 인수인계서 - ${handover.ownerName || '작성자'}`,
+    styles: sheetStyles,
+    body: buildSheetBody(handover, meta),
   };
+}
 
-  window.document.body.appendChild(frame);
+/** The whole sheet, as one standalone HTML document. Exported so it can be tested and previewed. */
+export function buildPrintHtml(handover: HandoverDocument, meta: PrintMeta) {
+  return standaloneDocument(handoverSheet(handover, meta));
+}
+
+/** Hands the document to the browser's print dialog, where the reader saves it as PDF. */
+export function printHandoverDocument(handover: HandoverDocument, meta: PrintMeta) {
+  printSheet(handoverSheet(handover, meta));
 }

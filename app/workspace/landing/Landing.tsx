@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { WEEKS_IN_YEAR, taskTrack } from '../../org-data';
+import { taskTrack, weeklyLoad } from '../../org-data';
 import { useReveal, useTeams, useToday } from '../context';
 import FlowSection from './FlowSection';
 import HeroSection from './HeroSection';
@@ -27,16 +27,9 @@ export default function Landing({
   const teams = useTeams();
   const today = useToday();
 
-  /* How many people are busy in each of the 48 weeks — the flow ring's data,
-     and the only expensive thing on this page. */
-  const weekLoad = useMemo(() => {
-    const people = teams.flatMap((team) => team.people);
-    /* The weeks each task is drawn on, so the ring counts the same busy weeks the calendars do. */
-    const spans = people.map((person) => person.tasks.map(taskTrack));
-    return Array.from({ length: WEEKS_IN_YEAR }, (_, week) =>
-      spans.filter((tasks) => tasks.some((span) => week >= span.start && week < span.start + span.duration)).length);
-  }, [teams]);
-
+  /* How many people are busy in each of the 48 weeks — this page's chart, and the only expensive
+     thing on it. The year track's scrubber reads the same function, so the two agree. */
+  const weekLoad = useMemo(() => weeklyLoad(teams.flatMap((team) => team.people)), [teams]);
   const peopleCount = useMemo(() => teams.reduce((sum, team) => sum + team.people.length, 0), [teams]);
 
   const currentWork = useMemo(() => {

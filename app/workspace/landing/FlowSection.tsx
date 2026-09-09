@@ -18,7 +18,11 @@ import { useToday } from '../context';
  */
 type CurrentWorkItem = { team: Team; person: Person; task: Task };
 
-export default function FlowSection({ weekLoad, currentWork, onPerson }: { weekLoad: number[]; currentWork: CurrentWorkItem[]; onPerson: (teamId: string, personId: string) => void }) {
+export default function FlowSection({ weekLoad, currentWork, onPerson }: {
+  weekLoad: number[];
+  currentWork: CurrentWorkItem[];
+  onPerson: (teamId: string, personId: string) => void;
+}) {
   const peak = Math.max(1, ...weekLoad);
   const half = Math.round(peak / 2);
   const today = useToday();
@@ -33,6 +37,7 @@ export default function FlowSection({ weekLoad, currentWork, onPerson }: { weekL
         <SectionHeading
           eyebrow="이번 주 업무"
           title="이번 주, 누가 어떤 업무를 맡고 있나요?"
+          titleId="flow-title"
           sub="현재 진행 중인 담당자와 업무를 확인하고, 연간 흐름 속 위치도 함께 살펴보세요."
           as="h2"
           align="start"
@@ -42,7 +47,7 @@ export default function FlowSection({ weekLoad, currentWork, onPerson }: { weekL
           <div
             className="flow-chart"
             role="img"
-            aria-label={`연간 업무 밀도. ${currentLabel}${currentLoad === null ? '' : `에 ${currentLoad}명이 동시에 업무 중입니다.`}`}
+            aria-label={`파트별 연간 업무 밀도. ${currentLabel}${currentLoad === null ? '' : `에 ${currentLoad}명이 동시에 업무 중입니다.`}`}
           >
             <div className="flow-plot" aria-hidden="true">
               <div className="flow-axis">
@@ -58,8 +63,16 @@ export default function FlowSection({ weekLoad, currentWork, onPerson }: { weekL
                   <span
                     key={week}
                     className={`${load === 0 ? 'quiet' : ''} ${week === today.week ? 'current' : ''}`}
+                    /* `--w` staggers the column's growth across the year, the same sweep the
+                       hero's sparkline uses, so the two charts read as one family. */
+                    style={{ '--w': week } as CSSProperties}
                   >
-                    <i style={{ height: load === 0 ? '4px' : `${Math.max(9, (load / peak) * 100)}%` }} />
+                    {/* Each column communicates only the total number of people working. Part
+                        ownership belongs in the adjacent task list, so it does not compete with
+                        the chart's year-over-year density reading. */}
+                    {load === 0
+                      ? <i className="flow-floor" />
+                      : <i style={{ height: `${(load / peak) * 100}%` }} />}
                   </span>
                 ))}
                 {today.week !== null && (
@@ -75,10 +88,10 @@ export default function FlowSection({ weekLoad, currentWork, onPerson }: { weekL
               </div>
             </div>
 
-            <p className="flow-key">
-              <span><i className="busy" />업무 있음</span>
-              <span><i className="current" />이번 주</span>
-              <span><i className="quiet" />업무 없음</span>
+            <p className="flow-key" aria-label="그래프 범례">
+              <span><i className="has-work" />업무 있음</span>
+              <span><i className="this-week" />이번 주</span>
+              <span><i className="no-work" />업무 없음</span>
               <em>세로 높이 = 동시 진행 인원</em>
             </p>
           </div>

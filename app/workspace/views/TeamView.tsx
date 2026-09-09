@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { Button, Chip, ChipRail, Container, Stat } from '../../ui';
+import { Button, Chip, ChipRail, Container, IconPlus, Stat } from '../../ui';
 import { taskTrack, type Person, type Task, type Team } from '../../org-data';
 import { useTeams } from '../context';
 import { CalendarBody, WeekHeader } from '../calendar/WeekRuler';
@@ -9,6 +9,7 @@ import { PersonTaskRow } from '../calendar/rows';
 import PersonTimelineCard from '../calendar/PersonTimelineCard';
 import YearCalendar from '../calendar/YearCalendar';
 import WorkspaceHead from './WorkspaceHead';
+import YearPrintButton from './YearPrintButton';
 import { SummaryBar, YearMeter } from './SummaryBar';
 
 /**
@@ -52,6 +53,7 @@ export default function TeamView({
         crumbs={[{ label: '홈', onClick: onHome }, { label: '국제처 전체', onClick: onAll }, { label: team.title }]}
         title={team.title}
         description={team.description}
+        actions={<YearPrintButton scope={{ kind: 'team', team }} label="파트 업무표 PDF" />}
       />
 
       <Container>
@@ -72,7 +74,7 @@ export default function TeamView({
         <section className="team-annual-section">
           <div className="section-bar">
             <h2 className="ui-h2">연간 일정</h2>
-            <Button size="sm" variant="outline" glyph="＋" onClick={onAddTask}>파트 일정 추가</Button>
+            <Button size="sm" variant="outline" leading={<IconPlus />} onClick={onAddTask}>파트 일정 추가</Button>
           </div>
           <YearCalendar
             label={`${team.title} 연간 업무 일정표`}

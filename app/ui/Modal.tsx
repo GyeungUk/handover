@@ -123,16 +123,33 @@ export default function Modal({
         return;
       }
       if (event.key !== 'Tab') return;
+      /* `tabIndex >= 0` is the whole difference between focusable and *tabbable*,
+         and the trap needs the second. `FOCUSABLE` matches every `<button>`,
+         including the ones a roving list has taken out of the tab order — so in
+         the command palette the input was followed in `items` by twenty rows the
+         browser would never Tab to. `active === last` was therefore never true,
+         the handler stood aside, and Tab walked out of the dialog into the page.
+         `HTMLElement.tabIndex` reads the resolved value: -1 when set, 0 for a
+         button or link that has not opted out. */
       const items = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (item) => item.offsetParent !== null || item === document.activeElement,
+        (item) => item.tabIndex >= 0 && (item.offsetParent !== null || item === document.activeElement),
       );
-      if (items.length === 0) { event.preventDefault(); return; }
-      const first = items[0];
-      const last = items[items.length - 1];
-      const active = document.activeElement;
-      if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
-      else if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
-      else if (!node.contains(active)) { event.preventDefault(); first.focus(); }
+      if (items.length === 0) { event.preventDefault(); node.focus(); return; }
+      const active = document.activeElement as HTMLElement | null;
+      const index = active ? items.indexOf(active) : -1;
+      if (index === -1) {
+        /* Focus is on the dialog box itself, on a `tabindex="-1"` option, or has
+           already got out. In none of those cases does the browser have a next
+           stop inside the dialog, so put it somewhere deliberate. */
+        event.preventDefault();
+        (event.shiftKey ? items[items.length - 1] : items[0]).focus();
+        return;
+      }
+      /* One tabbable control is the palette's normal state: Tab keeps it. */
+      const wrap = event.shiftKey
+        ? (index === 0 ? items[items.length - 1] : null)
+        : (index === items.length - 1 ? items[0] : null);
+      if (wrap) { event.preventDefault(); wrap.focus(); }
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);

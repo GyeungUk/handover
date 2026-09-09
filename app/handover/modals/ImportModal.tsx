@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { HandoverCategory, ImportItem, ImportResponse, ImportWorkflowGroup } from '../../handover-schema';
 import { acceptedImportTypes, extractText, supportedNote } from '../../file-text';
 import { categories } from '../categories';
-import { Button, Modal } from '../../ui';
+import { Button, IconUpload, Modal } from '../../ui';
 import ItemPager, { CategoryFilter, useCategoryPager } from '../ItemPager';
 
 /**
@@ -252,7 +252,7 @@ export default function ImportModal({ onAdopt, onClose }: { onAdopt: (item: Impo
         onDragLeave={() => setDropActive(false)}
         onDrop={(event) => { event.preventDefault(); setDropActive(false); if (!busyRef.current) void takeFile(event.dataTransfer.files?.[0]); }}
       >
-        <span className="ho-dropzone-icon" aria-hidden="true">⇪</span>
+        <span className="ho-dropzone-icon" aria-hidden="true"><IconUpload /></span>
         <p><b>{reading ? '파일을 읽는 중입니다…' : '기존 인수인계 자료를 끌어다 놓으세요'}</b><small>{supportedNote} 표와 시트의 내용도 함께 분석합니다.</small></p>
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}>파일 선택</button>
         <input ref={fileInputRef} type="file" hidden disabled={busy} accept={acceptedImportTypes} onChange={(event) => { void takeFile(event.target.files?.[0]); event.target.value = ''; }} />

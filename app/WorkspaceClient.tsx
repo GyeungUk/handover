@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from 'react';
-import { Button, Empty, Modal } from './ui';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { Button, Empty, IconPlus, Modal } from './ui';
 import HandoverWorkspace from './HandoverWorkspace';
 import Landing from './workspace/landing/Landing';
 import AppHeader from './workspace/AppHeader';
@@ -67,6 +68,20 @@ function viewFromLocation(): View {
     return from ? { type, from } : { type };
   }
   return calendarViewFrom(type, params) ?? { type: 'home' };
+}
+
+/**
+ * How far into the workspace a screen is: 홈 → 전체 → 파트 → 담당자.
+ *
+ * Only the sign of the difference matters — it is what tells a screen transition whether the
+ * reader is going in or coming back out. 인수인계 sits beside the year calendar rather than under
+ * it: it is opened from a calendar screen and returns to one, so it is a sideways move.
+ */
+function viewDepth(view: View) {
+  if (view.type === 'home') return 0;
+  if (view.type === 'team') return 2;
+  if (view.type === 'person') return 3;
+  return 1;
 }
 
 function hrefForView(view: View) {
@@ -355,7 +370,7 @@ function MemberAdminModal({ allTeams, removedMemberIds, loading, loadError, onCr
       footer={<><span>제외된 담당자는 업무 화면과 검색 결과에서 즉시 숨겨집니다.</span><span className="spacer" /><Button variant="primary" onClick={onClose} disabled={busy}>완료</Button></>}
     >
       <div className="member-admin-summary"><div><strong>{totalMembers - removedCount}</strong><span>활성 담당자</span></div><i /><div><strong>{allTeams.length}</strong><span>운영 파트</span></div><i /><div><strong>{removedCount}</strong><span>제외된 담당자</span></div><p><span>관리자 전용</span> 조직 변경은 즉시 반영됩니다.</p></div>
-      <div className="member-admin-createbar"><button type="button" className={createMode === 'team' ? 'active' : ''} onClick={() => { setCreateMode(createMode === 'team' ? null : 'team'); setActionError(''); }} disabled={busy}><span>＋</span> 파트 추가</button><button type="button" className={createMode === 'member' ? 'active' : ''} onClick={() => { setCreateMode(createMode === 'member' ? null : 'member'); setActionError(''); }} disabled={busy || allTeams.length === 0}><span>＋</span> 담당자 추가</button></div>
+      <div className="member-admin-createbar"><button type="button" className={createMode === 'team' ? 'active' : ''} onClick={() => { setCreateMode(createMode === 'team' ? null : 'team'); setActionError(''); }} disabled={busy}><IconPlus /> 파트 추가</button><button type="button" className={createMode === 'member' ? 'active' : ''} onClick={() => { setCreateMode(createMode === 'member' ? null : 'member'); setActionError(''); }} disabled={busy || allTeams.length === 0}><IconPlus /> 담당자 추가</button></div>
       {createMode === 'team' && <form className="member-create-panel" onSubmit={createTeam}><div className="member-create-title"><span>파트 추가</span><b>새 파트 추가</b><small>파트명 외 항목은 비워 두면 기본 문구가 적용됩니다.</small></div><div className="member-create-grid"><label><span>파트명 <i>*</i></span><input name="teamTitle" autoComplete="off" autoFocus value={teamForm.title} maxLength={40} onChange={(event) => setTeamForm((current) => ({ ...current, title: event.target.value }))} placeholder="예: 국제협력…" required /></label><label><span>영문 파트명</span><input name="teamEnglish" autoComplete="off" value={teamForm.english} maxLength={80} onChange={(event) => setTeamForm((current) => ({ ...current, english: event.target.value }))} placeholder="예: GLOBAL PARTNERSHIP…" /></label><label className="wide"><span>파트 설명</span><input name="teamDescription" autoComplete="off" value={teamForm.description} maxLength={160} onChange={(event) => setTeamForm((current) => ({ ...current, description: event.target.value }))} placeholder="예: 국제협정과 교류 업무…" /></label></div><div className="member-create-actions"><button type="button" onClick={() => setCreateMode(null)} disabled={creating}>취소</button><button type="submit" disabled={creating}>{creating ? '추가하는 중…' : '파트 추가'}</button></div></form>}
       {createMode === 'member' && <form className="member-create-panel" onSubmit={createMember}><div className="member-create-title"><span>담당자 추가</span><b>새 담당자 추가</b><small>소속 파트를 선택하고 담당 업무를 입력해 주세요.</small></div><div className="member-create-grid"><label><span>소속 파트 <i>*</i></span><select name="memberTeamId" value={memberForm.teamId} onChange={(event) => setMemberForm((current) => ({ ...current, teamId: event.target.value }))} required>{allTeams.map((team) => <option value={team.id} key={team.id}>{team.title}</option>)}</select></label><label><span>이름 <i>*</i></span><input name="memberName" autoComplete="name" autoFocus value={memberForm.name} maxLength={40} onChange={(event) => setMemberForm((current) => ({ ...current, name: event.target.value }))} placeholder="예: 홍길동…" required /></label><label className="wide"><span>담당 업무 <i>*</i></span><input name="memberRole" autoComplete="off" value={memberForm.role} maxLength={80} onChange={(event) => setMemberForm((current) => ({ ...current, role: event.target.value }))} placeholder="예: 국제협정 · 의전…" required /></label></div><div className="member-create-actions"><button type="button" onClick={() => setCreateMode(null)} disabled={creating}>취소</button><button type="submit" disabled={creating}>{creating ? '추가하는 중…' : '담당자 추가'}</button></div></form>}
       {(loadError || actionError) && <div className="member-admin-error" role="alert">{actionError || loadError}</div>}
@@ -405,12 +420,49 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
   const [calendarCheckId, setCalendarCheckId] = useState<string | null>(null);
   const [taskCreateTarget, setTaskCreateTarget] = useState<TaskCreateTarget | null>(null);
 
-  const navigate = (next: View, replace = false) => {
+  /*
+   * Moving between screens, as a transition rather than a cut.
+   *
+   * These screens are swapped in place — the whole workspace is one route — so the browser has
+   * never had anything to animate between: the landing was replaced by a calendar in a single
+   * frame, with no indication of which direction the reader had just gone. The View Transition API
+   * is what makes a swapped-in-place screen behave like a navigated one, and it is entirely
+   * progressive: browsers without it take the early return and get exactly the cut they got before.
+   *
+   * `flushSync` is the whole trick. `startViewTransition` snapshots the page, runs the callback,
+   * and snapshots it again — so the DOM has to be updated by the time the callback returns, and a
+   * React update scheduled from an event listener is not. Flushing it inside the callback is what
+   * puts the new screen in place between the two snapshots.
+   *
+   * The direction is published on `<html>` for the duration, so the CSS can send a screen the
+   * reader is going *into* in from the right and one they are coming back out of in from the left.
+   * Depth is the crumb trail: 홈 → 전체 → 파트 → 담당자.
+   */
+  const navigate = useCallback((next: View, replace = false) => {
     const href = hrefForView(next);
     if (`${window.location.pathname}${window.location.search}${window.location.hash}` === href) return;
-    window.history[replace ? 'replaceState' : 'pushState']({}, '', href);
-    window.dispatchEvent(new Event(LOCATION_CHANGE_EVENT));
-  };
+    const apply = () => {
+      window.history[replace ? 'replaceState' : 'pushState']({}, '', href);
+      window.dispatchEvent(new Event(LOCATION_CHANGE_EVENT));
+    };
+
+    const start = document.startViewTransition?.bind(document);
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!start || still) {
+      apply();
+      return;
+    }
+
+    const root = document.documentElement;
+    root.dataset.nav = viewDepth(next) < viewDepth(view) ? 'back' : 'forward';
+    const transition = start(() => flushSync(apply));
+    /* The attribute only exists while the animation does; a stale one would send the next
+       transition the wrong way if that one turned out not to be animated at all.
+       `finished` rejects when the update callback throws, and a bare `.finally()` would pass that
+       rejection on to nobody — an unhandled rejection in the console for a screen that has already
+       failed to render. Swallowing it first means the attribute is cleared either way. */
+    void transition.finished.catch(() => {}).finally(() => { delete root.dataset.nav; });
+  }, [view]);
 
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
@@ -775,7 +827,7 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     const invalidTeam = (view.type === 'team' || view.type === 'person') && !selectedTeam;
     const invalidPerson = view.type === 'person' && !selectedPerson;
     if (invalidTeam || invalidPerson) navigate({ type: 'home' }, true);
-  }, [membersLoading, selectedPerson, selectedTeam, view]);
+  }, [membersLoading, navigate, selectedPerson, selectedTeam, view]);
 
   /*
    * These screens are swapped in place instead of using route navigation, so the browser does not
@@ -809,7 +861,14 @@ export default function WorkspaceClient({ currentUser }: { currentUser: SessionU
     {view.type === 'team' && selectedTeam && <TeamView team={selectedTeam} onHome={() => navigate({ type: 'home' })} onAll={() => navigate({ type: 'all' })} onTeam={openTeam} onPerson={(id) => openPerson(selectedTeam.id, id)} onTask={showTask} onAddTask={() => setTaskCreateTarget({ initialTeamId: selectedTeam.id })} />}
     {view.type === 'person' && selectedTeam && selectedPerson && <PersonView team={selectedTeam} person={selectedPerson} onHome={() => navigate({ type: 'home' })} onAll={() => navigate({ type: 'all' })} onTeam={() => openTeam(selectedTeam.id)} onTask={showTask} onCalendarCheck={() => setCalendarCheckId(selectedPerson.id)} onAddTask={(initialMonth) => setTaskCreateTarget({ initialPersonId: selectedPerson.id, initialTeamId: selectedTeam.id, initialMonth })} />}
     </div>
-    {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} onPerson={(teamId, personId) => { openPerson(teamId, personId); setSearchOpen(false); }} />}
+    {searchOpen && <SearchModal
+      onClose={() => setSearchOpen(false)}
+      onPerson={openPerson}
+      onTeam={openTeam}
+      onAll={() => navigate({ type: 'all' })}
+      onHandover={openHandover}
+      onAddTask={() => setTaskCreateTarget({})}
+    />}
     {taskCreateTarget && <CreateTaskModal teams={teams} {...taskCreateTarget} onCreate={createTask} onClose={() => setTaskCreateTarget(null)} />}
     {memberAdminOpen && currentUser.role === 'admin' && <MemberAdminModal allTeams={allTeams} removedMemberIds={removedMemberIds} loading={membersLoading} loadError={membersLoadError} onCreateTeam={createTeam} onCreateMember={createMember} onRemove={removeMember} onRestore={restoreMember} onClose={() => setMemberAdminOpen(false)} />}
     {calendarCheckId && selectedTeam && selectedPerson && selectedPerson.id === calendarCheckId && <CalendarCheckModal person={selectedPerson} team={selectedTeam} onReschedule={rescheduleTask} onClose={() => setCalendarCheckId(null)} />}

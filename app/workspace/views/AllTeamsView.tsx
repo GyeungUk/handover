@@ -1,13 +1,15 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { useMemo, type CSSProperties } from 'react';
 import { Container, Stat } from '../../ui';
+import { weeklyLoad } from '../../org-data';
 import { useTeams } from '../context';
 import { CalendarBody, WeekHeader } from '../calendar/WeekRuler';
 import { PersonLoadRow } from '../calendar/rows';
 import PersonTimelineCard from '../calendar/PersonTimelineCard';
 import YearCalendar from '../calendar/YearCalendar';
 import WorkspaceHead from './WorkspaceHead';
+import YearPrintButton from './YearPrintButton';
 import { SummaryBar } from './SummaryBar';
 
 /**
@@ -28,6 +30,8 @@ export default function AllTeamsView({
   onPerson: (teamId: string, personId: string) => void;
 }) {
   const teams = useTeams();
+  /* Feeds the week scrubber under the pointer; the same reading the landing's chart plots. */
+  const busyByWeek = useMemo(() => weeklyLoad(teams.flatMap((team) => team.people)), [teams]);
   const memberCount = teams.reduce((sum, team) => sum + team.people.length, 0);
   const taskCount = teams.reduce((sum, team) => sum + team.people.reduce((n, person) => n + person.tasks.length, 0), 0);
 
@@ -37,6 +41,7 @@ export default function AllTeamsView({
         crumbs={[{ label: '홈', onClick: onHome }, { label: '국제처 전체' }]}
         title="국제처 전체 업무 흐름"
         description={`${memberCount}명의 연간 업무 밀도를 주 단위로 한눈에 확인하세요.`}
+        actions={<YearPrintButton scope={{ kind: 'office', teams }} />}
       />
 
       <Container>
@@ -61,7 +66,7 @@ export default function AllTeamsView({
           label="국제처 전체 연간 업무 일정표"
           wide={
             <section className="calendar-card overview-calendar">
-              <CalendarBody>
+              <CalendarBody busyByWeek={busyByWeek}>
                 <WeekHeader lead="파트 / 담당자" />
                 {teams.map((team) => (
                   <div className="overview-team" key={team.id} style={{ '--team': team.color, '--soft': team.soft } as CSSProperties}>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { IconArchive, IconCalendarLines, IconLayers, IconPlus, IconPrint, IconRefresh, IconSparkle, IconUpload, Skeleton } from './ui';
 import { documentLimits, type EntryAttachment, type EntryFormatting, type HandoverCategory, type HandoverDocument, type HandoverDocumentSummary, type HandoverEntry, type QualityResponse, type WorkBundle, type WorkflowStatus } from './handover-schema';
 import { CategoryIcon, SaveIndicator, StatusBadge, type SaveState } from './handover/atoms';
 import { categories, defaultFormatting, initialBundles, initialEntries } from './handover/categories';
@@ -570,7 +571,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     {toast && <div className="ho-toast"><span>✓</span>{toast}</div>}
     <section className="ho-hero">
       <div className="ho-breadcrumb"><button type="button" onClick={onHome}>홈</button><span>/</span>{origin && <><button type="button" onClick={origin.onOpen}>{origin.label}</button><span>/</span></>}<small>인수인계</small></div>
-      <div className="ho-hero-row"><div><h1>업무 인수인계서</h1><p>업무를 자유롭게 기록하고, 담당업무 단위로 묶어 완성하세요.</p></div><div className="ho-hero-actions"><SaveIndicator state={saveState} savedAt={savedAt} message={saveMessage} /><StatusBadge status={status} /><div className="ho-hero-tools"><button type="button" onClick={printDocument} disabled={!loaded || !entries.length} title={entries.length ? '브라우저 인쇄 창에서 PDF로 저장할 수 있습니다.' : '작성된 항목이 없습니다.'}><span aria-hidden="true">⎙</span> PDF 저장</button><button type="button" onClick={() => setArchiveOpen(true)} disabled={!loaded}><span aria-hidden="true">🗂</span> 지난 학년도</button></div><div className="ho-role-switch"><button type="button" className={role === 'author' ? 'active' : ''} onClick={() => showAuthor(tab)}>작성자</button><button type="button" className={role === 'manager' ? 'active' : ''} disabled={viewerRole !== 'admin'} title={viewerRole === 'admin' ? undefined : '파트장 계정으로 로그인해야 검토할 수 있습니다.'} onClick={() => { void showManager(); }}>파트장 검토</button></div></div></div>
+      <div className="ho-hero-row"><div><h1>업무 인수인계서</h1><p>업무를 자유롭게 기록하고, 담당업무 단위로 묶어 완성하세요.</p></div><div className="ho-hero-actions"><SaveIndicator state={saveState} savedAt={savedAt} message={saveMessage} /><StatusBadge status={status} /><div className="ho-hero-tools"><button type="button" onClick={printDocument} disabled={!loaded || !entries.length} title={entries.length ? '브라우저 인쇄 창에서 PDF로 저장할 수 있습니다.' : '작성된 항목이 없습니다.'}><IconPrint /> PDF 저장</button><button type="button" onClick={() => setArchiveOpen(true)} disabled={!loaded}><IconArchive /> 지난 학년도</button></div><div className="ho-role-switch"><button type="button" className={role === 'author' ? 'active' : ''} onClick={() => showAuthor(tab)}>작성자</button><button type="button" className={role === 'manager' ? 'active' : ''} disabled={viewerRole !== 'admin'} title={viewerRole === 'admin' ? undefined : '파트장 계정으로 로그인해야 검토할 수 있습니다.'} onClick={() => { void showManager(); }}>파트장 검토</button></div></div></div>
       <div className="ho-progress"><button type="button" className={tab === 'write' ? 'active' : ''} onClick={() => showAuthor('write')}><i>1</i><span><b>항목 작성</b><small>{entries.length}개 기록됨</small></span></button><em /><button type="button" className={tab === 'compose' ? 'active' : ''} onClick={() => showAuthor('compose')}><i>2</i><span><b>업무 단위 조합</b><small>{bundles.length}개 단위</small></span></button><em /><button type="button" className={tab === 'review' ? 'active' : ''} onClick={() => setTab('review')}><i>3</i><span><b>제출 및 승인</b><small>{status === 'draft' ? '제출 전' : status === 'pending' ? '검토 중' : status === 'rejected' ? '보완 필요' : '승인 완료'}</small></span></button></div>
     </section>
 
@@ -580,25 +581,25 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       {rejectBanner}
       <div className="ho-ai-panel">
         <div className="ho-ai-panel-head">
-          <span className="ho-draft-spark" aria-hidden="true">✦</span>
+          <span className="ho-draft-spark" aria-hidden="true"><IconSparkle /></span>
           <div><b>AI 상세 초안 도우미</b><p>업무 개요에서 멈추지 않고 현황·절차·후속 조치·인계 포인트까지 구분해 정리합니다.</p></div>
           <em>{status === 'approved' ? '이번 학년도 초안으로 이어서 작성' : '여러 번 초안 생성 가능'}</em>
         </div>
         <div className="ho-ai-cards">
           <button type="button" onClick={() => setImportOpen(true)} disabled={!canUseAiHelpers}>
-            <span className="ho-ai-icon" aria-hidden="true">⇪</span>
+            <span className="ho-ai-icon" aria-hidden="true"><IconUpload /></span>
             <b>기존 자료 업로드</b>
             <small>쓰고 있던 인수인계 문서를 올리면 담당업무·계획·현안·미결로 자동 분류합니다.</small>
             <em>파일 · 붙여넣기 <span aria-hidden="true">→</span></em>
           </button>
           <button type="button" onClick={() => setDraftOpen(true)} disabled={!canUseAiHelpers}>
-            <span className="ho-ai-icon" aria-hidden="true">▤</span>
+            <span className="ho-ai-icon" aria-hidden="true"><IconCalendarLines /></span>
             <b>캘린더에서 초안</b>
             <small>연간 일정과 일정 변경 사유를 근거로 네 개 섹션의 초안을 제안합니다.</small>
             <em>일정 기록 기반 <span aria-hidden="true">→</span></em>
           </button>
           <button type="button" onClick={() => setApprovedDraftOpen(true)} disabled={!loaded || !isOwnDocument || status === 'pending'} title={status === 'pending' ? '검토 중에는 초안을 만들거나 바꿀 수 없습니다.' : undefined}>
-            <span className="ho-ai-icon" aria-hidden="true">↻</span>
+            <span className="ho-ai-icon" aria-hidden="true"><IconRefresh /></span>
             <b>전년도 승인본으로 초안</b>
             <small>팀장 승인까지 완료된 전년도 인수인계서를 바탕으로 이번 학년도 작성본을 시작합니다.</small>
             <em>{status === 'approved' ? `${entries.length}개 항목으로 이번 학년도 시작` : '보관 초안 관리'} <span aria-hidden="true">→</span></em>
@@ -610,15 +611,38 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
         return <button type="button" key={category.id} className={activeCategory === category.id ? 'active' : ''} aria-pressed={activeCategory === category.id} onClick={() => setActiveCategory(category.id)} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><span className="ho-category-icon"><CategoryIcon category={category.id} /></span><span><small>{category.step}</small><b>{category.short}</b><em>{count}개</em></span></button>;
       })}</div>
       <div className="ho-entry-panel" style={{ '--category': activeMeta.accent, '--category-soft': activeMeta.soft } as React.CSSProperties}>
-        <div className="ho-entry-head"><div className="ho-category-icon large"><CategoryIcon category={activeMeta.id} /></div><div><span className="ho-step">{activeMeta.step}번 섹션</span><h3>{activeMeta.label}</h3><p>{activeMeta.description}</p></div><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span>＋</span> 새 항목 추가</button></div>
+        <div className="ho-entry-head"><div className="ho-category-icon large"><CategoryIcon category={activeMeta.id} /></div><div><span className="ho-step">{activeMeta.step}번 섹션</span><h3>{activeMeta.label}</h3><p>{activeMeta.description}</p></div><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><IconPlus /> 새 항목 추가</button></div>
         <ItemPager items={entryPager.categoryItems} activeIndex={entryPager.activeIndex} onSelect={(index) => entryPager.selectItem(entryPager.categoryItems[index])} label={activeMeta.short} controls="ho-entry-current" />
         <div ref={setScrollViewport} id="ho-entry-current" className="ho-entry-list ho-entry-focus ho-category-scroll" role="region" aria-label={`${activeMeta.short} 작성 항목 목록`} tabIndex={0}>{entryPager.categoryItems.map((entry, index) => {
           const entryLocked = isEntryLocked(entry.id);
           const approvedFixed = approvedEntryIds.has(entry.id);
           const pendingReview = pendingEntryIds.has(entry.id);
           const needsFix = status === 'rejected' && rejectedEntryIds.has(entry.id);
-          return <article data-pager-item={entry.id} className={`${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`.trim()} key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><div className="ho-focused-document ho-draft-body" role="region" aria-label={`${entry.title} 본문`} tabIndex={0} dangerouslySetInnerHTML={{ __html: entry.detail }} /><span className={`ho-linked ${approvedFixed ? 'approved' : needsFix ? 'returned' : ''}`}>{approvedFixed ? '✓ 승인 완료 · 수정 불가' : pendingReview ? '⌛ 검토 중 · 수정 불가' : needsFix ? '↩ 반려됨 · 다시 작성' : assignedIds.has(entry.id) ? '업무 단위에 연결됨' : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => editEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>;
-        })}{entries.every((entry) => entry.category !== activeMeta.id) && <div className="ho-empty"><div className="ho-category-icon"><CategoryIcon category={activeMeta.id} /></div><b>아직 작성된 항목이 없습니다.</b><p>{activeMeta.description}</p><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><span aria-hidden="true">＋</span> 첫 항목 작성하기</button></div>}</div>
+          return <article data-pager-item={entry.id} className={`${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`.trim()} key={entry.id}><span className="ho-entry-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{entry.title}</h4><div className="ho-entry-property-row">{activeMeta.propertyFields.map((field) => entry.properties[field.key] && <span key={field.key}><b>{field.label}</b>{entry.properties[field.key]}</span>)}{entry.detail.includes('<table') && <span className="has-table"><b>문서</b>표 포함</span>}{entry.attachments.length > 0 && <span className="has-file"><b>첨부</b>{entry.attachments.length}개</span>}</div><div className="ho-focused-document ho-draft-body" role="region" aria-label={`${entry.title} 본문`} tabIndex={0} dangerouslySetInnerHTML={{ __html: entry.detail }} /><span className={`ho-linked ${approvedFixed ? 'approved' : needsFix ? 'returned' : ''}`}>{approvedFixed ? '✓ 승인 완료 · 수정 불가' : pendingReview ? '◷ 검토 중 · 수정 불가' : needsFix ? '↩ 반려됨 · 다시 작성' : assignedIds.has(entry.id) ? '업무 단위에 연결됨' : '아직 연결되지 않음'}</span></div><div className="ho-entry-actions"><button type="button" onClick={() => editEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 문서 편집`}>문서 편집</button><button type="button" onClick={() => removeEntry(entry.id)} disabled={entryLocked} aria-label={`${entry.title} 삭제`}>삭제</button></div></article>;
+        })}{/*
+          While the document is still on its way, "아직 작성된 항목이 없습니다" is the wrong
+          sentence — it says the reader has written nothing, when what is true is that nobody
+          has looked yet. The backend this runs against sleeps when idle and takes over a
+          minute to answer a cold request, so this is not a flash: it is a full minute of a
+          screen telling an author their work is gone. Two placeholder rows say "loading"
+          without claiming anything about the contents.
+        */}{!loaded && <div className="ho-entry-loading" aria-live="polite" aria-busy="true">
+          <span className="sr-only">인수인계서를 불러오는 중입니다.</span>
+          {[0, 1].map((row) => <article key={row} aria-hidden="true">
+            <span className="ho-entry-number"><Skeleton width={18} height={11} radius={3} /></span>
+            <div>
+              <Skeleton width={row ? '52%' : '68%'} height={17} radius={5} />
+              <Skeleton width={row ? '84%' : '92%'} height={12} radius={4} />
+              <Skeleton width={row ? '40%' : '56%'} height={12} radius={4} />
+            </div>
+          </article>)}
+        </div>}{loaded && entries.every((entry) => entry.category !== activeMeta.id) && <div className="ho-empty"><div className="ho-category-icon"><CategoryIcon category={activeMeta.id} /></div><b>아직 작성된 항목이 없습니다.</b>{/*
+          The line here used to repeat `activeMeta.description` — the same sentence already printed
+          in the panel head two lines above, so the one place with room to help an author who is
+          staring at a blank section said nothing they had not just read. Each section already
+          carries an example of what belongs in it, written for the editor's title field; showing
+          it here answers "what do I write" instead of restating "what is this".
+        */}<p>이 섹션에는 이런 내용을 적습니다.</p><q className="ho-empty-example">{activeMeta.placeholder.replace(/^예:\s*/, '')}</q><button type="button" onClick={() => setEditor({ category: activeMeta.id })} disabled={isLocked}><IconPlus /> 첫 항목 작성하기</button></div>}</div>
       </div>
       <aside className="ho-writing-tip"><span>TIP</span><p>한 항목에는 하나의 주제를 적어두면, 최종 조합 단계에서 여러 담당업무 단위로 정리하기 쉽습니다.</p><div>{categories.map((category) => <span key={category.id}><i style={{ background: category.accent }} />{category.short}<b>{entries.filter((entry) => entry.category === category.id).length}</b></span>)}</div></aside>
     </section>}
@@ -634,7 +658,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
         const pendingReview = bundle.decision === 'pending';
         const needsFix = bundle.decision === 'rejected';
         return <article className={`ho-bundle ${expandedBundle === bundle.id ? 'expanded' : ''} ${approvedFixed ? 'approved-fixed' : ''} ${needsFix ? 'needs-fix' : ''}`} key={bundle.id}>
-        <div className="ho-bundle-head"><span className="ho-bundle-index">A-{String(bundleIndex + 1).padStart(2, '0')}</span><div><small>{approvedFixed ? '승인 완료 · 수정 불가' : pendingReview ? '검토 중 · 수정 불가' : needsFix ? '반려됨 · 다시 작성' : '담당업무 단위'}</small><input aria-label="담당업무 단위 이름" value={bundle.title} maxLength={documentLimits.bundleTitle} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, title: event.target.value } : item))} disabled={bundleLocked} /></div><div className="ho-bundle-counts">{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{!bundleLocked && <label className="ho-submit-select"><input type="checkbox" checked={submissionBundleIds.has(bundle.id)} onChange={() => setSubmissionBundleIds((current) => { const next = new Set(current); if (next.has(bundle.id)) next.delete(bundle.id); else next.add(bundle.id); return next; })} />이번에 제출</label>}{approvedFixed && <b className="ho-fixed-badge">✓ 승인 고정</b>}{pendingReview && <b className="ho-pending-badge">⌛ 검토 중</b>}{needsFix && <b className="ho-return-badge">↩ 보완 필요</b>}<button type="button" onClick={() => setExpandedBundle((current) => current === bundle.id ? null : bundle.id)}>{expandedBundle === bundle.id ? '접기' : bundleLocked ? '보기' : '편집'} <span>⌄</span></button></div>
+        <div className="ho-bundle-head"><span className="ho-bundle-index">A-{String(bundleIndex + 1).padStart(2, '0')}</span><div><small>{approvedFixed ? '승인 완료 · 수정 불가' : pendingReview ? '검토 중 · 수정 불가' : needsFix ? '반려됨 · 다시 작성' : '담당업무 단위'}</small><input aria-label="담당업무 단위 이름" value={bundle.title} maxLength={documentLimits.bundleTitle} onChange={(event) => setBundles((current) => current.map((item) => item.id === bundle.id ? { ...item, title: event.target.value } : item))} disabled={bundleLocked} /></div><div className="ho-bundle-counts">{categories.map((category) => <span key={category.id} style={{ '--category': category.accent } as React.CSSProperties}><i />{bundle.entryIds.filter((id) => entries.find((entry) => entry.id === id)?.category === category.id).length}</span>)}</div>{!bundleLocked && <label className="ho-submit-select"><input type="checkbox" checked={submissionBundleIds.has(bundle.id)} onChange={() => setSubmissionBundleIds((current) => { const next = new Set(current); if (next.has(bundle.id)) next.delete(bundle.id); else next.add(bundle.id); return next; })} />이번에 제출</label>}{approvedFixed && <b className="ho-fixed-badge">✓ 승인 고정</b>}{pendingReview && <b className="ho-pending-badge">◷ 검토 중</b>}{needsFix && <b className="ho-return-badge">↩ 보완 필요</b>}<button type="button" onClick={() => setExpandedBundle((current) => current === bundle.id ? null : bundle.id)}>{expandedBundle === bundle.id ? '접기' : bundleLocked ? '보기' : '편집'} <span>⌄</span></button></div>
         {needsFix && bundle.comment && <div className="ho-manager-comment"><span>파트장 코멘트</span><p>{bundle.comment}</p></div>}
         {expandedBundle === bundle.id && <div className="ho-bundle-body">{categories.map((category) => <div className="ho-pick-column" key={category.id} style={{ '--category': category.accent, '--category-soft': category.soft } as React.CSSProperties}><div><span className="ho-category-icon"><CategoryIcon category={category.id} /></span><b>{category.short}</b><em>{entries.filter((entry) => entry.category === category.id).length}개</em></div>{entries.filter((entry) => entry.category === category.id).map((entry) => {
           const selected = bundle.entryIds.includes(entry.id);
@@ -643,7 +667,12 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
         })}</div>)}</div>}
         {expandedBundle === bundle.id && !bundleLocked && <div className="ho-bundle-footer"><button type="button" onClick={() => { setBundles((current) => current.filter((item) => item.id !== bundle.id)); setSubmissionBundleIds((current) => { const next = new Set(current); next.delete(bundle.id); return next; }); setExpandedBundle(null); }}>업무 단위 삭제</button><span>선택한 항목 <b>{bundle.entryIds.length}개</b></span></div>}
       </article>;
-      })}{bundles.length === 0 && <div className="ho-empty-bundle"><b>아직 만들어진 담당업무 단위가 없습니다.</b><p>새 업무 단위를 만들고 작성한 항목을 자유롭게 조합해 주세요.</p><button type="button" onClick={addBundle}>＋ 첫 업무 단위 만들기</button></div>}</div>
+      })}{bundles.length === 0 && <div className="ho-empty-bundle">{/*
+          The write stage's empty state opens with a marked icon tile and this one opened with a
+          bold sentence in the middle of a large dashed box. They are the same moment one step
+          apart — "there is nothing here yet, here is how to start" — and looking like two
+          different products is the cost of writing them at two different times.
+        */}<div className="ho-empty-bundle-mark" aria-hidden="true"><IconLayers /></div><b>아직 만들어진 담당업무 단위가 없습니다.</b><p>새 업무 단위를 만들고 작성한 항목을 자유롭게 조합해 주세요.</p><button type="button" onClick={addBundle}><IconPlus /> 첫 업무 단위 만들기</button></div>}</div>
       <div className="ho-quality">
         <div className="ho-quality-head">
           <span className="ho-quality-icon" aria-hidden="true">✓</span>
@@ -679,7 +708,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
     </section>}
 
     {tab === 'review' && <section className="ho-content ho-review-view">
-      <div className="ho-section-title"><div><span className="ho-step">3단계</span><h2>{role === 'manager' ? '인수인계 검토' : '제출 및 승인 현황'}</h2><p>{role === 'manager' ? '담당업무 단위별로 승인하거나 보완 의견을 남겨 주세요.' : '파트장 검토 상태와 업무 단위별 의견을 확인하세요.'}</p></div><div className="ho-review-tools"><button className="outline" type="button" onClick={printDocument} disabled={!loaded || !entries.length}>PDF로 저장 · 인쇄 <span aria-hidden="true">⎙</span></button>{role === 'author' && status === 'pending' && viewerRole === 'admin' && <button className="outline" type="button" onClick={() => { void showManager(); }}>파트장 검토 화면 보기 <span>→</span></button>}</div></div>
+      <div className="ho-section-title"><div><span className="ho-step">3단계</span><h2>{role === 'manager' ? '인수인계 검토' : '제출 및 승인 현황'}</h2><p>{role === 'manager' ? '담당업무 단위별로 승인하거나 보완 의견을 남겨 주세요.' : '파트장 검토 상태와 업무 단위별 의견을 확인하세요.'}</p></div><div className="ho-review-tools"><button className="outline" type="button" onClick={printDocument} disabled={!loaded || !entries.length}><IconPrint /> PDF로 저장 · 인쇄</button>{role === 'author' && status === 'pending' && viewerRole === 'admin' && <button className="outline" type="button" onClick={() => { void showManager(); }}>파트장 검토 화면 보기 <span>→</span></button>}</div></div>
       {role === 'manager' && viewerRole === 'admin' && <div className="ho-review-queue">
         <div className="ho-queue-head">
           <div><span>제출된 인수인계서</span><b>{submittedDocuments.length}건</b><em>검토 대기 {pendingDocuments.length}건</em></div>
@@ -704,7 +733,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
       </div>}
       {status === 'draft' && <div className="ho-review-empty"><div>3</div><span>제출 대기</span><h3>아직 제출된 인수인계서가 없습니다.</h3><p>항목을 업무 단위로 조합한 뒤 파트장에게 제출해 주세요.</p><button type="button" onClick={() => { setRole('author'); setTab('compose'); }}>조합 화면으로 이동 <span>→</span></button></div>}
       {status !== 'draft' && <>
-        <div className={`ho-review-banner ${status}`}><div className="ho-review-symbol">{status === 'pending' ? '⌛' : status === 'approved' ? '✓' : '!'}</div><div><h3>{status === 'pending'
+        <div className={`ho-review-banner ${status}`}><div className="ho-review-symbol">{status === 'pending' ? '◷' : status === 'approved' ? '✓' : '!'}</div><div><h3>{status === 'pending'
           ? (role === 'manager' ? '검토할 인수인계서가 도착했습니다.' : '파트장 검토를 기다리고 있습니다.')
           : status === 'approved'
             ? (role === 'manager' ? '이미 승인 처리한 인수인계서입니다.' : '인수인계서가 승인되었습니다.')
@@ -725,7 +754,7 @@ export default function HandoverWorkspace({ onHome, origin, currentUser }: {
         <aside className="ho-review-side"><span>제출한 문서</span><h3>제출 정보</h3><dl><div><dt>작성자</dt><dd>{ownerName || '—'}</dd></div><div><dt>소속</dt><dd>국제처</dd></div><div><dt>담당업무 단위</dt><dd>{bundles.length}개</dd></div><div><dt>전체 항목</dt><dd>{entries.length}개</dd></div><div><dt>제출일</dt><dd>{submittedAt ? onDate(submittedAt) : '제출 전'}</dd></div><div><dt>검토 결과</dt><dd>{status === 'pending' ? '검토 대기' : status === 'approved' ? '승인 완료' : status === 'rejected' ? '반려' : '제출 전'}</dd></div>{reviewedAt && <div><dt>검토일</dt><dd>{onDate(reviewedAt)}</dd></div>}{reviewedBy && <div><dt>검토자</dt><dd>{reviewedBy}</dd></div>}</dl>{role === 'manager' && status === 'pending' && <div className="ho-review-guide"><b>검토 안내</b><p>이전에 승인한 단위는 고정됩니다. 다시 제출된 단위만 승인 또는 반려해 주세요.</p></div>}</aside></div>
         {role === 'manager' && pendingBundleIds.size > 0 && <div className="ho-review-submit"><div><b>{bundles.filter((bundle) => pendingBundleIds.has(bundle.id) && (bundle.decision === 'approved' || bundle.decision === 'rejected')).length} / {pendingBundleIds.size}</b><span>이번 제출 업무 단위 검토 완료</span></div><button type="button" onClick={completeReview} disabled={!reviewReady || busy}>{busy ? '전송 중…' : '검토 완료 및 결과 전송'} <span>→</span></button></div>}
         {role === 'author' && status === 'approved' && <div className="ho-resubmit approved"><div><span>✓</span><p><b>승인 완료 · 이 문서는 더 이상 수정할 수 없습니다.</b><small>{reviewedBy ? `${reviewedBy} 파트장이 ` : '파트장이 '}{bundles.length}개 담당업무 단위를 모두 승인했습니다. 이번 학년도에는 이 전년도 승인본을 바탕으로 새 초안을 만들 수 있습니다.</small></p></div><button type="button" onClick={() => { setRole('author'); setTab('write'); setApprovedDraftOpen(true); }}>이번 학년도 초안 만들기 <span>→</span></button></div>}
-        {role === 'author' && status === 'rejected' && <div className="ho-resubmit"><div><span>↻</span><p><b>반려된 업무 단위만 다시 작성할 수 있습니다.</b><small>승인된 단위와 항목은 그대로 고정되며 재검토 대상에서도 제외됩니다.</small></p></div><button type="button" onClick={reopenDraft}>반려 항목 수정하기 <span>→</span></button></div>}
+        {role === 'author' && status === 'rejected' && <div className="ho-resubmit"><div><span><IconRefresh /></span><p><b>반려된 업무 단위만 다시 작성할 수 있습니다.</b><small>승인된 단위와 항목은 그대로 고정되며 재검토 대상에서도 제외됩니다.</small></p></div><button type="button" onClick={reopenDraft}>반려 항목 수정하기 <span>→</span></button></div>}
       </>}
     </section>}
     {draftOpen && <DraftModal onAdopt={adoptProposal} onClose={() => setDraftOpen(false)} />}

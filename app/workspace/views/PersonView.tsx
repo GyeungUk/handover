@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Avatar, Badge, Button, Card, Container, Stat } from '../../ui';
-import { academicYearLabel, months, taskLengthLabel, taskStartLabel, taskTrack, weekLabel, SLOTS_PER_MONTH, type Person, type Task, type Team } from '../../org-data';
+import { Avatar, Badge, Button, Card, Container, IconPlus, IconRefresh, Stat } from '../../ui';
+import { academicYearLabel, months, taskLengthLabel, taskStartLabel, taskTrack, weekLabel, weeklyLoad, SLOTS_PER_MONTH, type Person, type Task, type Team } from '../../org-data';
 import { CalendarBody, WeekGrid, WeekHeader } from '../calendar/WeekRuler';
 import { layoutTasks } from '../calendar/rows';
-import PersonTimelineCard, { MonthStrip } from '../calendar/PersonTimelineCard';
+import PersonTimelineCard from '../calendar/PersonTimelineCard';
 import YearCalendar from '../calendar/YearCalendar';
 import MonthCalendar from './MonthCalendar';
 import WorkspaceHead from './WorkspaceHead';
+import YearPrintButton from './YearPrintButton';
 import { SummaryBar, YearMeter } from './SummaryBar';
 import { useToday } from '../context';
 
@@ -56,7 +57,7 @@ function AnnualTrack({
             >
               <span className="task-bar-fill" aria-hidden="true" />
               <span className="task-bar-label">
-                {task.movedFrom !== undefined && !drawn.settled && <i className="moved-flag" aria-hidden="true">↻</i>}
+                {task.movedFrom !== undefined && !drawn.settled && <i className="moved-flag" aria-hidden="true"><IconRefresh /></i>}
                 <b>{task.title}</b>
                 {/* A settled task says the day it is on; only a task still planned in slots is
                     vague enough for the month alone to be the honest answer. */}
@@ -100,19 +101,19 @@ export default function PersonView({
   const today = useToday();
   const [monthIndex, setMonthIndex] = useState(0);
   const didSetCurrentMonth = useRef(false);
-  /* The next one relative to today, not the first of the year — `person.tasks` is sorted by start
-     week, so taking [0] labelled a March task "다음 일정" all the way through February. Outside the
-     academic year there is no "today" to be after, and the year's first task is the honest answer. */
   const todayWeek = today.week;
-  const nextTask = (todayWeek === null
-    ? undefined
-    : person.tasks.find((task) => {
+  const orderedTasks = [...person.tasks].sort((a, b) => taskTrack(a).start - taskTrack(b).start);
+  const nextTask = todayWeek === null
+    ? orderedTasks[0]
+    : orderedTasks.find((task) => {
       const span = taskTrack(task);
       return span.start + span.duration > todayWeek;
-    })) ?? person.tasks[0];
-  /* Weeks the year track actually shows as busy: a task whose days are confirmed commits those
-     days' weeks, not the window it was planned across. */
-  const busyWeeks = person.tasks.reduce((sum, task) => sum + taskTrack(task).duration, 0);
+    });
+  const nextTaskLabel = todayWeek === null
+    ? '연간 첫 일정'
+    : nextTask && taskTrack(nextTask).start <= todayWeek ? '진행 중인 일정' : '다음 일정';
+  // Overlapping tasks occupy the same week only once.
+  const busyWeeks = weeklyLoad([person]).filter(Boolean).length;
 
   /* `today` resolves after hydration. Open the personal calendar on that month
      once, then leave the user's month navigation alone. */
@@ -138,6 +139,7 @@ export default function PersonView({
           </span>
         }
         description={`${team.title} · ${academicYearLabel} 업무 캘린더`}
+        actions={<YearPrintButton scope={{ kind: 'person', team, person }} label="담당 업무표 PDF" />}
       >
         <Badge tone="blue">{person.role}</Badge>
       </WorkspaceHead>
@@ -146,11 +148,11 @@ export default function PersonView({
         <SummaryBar aside={<YearMeter busyWeeks={busyWeeks} color={team.color} label="업무가 있는 주" />}>
           <Stat label="주요 업무" value={person.tasks.length} unit="건" />
           <Stat
-            label="다음 일정"
+            label={nextTaskLabel}
             /* The month it is actually drawn in: a task whose day is confirmed is in that day's
                month, not in the one the loose plan happened to open in. */
             value={nextTask ? months[Math.floor(taskTrack(nextTask).start / SLOTS_PER_MONTH)] : '—'}
-            hint={nextTask?.title ?? '등록된 일정 없음'}
+            hint={nextTask?.title ?? (person.tasks.length ? '이번 학년도 일정 완료' : '등록된 일정 없음')}
           />
         </SummaryBar>
 
@@ -158,18 +160,18 @@ export default function PersonView({
           <div>
             <b>학사일정 기준 일정 점검</b>
             <p>
-              {nextTask
+              {person.tasks.length > 0
                 ? '다음 학년도 학사일정과 비교해 옮겨야 할 업무와 그 시기를 제안합니다.'
                 : '주요 업무가 등록되면 다음 학년도 학사일정과 비교할 수 있습니다.'}
             </p>
           </div>
-          <Button variant="primary" onClick={onCalendarCheck} disabled={!nextTask} glyph="→">일정 점검</Button>
+          <Button variant="primary" onClick={onCalendarCheck} disabled={person.tasks.length === 0} glyph="→">일정 점검</Button>
         </Card>
 
         <section className="person-annual-section">
           <div className="section-bar">
             <h2 className="ui-h2">연간 일정</h2>
-            <Button size="sm" variant="outline" glyph="＋" onClick={() => onAddTask(monthIndex)}>일정 추가</Button>
+            <Button size="sm" variant="outline" leading={<IconPlus />} onClick={() => onAddTask(monthIndex)}>일정 추가</Button>
           </div>
           <YearCalendar
             label={`${person.name} 담당자 연간 업무 일정표`}
@@ -183,10 +185,7 @@ export default function PersonView({
             }
             narrow={
               <div className="timeline-groups">
-                <div className="month-strip-standalone">
-                  <MonthStrip person={person} color={team.color} activeMonth={monthIndex} />
-                </div>
-                <PersonTimelineCard person={person} color={team.color} onTask={onTask} />
+                <PersonTimelineCard person={person} color={team.color} activeMonth={monthIndex} onTask={onTask} />
               </div>
             }
           />
@@ -197,7 +196,7 @@ export default function PersonView({
           monthIndex={monthIndex}
           setMonthIndex={setMonthIndex}
           onTask={onTask}
-          action={<Button size="sm" variant="outline" glyph="＋" onClick={() => onAddTask(monthIndex)}>일정 추가</Button>}
+          action={<Button size="sm" variant="outline" leading={<IconPlus />} onClick={() => onAddTask(monthIndex)}>일정 추가</Button>}
         />
       </Container>
     </main>

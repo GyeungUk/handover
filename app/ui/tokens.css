@@ -22,7 +22,7 @@
   --grey-300: #c8d1dc;
   --grey-400: #627286;
   --grey-500: #596a7e;
-  --grey-600: #5d6b7b;
+  --grey-600: #4f6073;
   --grey-700: #445263;
   --grey-800: #2b3949;
   --grey-900: #172536;
@@ -45,6 +45,10 @@
   /* ---- pastel washes ----------------------------------------------------
      Section and card grounds. Saturation stays under ~12% so text sits on them
      at full contrast and two of them can meet without arguing. */
+  /* Some of these six have no reader today. They stay: a ramp with holes in it is
+     not a ramp, and the next screen that needs a wash should be choosing from a
+     complete set rather than inventing a seventh. The same goes for `--grey-800`,
+     `--fw-regular` and `--r-2xl` further down. */
   --tint-blue:  #edf4f9;
   --tint-sky:   #f2f6fa;
   --tint-mist:  #eef2f6;
@@ -83,12 +87,33 @@
 
   /* ---- elevation --------------------------------------------------------
      Barely there on purpose. A card earns separation from its fill and its
-     radius; the shadow is only there to keep it from floating. */
-  --sh-1: 0 1px 3px rgba(25, 31, 40, 0.04);
-  --sh-2: 0 4px 16px rgba(25, 31, 40, 0.06);
-  --sh-3: 0 12px 40px rgba(25, 31, 40, 0.10);
-  --sh-4: 0 24px 68px rgba(25, 31, 40, 0.16);
-  --sh-brand: 0 8px 24px rgba(29, 91, 140, 0.22);
+     radius; the shadow is only there to keep it from floating.
+
+     Two layers at every step, which is the whole difference between a shadow
+     and light. A single blurred drop is what a box looks like on a photocopier:
+     the same grey at 1px from the edge as at 40px. Real light puts a tight,
+     darker contact shadow immediately under an object and a wide, much fainter
+     ambient one around it, and reading the two together is how an eye decides
+     how far off the page something is. The tint is the page's own blue-black
+     rather than neutral grey, so a shadow on a cool ground never goes muddy. */
+  --sh-1:
+    0 1px 2px rgba(19, 32, 48, 0.05),
+    0 1px 6px rgba(19, 32, 48, 0.03);
+  --sh-2:
+    0 1px 2px rgba(19, 32, 48, 0.05),
+    0 6px 18px rgba(19, 32, 48, 0.06);
+  --sh-3:
+    0 1px 3px rgba(19, 32, 48, 0.06),
+    0 14px 38px rgba(19, 32, 48, 0.10);
+  --sh-4:
+    0 2px 6px rgba(19, 32, 48, 0.08),
+    0 28px 70px rgba(19, 32, 48, 0.16);
+  --sh-brand:
+    0 2px 6px rgba(14, 54, 88, 0.16),
+    0 10px 26px rgba(14, 54, 88, 0.22);
+  /* The hairline of light along the top edge of a raised white surface. It is
+     what stops a white card on a near-white page from reading as a flat patch. */
+  --sh-lip: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 
   /* ---- radius -----------------------------------------------------------
      Generous. `--r-md` is the default card; `--r-lg`/`--r-xl` are for the
@@ -136,6 +161,11 @@
   --t-body:    15px;
   --t-sm:      14px;
   --t-caption: 13px;
+  /* The floor, and the only step under `--t-caption`. It exists for the handful of places a
+     label genuinely has to sit inside something — a week number on a 48-column ruler, the month
+     row under a sparkline — so those can be written against the ramp instead of each one picking
+     its own 9, 10 or 11px. Nothing that carries a sentence is allowed to use it. */
+  --t-micro:   12px;
 
   --lh-tight: 1.28;
   --lh-head:  1.38;
@@ -146,6 +176,17 @@
   --tr-display: -0.032em;
   --tr-head:    -0.024em;
   --tr-body:    -0.008em;
+  /* The two ways a small label opens up, and they are not interchangeable.
+     `--tr-caps` is for a run of Latin capitals — SOONGSIL GLOBAL AFFAIRS,
+     STUDENT CARE — where wide tracking is what makes the run read as a label
+     rather than as a shouted word. `--tr-label` is the same job in Korean, and
+     it is nearly nothing on purpose: Hangul is already built out of separated
+     syllable blocks, so adding a tenth of an em does not open a word up, it
+     takes it apart — "검토 중" stops being two words and becomes five drifting
+     shapes. A Korean label is made to read as a label by its size, its weight
+     and its colour, which is what these labels already had. */
+  --tr-caps:   0.1em;
+  --tr-label:  0.02em;
 
   --fw-regular: 400;
   --fw-medium:  500;
@@ -165,17 +206,63 @@
 
   /* ---- motion -----------------------------------------------------------
      One curve for entrances, one for the rest, and a single press scale so
-     every tappable thing in the product answers the same way. */
+     every tappable thing in the product answers the same way.
+
+     `--ease-spring` overshoots by a few percent and settles. It is for things
+     that arrive — a sheet, a figure, a bar growing out of a baseline — where a
+     curve that merely decelerates reads as something being *placed* and a curve
+     that overshoots reads as something that *moved*. It is never used on a
+     colour or a shadow, where an overshoot has nothing to overshoot into. */
   --ease:     cubic-bezier(0.32, 0.72, 0, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
   --dur-fast: 0.14s;
   --dur:      0.22s;
   --dur-slow: 0.42s;
   --press:    0.97;
 
-  --z-sticky: 30;
-  --z-modal:  60;
-  --z-toast:  80;
+  /* The gap between one element of a group arriving and the next. Small on
+     purpose: a ladder a reader can *count* is a ladder that is too slow, and at
+     45ms across six elements the whole group is in under a third of a second
+     while still reading as an order rather than a flash. */
+  --stagger: 45ms;
+
+  /* The application bar's own height, without the notch inset it also carries.
+     Anything that pins itself under the bar — a sticky section header, an
+     in-page jump's scroll padding — offsets by this rather than by a number
+     copied from it, so the two cannot drift apart. */
+  --topbar-h: 72px;
+
+  /* ---- stacking -----------------------------------------------------------
+     The five layers the product actually has, in the order they sit.
+
+     These existed and nothing read them: every stacking site named a raw number
+     instead — 30, 40, 100, 200, and a skip link at 10000 — so the scale
+     described a layering the product did not have, and the only way to know
+     whether a new overlay belonged above the toast was to grep for the biggest
+     number anyone had reached for. A raw z-index is a guess; a named step is a
+     decision about what covers what. */
+  --z-sticky: 30;   /* the application bar, and headers pinned under it */
+  --z-menu:   40;   /* a menu hanging off something in the bar */
+  --z-modal:  60;   /* a dialog and its backdrop */
+  --z-toast:  80;   /* a message about what just happened, over the dialog that caused it */
+  --z-skip:  100;   /* the skip link, which has to clear everything to be reachable */
+
+  /* ---- safe areas -------------------------------------------------------
+     `viewportFit: 'cover'` in `layout.tsx` lets the page paint under the notch
+     and the home indicator, which is the only way an installed app stops
+     looking like a web page in a frame. These are what pay for that: every
+     edge-anchored thing in the product — the top bar, the sheet, the footer,
+     the page gutters — adds the inset for the side it touches instead of each
+     one calling `env()` and getting a different fallback. In a browser tab
+     they are all 0px and nothing moves. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  /* the page gutter, widened on a landscape phone so text clears the notch */
+  --page-pad-l: max(var(--page-pad), var(--safe-l));
+  --page-pad-r: max(var(--page-pad), var(--safe-r));
 }
 
 /* --------------------------------------------------------------------------
@@ -206,6 +293,8 @@
 
 @media (max-width: 768px) {
   :root {
+    /* the bar compacts here, and everything pinned under it follows */
+    --topbar-h: 64px;
     --t-display: 30px;
     --t-h1: 25px;
     --t-h2: 20px;

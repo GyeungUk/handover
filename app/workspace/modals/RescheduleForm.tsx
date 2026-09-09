@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Button, Field, Select, Textarea } from '../../ui';
+import { Button, Field, IconRefresh, Select, Textarea } from '../../ui';
 import { WEEKS_IN_YEAR, weekLabel, type Person, type Task } from '../../org-data';
 import type { Reschedule, ScheduleChange } from '../types';
 
@@ -65,7 +65,7 @@ export function RescheduleForm({ task, person, onReschedule }: { task: Task; per
 
   if (!open) {
     return (
-      <Button variant="secondary" block onClick={() => { setOpen(true); setError(''); }} leading={<span aria-hidden="true">↻</span>}>
+      <Button variant="secondary" block onClick={() => { setOpen(true); setError(''); }} leading={<IconRefresh />}>
         일정 변경 · 연기하기
       </Button>
     );

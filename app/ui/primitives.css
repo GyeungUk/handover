@@ -35,6 +35,26 @@
 .ui-text.strong  { color: var(--ink); font-weight: var(--fw-medium); }
 .ui-text.muted   { color: var(--ink-3); }
 
+/* ==========================================================================
+   Icons
+   --------------------------------------------------------------------------
+   One stroke weight for every mark in `ui/icons.tsx`. Sized in `em` at the
+   call site, so an icon beside a 13px label and the same icon beside a 17px
+   one are the same drawing at two sizes rather than two drawings.
+   ========================================================================== */
+.ui-icon {
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Optical: a 1em icon beside 1em text sits a shade high on the Korean face. */
+  vertical-align: -0.115em;
+}
+/* A mark inside a coloured tile is bigger and can carry a lighter stroke. */
+.ui-icon.thin { stroke-width: 1.5; }
+
 /* Tabular numerals. Every count, week number and date in the product goes
    through this so columns of figures line up. */
 .ui-figure {
@@ -43,6 +63,12 @@
   letter-spacing: -0.01em;
   font-weight: var(--fw-bold);
 }
+/* A counting figure carries its number twice: the span that animates, and an
+   `.sr-only` copy holding the settled value for a screen reader. Both are real
+   text, so a reader dragging across "4개" was copying "44개". Taking the moving
+   half out of the selection leaves exactly one number on the clipboard — the
+   final one, since the `.sr-only` copy is the half that never animates. */
+.ui-figure > [aria-hidden='true'] { user-select: none; }
 
 /* ==========================================================================
    Section heading
@@ -55,7 +81,9 @@
 .ui-section-heading { display: grid; gap: var(--s-3); }
 .ui-section-heading.center { justify-items: center; text-align: center; }
 .ui-section-heading .eyebrow {
-  color: var(--blue-500);
+  /* blue-500 on the pale section grounds measured 4.3:1, which is under AA at
+     this size; blue-600 is the same hue one step down and clears it. */
+  color: var(--blue-600);
   font-size: var(--t-caption);
   font-weight: var(--fw-bold);
   letter-spacing: 0;
@@ -107,8 +135,29 @@
 .ui-btn.xs { height: var(--h-xs); padding: 0 var(--s-3); font-size: var(--t-caption); border-radius: var(--r-xs); }
 .ui-btn.block { display: flex; width: 100%; }
 
-.ui-btn.primary   { background: var(--blue-500); color: var(--ink-on); }
-.ui-btn.primary:hover:not(:disabled)   { background: var(--blue-600); }
+/* A flat fill and a gradient fill are the same colour; the difference is that
+   one of them has a light source. The ramp here is three percent top to bottom —
+   invisible as a gradient, and the whole reason the button reads as a raised
+   object rather than a coloured rectangle. The lip along its top edge is the
+   same trick a raised card uses. */
+.ui-btn.primary {
+  background: linear-gradient(180deg, var(--blue-500), var(--blue-600));
+  color: var(--ink-on);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(14, 54, 88, 0.24);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ui-btn.primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--blue-600), var(--blue-700));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 12px rgba(14, 54, 88, 0.26);
+    transform: translateY(-1px);
+  }
+}
+/* The press cancels the lift before it scales, so a button never appears to dip
+   from somewhere above where it started. */
+.ui-btn.primary:active:not(:disabled) {
+  transform: scale(var(--press));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 2px rgba(14, 54, 88, 0.2);
+}
 
 .ui-btn.secondary { background: var(--surface-2); color: var(--ink); }
 .ui-btn.secondary:hover:not(:disabled) { background: var(--surface-3); }
@@ -131,7 +180,9 @@
   font-size: 1.05em;
   transition: transform var(--dur) var(--ease-out);
 }
-.ui-btn:hover:not(:disabled) .ui-btn-glyph { transform: translateX(2px); }
+@media (hover: hover) and (pointer: fine) {
+  .ui-btn:hover:not(:disabled) .ui-btn-glyph { transform: translateX(3px); }
+}
 
 /* Busy state. The label is swapped by the component rather than overlaid, so
    the button keeps its width and the page does not jump. */
@@ -167,7 +218,11 @@
 .ui-card.pad-lg { padding: var(--s-8); }
 .ui-card.pad-none { padding: 0; }
 
-.ui-card.raised   { box-shadow: var(--sh-2); }
+/* The lip is the hairline of light along a raised surface's top edge. Without it
+   a white card on a near-white page is a flat patch that happens to have a
+   shadow under it; with it the eye reads an edge, and the card sits *on* the
+   page rather than being printed into it. */
+.ui-card.raised   { box-shadow: var(--sh-lip), var(--sh-2); }
 .ui-card.bordered { box-shadow: inset 0 0 0 1px var(--line); }
 .ui-card.flat     { background: var(--surface-2); }
 .ui-card.tint     { background: var(--tint, var(--tint-sky)); }
@@ -187,8 +242,14 @@
     box-shadow var(--dur) var(--ease-out),
     background var(--dur) var(--ease-out);
 }
-.ui-card.interactive:hover  { transform: translateY(-3px); box-shadow: var(--sh-3); }
-.ui-card.interactive:active { transform: translateY(0) scale(0.995); box-shadow: var(--sh-1); }
+/* The lift is for a cursor. A touch screen has no hover to leave, so on a phone
+   the browser applies `:hover` on tap and keeps it applied — the card a reader
+   last touched stays raised behind whatever opened. `(hover: hover)` asks the
+   device whether hovering is a thing it can do. */
+@media (hover: hover) and (pointer: fine) {
+    .ui-card.interactive:hover { transform: translateY(-3px); box-shadow: var(--sh-lip), var(--sh-3); }
+}
+.ui-card.interactive:active { transform: translateY(0) scale(0.995); box-shadow: var(--sh-1); transition-duration: var(--dur-fast); }
 
 /* ==========================================================================
    Row — the reference's dominant affordance
@@ -213,13 +274,16 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
-.ui-row:hover  { background: var(--grey-50); }
+@media (hover: hover) and (pointer: fine) {
+  .ui-row:hover { background: var(--grey-50); }
+  .ui-row.static:hover { background: var(--surface); }
+  .ui-row.plain:hover { background: var(--surface-2); }
+}
 .ui-row:active { transform: scale(0.99); }
 .ui-row.static { cursor: default; }
-.ui-row.static:hover { background: var(--surface); }
+.ui-row.static:active { transform: none; }
 .ui-row.on-tint { background: var(--surface); }
 .ui-row.plain   { background: transparent; }
-.ui-row.plain:hover { background: var(--surface-2); }
 
 .ui-row-body { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
 .ui-row-body > b {
@@ -246,7 +310,12 @@
   font-size: var(--t-lg);
   transition: transform var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
 }
-.ui-row:hover .ui-row-chevron { transform: translateX(2px); color: var(--ink-3); }
+/* The chevron is the row's only moving part, and it is most of the difference
+   between a list that answers and a picture of a list. Guarded, because on a
+   touch screen the shifted state sticks to whatever was last tapped. */
+@media (hover: hover) and (pointer: fine) {
+  .ui-row:hover:not(.static) .ui-row-chevron { transform: translateX(3px); color: var(--ink-3); }
+}
 
 /* A stack of rows inside one card, hairlines between rather than around. */
 .ui-row-group { display: grid; gap: var(--s-2); }
@@ -310,6 +379,8 @@
    row. The padding is bled out so the first and last chip touch the page edge
    the way a native scroller does. */
 .ui-chip-rail {
+  /* how far the mask below fades an edge that has chips behind it */
+  --rail-fade: 30px;
   display: flex;
   gap: var(--s-2);
   overflow-x: auto;
@@ -323,6 +394,23 @@
 }
 .ui-chip-rail::-webkit-scrollbar { display: none; }
 .ui-chip-rail > * { flex: 0 0 auto; }
+
+/* The edges that have chips behind them, faded so a half-cut pill reads as
+   "there is more this way" rather than as a clipped layout. `ChipRail` measures
+   and publishes `data-edge`; a rail with nothing hidden is not masked at all,
+   so a switcher that fits is never dimmed at its ends. */
+.ui-chip-rail[data-edge='start'] {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--rail-fade));
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--rail-fade));
+}
+.ui-chip-rail[data-edge='end'] {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 var(--rail-fade));
+  mask-image: linear-gradient(to left, transparent 0, #000 var(--rail-fade));
+}
+.ui-chip-rail[data-edge='both'] {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--rail-fade), #000 calc(100% - var(--rail-fade)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--rail-fade), #000 calc(100% - var(--rail-fade)), transparent 100%);
+}
 
 .ui-avatar {
   display: inline-flex;
@@ -443,9 +531,14 @@
   justify-content: center;
   padding: var(--s-6);
   background: rgba(25, 31, 40, 0.44);
-  backdrop-filter: blur(3px);
-  animation: ui-fade var(--dur) var(--ease-out);
+  backdrop-filter: saturate(120%) blur(4px);
+  /* The ground goes out of focus as it darkens rather than after it: animating
+     the blur with the tint is what makes the page recede instead of dim. */
+  animation: ui-backdrop-in var(--dur-slow) var(--ease-out);
   overscroll-behavior: contain;
+}
+@keyframes ui-backdrop-in {
+  from { opacity: 0; backdrop-filter: saturate(100%) blur(0px); }
 }
 
 .ui-modal {
@@ -456,8 +549,10 @@
   max-height: min(88vh, 900px);
   border-radius: var(--r-xl);
   background: var(--surface);
-  box-shadow: var(--sh-4);
-  animation: ui-modal-in var(--dur-slow) var(--ease);
+  box-shadow: var(--sh-lip), var(--sh-4);
+  /* Spring, not ease: a dialog is a thing that arrived, and the few percent of
+     overshoot is the difference between it landing and it being pasted on. */
+  animation: ui-modal-in 0.42s var(--ease-spring);
 }
 .ui-modal.w-sm { --modal-w: 440px; }
 .ui-modal.w-md { --modal-w: 560px; }
@@ -508,6 +603,46 @@
   pointer-events: none;
 }
 
+/* The same argument at the other end. The body scrolls under the head too, and
+   with a hard edge the first thing on screen is a row of Korean sliced through
+   the middle — on the entry editor it was a property label reading as four
+   broken glyphs. The head is opaque, so this only has to soften the last few
+   pixels below it. */
+.ui-modal-head { position: relative; }
+.ui-modal-head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 18px;
+  background: linear-gradient(to bottom, var(--surface), color-mix(in srgb, var(--surface) 0%, transparent));
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   A short viewport
+   --------------------------------------------------------------------------
+   A phone turned sideways is 390px tall, and a laptop with a browser toolbar
+   and a dock is not much better. The dialog is capped at 88vh, so at 390px it
+   has 343px to hold a head, a body and a commit bar — and the head alone, with
+   its 52px icon, its title, its description and 28px of padding above it, took
+   150px of that. The entry editor arrived with two visible lines of the field
+   it exists to edit.
+
+   Nothing is removed that carries information a reader needs to act: the
+   description under a dialog title restates what the title says, and it is the
+   first thing to go.
+   -------------------------------------------------------------------------- */
+@media (max-height: 560px) {
+  .ui-modal { max-height: 94svh; }
+  .ui-modal-head { padding: var(--s-4) var(--s-5) var(--s-3); }
+  .ui-modal-head .ui-text { display: none; }
+  .ui-modal-body { padding-bottom: var(--s-4); }
+  .ui-modal-foot { padding: var(--s-3) var(--s-5); }
+  .ui-modal-head::after { height: 12px; }
+}
+
 .ui-modal-close {
   flex: 0 0 auto;
   display: flex;
@@ -530,9 +665,8 @@
 /* The grab handle only exists in sheet mode, so it is hidden until then. */
 .ui-sheet-handle { display: none; }
 
-@keyframes ui-fade { from { opacity: 0; } }
 @keyframes ui-modal-in {
-  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
 }
 @keyframes ui-sheet-in {
   from { transform: translateY(100%); }
@@ -546,7 +680,7 @@
     max-height: 92svh;
     border-radius: var(--r-xl) var(--r-xl) 0 0;
     /* the home indicator on a phone sits under the footer otherwise */
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: var(--safe-b);
     animation: ui-sheet-in var(--dur-slow) var(--ease);
   }
   .ui-modal.w-sm, .ui-modal.w-md, .ui-modal.w-lg, .ui-modal.w-xl { --modal-w: 100%; }
@@ -563,6 +697,12 @@
   .ui-modal-head { padding: var(--s-5) var(--s-5) var(--s-4); }
   .ui-modal-body { padding: 0 var(--s-5) var(--s-5); }
   .ui-modal-foot { padding: var(--s-4) var(--s-5); border-radius: 0; }
+  /* A sheet is full-bleed, so in landscape its own padding is all that keeps a
+     row off the notch. Written after the three shorthands above so it wins. */
+  .ui-modal-head, .ui-modal-body, .ui-modal-foot {
+    padding-left: max(var(--s-5), var(--safe-l));
+    padding-right: max(var(--s-5), var(--safe-r));
+  }
   /* a sheet's footer is a commit bar: the primary action goes full width */
   .ui-modal-foot.stack { flex-direction: column-reverse; align-items: stretch; }
   .ui-modal-foot.stack > .spacer { display: none; }
@@ -592,7 +732,15 @@
 .ui-cluster.between { justify-content: space-between; }
 
 .ui-section { padding-block: var(--section-gap); }
-.ui-container { width: 100%; max-width: var(--page-max); margin-inline: auto; padding-inline: var(--page-pad); }
+.ui-container {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  /* `max(pad, inset)` rather than `pad + inset`: on a landscape phone the notch is wider than the
+     gutter and the text has to clear it, and everywhere else the inset is 0 and the gutter stands. */
+  padding-left: var(--page-pad-l);
+  padding-right: var(--page-pad-r);
+}
 
 .ui-divider { height: 1px; border: 0; margin: 0; background: var(--line-soft); }
 
@@ -630,9 +778,10 @@
   height: 56px;
   border-radius: var(--r-md);
   background: var(--surface-2);
-  color: var(--grey-400);
+  color: var(--ink-4);
   font-size: 24px;
 }
+.ui-empty > .glyph > .ui-icon { width: 26px; height: 26px; }
 
 /* ==========================================================================
    Focus
@@ -649,6 +798,18 @@
   outline: 2px solid var(--blue-500);
   outline-offset: 2px;
 }
+
+/*
+ * A soft halo outside the ring was tried here and taken out again. `box-shadow`
+ * is a single property: adding one to `:focus-visible` does not layer a glow
+ * over a control, it *replaces* whatever shadow that control was already using —
+ * so a focused primary button lost the inset lip and the drop that make it read
+ * as raised, and went flat the moment it was tabbed to. Composing the two would
+ * mean driving every control's shadow through a custom property, and custom
+ * properties do not interpolate, which would trade a smooth hover for a glow.
+ * The 2px ring already clears the contrast requirement on every ground in the
+ * product; the glow was never worth what it cost.
+ */
 
 @media (prefers-reduced-motion: reduce) {
   .ui-modal, .ui-modal-backdrop, .ui-skeleton { animation: none; }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Avatar, Button, Field, Input, Modal } from '../ui';
+import { Avatar, Button, Field, IconPlus, IconSearch, IconSettings, Input, Modal } from '../ui';
 import { useScrolled } from './context';
 import type { SessionUser } from '../WorkspaceClient';
 
@@ -117,17 +117,17 @@ export default function AppHeader({
 
         <div className="topbar-actions">
           <button className="icon-button search-compact" type="button" onClick={onSearch} aria-label="업무 또는 담당자 검색" title="검색 (⌘/Ctrl K)">
-            <span aria-hidden="true">⌕</span>
+            <IconSearch />
           </button>
 
           <button className="search-button" type="button" onClick={onSearch}>
-            <span aria-hidden="true">⌕</span>
+            <IconSearch />
             <span>업무 또는 담당자 검색</span>
             <kbd>⌘/Ctrl K</kbd>
           </button>
 
           <button className="add-task-button" type="button" onClick={onAddTask} aria-label="새 일정 추가" title="새 일정 추가">
-            <span aria-hidden="true">＋</span>
+            <IconPlus />
             <b>일정 추가</b>
           </button>
 
@@ -169,8 +169,8 @@ export default function AppHeader({
                   <span>직번 {user.employeeId}</span>
                 </div>
                 {user.role === 'admin' && (
-                  <button type="button" onClick={() => { setProfileOpen(false); onManageMembers(); }}>
-                    <span aria-hidden="true">⚙</span> 파트 · 담당자 관리
+                  <button className="manage-members-button" type="button" onClick={() => { setProfileOpen(false); onManageMembers(); }}>
+                    <IconSettings /> 파트 · 담당자 관리
                   </button>
                 )}
                 <button className="logout-button" type="button" onClick={signOut} disabled={signingOut}>

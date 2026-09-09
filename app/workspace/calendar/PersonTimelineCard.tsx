@@ -68,9 +68,11 @@ export default function PersonTimelineCard({
   color,
   onPerson,
   onTask,
+  activeMonth,
 }: {
   person: Person;
   color: string;
+  activeMonth?: number;
   onPerson?: () => void;
   onTask?: (task: Task, person: Person) => void;
 }) {
@@ -85,7 +87,7 @@ export default function PersonTimelineCard({
         {onPerson && <i aria-hidden="true">›</i>}
       </button>
 
-      <MonthStrip person={person} color={color} />
+      <MonthStrip person={person} color={color} activeMonth={activeMonth} />
 
       <ul className="timeline-tasks">
         {person.tasks.map((task) => {

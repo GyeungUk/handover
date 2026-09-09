@@ -351,6 +351,23 @@ export function taskLengthLabel(task: Task) {
   return `${days}일`;
 }
 
+/**
+ * How many of these people are on something in each of the 48 weeks.
+ *
+ * Counted off `taskTrack`, so a week is busy for a person when the calendars draw them as busy —
+ * a task whose days are settled counts on those days rather than on the window it was planned in.
+ * A person with three overlapping tasks in a week counts once: this is "how many people", which is
+ * the only reading of a bar chart of a department that means anything.
+ *
+ * Used by the landing's year chart and by the year track's week scrubber, which have to agree —
+ * they are the same picture at two sizes, and two copies of this arithmetic would eventually not.
+ */
+export function weeklyLoad(people: Person[]) {
+  const spans = people.map((person) => person.tasks.map(taskTrack));
+  return Array.from({ length: WEEKS_IN_YEAR }, (_, week) =>
+    spans.filter((tasks) => tasks.some((span) => week >= span.start && week < span.start + span.duration)).length);
+}
+
 export type TaskPhase = 'done' | 'active' | 'upcoming';
 
 /**

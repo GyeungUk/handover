@@ -44,6 +44,7 @@ export default function PartsSection({
         <SectionHeading
           eyebrow="파트별 바로가기"
           title="담당 업무를 바로 확인하세요"
+          titleId="parts-title"
           sub="파트의 연간 흐름과 담당자별 세부 일정을 한 단계에서 바로 열 수 있습니다."
           as="h2"
           align="start"

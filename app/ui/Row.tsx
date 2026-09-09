@@ -36,15 +36,35 @@ export default function Row({
   tone = 'default',
   className = '',
   style,
-}: RowProps & { onClick: () => void; ariaLabel?: string; disabled?: boolean }) {
+  id,
+  role,
+  selected,
+}: RowProps & {
+  onClick: () => void;
+  ariaLabel?: string;
+  disabled?: boolean;
+  /* A row inside a listbox is an option, and the box that owns it points at the
+     one currently chosen by `aria-activedescendant` — which needs an id here.
+     Search is the only caller so far; every other list leaves all three unset
+     and renders exactly the plain button it always did. */
+  id?: string;
+  role?: 'option';
+  selected?: boolean;
+}) {
   return (
     <button
       type="button"
-      className={`ui-row ${tone === 'plain' ? 'plain' : ''} ${className}`}
+      id={id}
+      role={role}
+      aria-selected={role === 'option' ? Boolean(selected) : undefined}
+      className={`ui-row ${tone === 'plain' ? 'plain' : ''} ${selected ? 'is-active' : ''} ${className}`}
       style={style}
       onClick={onClick}
       aria-label={ariaLabel}
       disabled={disabled}
+      /* Keyboard drives this list from the input above it; a row must not become
+         a tab stop of its own or Tab would walk twenty options. */
+      tabIndex={role === 'option' ? -1 : undefined}
     >
       {leading}
       <span className="ui-row-body">

@@ -5,7 +5,18 @@ import { documentLimits, type EntryAttachment, type EntryFormatting, type Handov
 import { AttachmentAction, CategoryIcon } from './atoms';
 import { type CategoryMeta, defaultFormatting, fontStack } from './categories';
 import { fileKind, formatBytes, plainText } from './format';
-import { Button, Modal } from '../ui';
+import {
+  Button,
+  IconAlignCenter,
+  IconAlignLeft,
+  IconBulletList,
+  IconNumberList,
+  IconRedo,
+  IconTable,
+  IconUndo,
+  IconUpload,
+  Modal,
+} from '../ui';
 
 export default function EntryEditor({ category, entry, onSave, onClose }: { category: CategoryMeta; entry?: HandoverEntry; onSave: (title: string, detail: string, properties: Record<string, string>, formatting: EntryFormatting, attachments: EntryAttachment[]) => void; onClose: () => void }) {
   const [title, setTitle] = useState(entry?.title ?? '');
@@ -119,7 +130,6 @@ export default function EntryEditor({ category, entry, onSave, onClose }: { cate
         <h2 className="ui-h2" id="ho-editor-title">{category.label}</h2>
         <p className="ui-text sm muted">{category.description}</p>
       </div>
-      <span className="ho-autosave"><i /> 임시 저장됨</span>
       <button className="ui-modal-close" type="button" onClick={discardAndClose} aria-label="닫기">×</button>
     </header>}
     labelledBy="ho-editor-title"
@@ -146,17 +156,17 @@ export default function EntryEditor({ category, entry, onSave, onClose }: { cate
           <button type="button" className="underline" title="밑줄" aria-label="밑줄" onMouseDown={(event) => runCommand(event, 'underline')}>U</button>
           <button type="button" className="highlight" title="형광펜" aria-label="형광펜" onMouseDown={(event) => runCommand(event, 'backColor', '#fff0a8')}>A</button>
           <i />
-          <button type="button" title="왼쪽 정렬" aria-label="왼쪽 정렬" onMouseDown={(event) => runCommand(event, 'justifyLeft')}>≡</button>
-          <button type="button" title="가운데 정렬" aria-label="가운데 정렬" onMouseDown={(event) => runCommand(event, 'justifyCenter')}>≣</button>
-          <button type="button" title="글머리 기호" aria-label="글머리 기호" onMouseDown={(event) => runCommand(event, 'insertUnorderedList')}>•≡</button>
-          <button type="button" title="번호 목록" aria-label="번호 목록" onMouseDown={(event) => runCommand(event, 'insertOrderedList')}>1≡</button>
+          <button type="button" title="왼쪽 정렬" aria-label="왼쪽 정렬" onMouseDown={(event) => runCommand(event, 'justifyLeft')}><IconAlignLeft /></button>
+          <button type="button" title="가운데 정렬" aria-label="가운데 정렬" onMouseDown={(event) => runCommand(event, 'justifyCenter')}><IconAlignCenter /></button>
+          <button type="button" title="글머리 기호" aria-label="글머리 기호" onMouseDown={(event) => runCommand(event, 'insertUnorderedList')}><IconBulletList /></button>
+          <button type="button" title="번호 목록" aria-label="번호 목록" onMouseDown={(event) => runCommand(event, 'insertOrderedList')}><IconNumberList /></button>
           <i />
-          <button type="button" className="table-button" title="진행 현황 표 삽입" onMouseDown={insertStatusTable}><span>▦</span> 표 삽입</button>
-          <button type="button" title="실행 취소" aria-label="실행 취소" onMouseDown={(event) => runCommand(event, 'undo')}>↶</button>
-          <button type="button" title="다시 실행" aria-label="다시 실행" onMouseDown={(event) => runCommand(event, 'redo')}>↷</button>
+          <button type="button" className="table-button" title="진행 현황 표 삽입" aria-label="진행 현황 표 삽입" onMouseDown={insertStatusTable}><IconTable /><span>표 삽입</span></button>
+          <button type="button" title="실행 취소" aria-label="실행 취소" onMouseDown={(event) => runCommand(event, 'undo')}><IconUndo /></button>
+          <button type="button" title="다시 실행" aria-label="다시 실행" onMouseDown={(event) => runCommand(event, 'redo')}><IconRedo /></button>
         </div>
         <div ref={editorRef} className="ho-rich-editor" contentEditable suppressContentEditableWarning role="textbox" aria-label="인수인계 본문" aria-multiline="true" aria-required="true" tabIndex={0} data-placeholder="다음 담당자가 바로 업무를 이어갈 수 있도록 내용을 작성하세요. 표, 목록, 강조 서식을 함께 사용할 수 있습니다." style={{ fontFamily: fontStack(formatting.fontFamily), fontSize: `${formatting.fontSize}px` }} onInput={syncEditorValue} />
-        <div className="ho-editor-status"><span>▦ 표 삽입 가능</span><span>{contentLength}자</span></div>
+        <div className="ho-editor-status"><span><IconTable /> 표 삽입 가능</span><span>{contentLength}자</span></div>
       </div>
       <div className="ho-attach-block">
         <div className="ho-document-label"><span>첨부파일</span><small>최대 {documentLimits.attachmentsPerEntry}개 · 파일당 {formatBytes(documentLimits.attachmentBytes)}까지</small></div>
@@ -166,7 +176,7 @@ export default function EntryEditor({ category, entry, onSave, onClose }: { cate
           onDragLeave={() => setDropActive(false)}
           onDrop={(event) => { event.preventDefault(); setDropActive(false); addFiles(event.dataTransfer.files); }}
         >
-          <span className="ho-dropzone-icon" aria-hidden="true">⇪</span>
+          <span className="ho-dropzone-icon" aria-hidden="true"><IconUpload /></span>
           <p><b>파일을 끌어다 놓으세요</b><small>공문, 서식, 명단, 화면 캡처 등 이 항목과 관련된 자료를 함께 남길 수 있습니다.</small></p>
           <button type="button" onClick={() => fileInputRef.current?.click()}>파일 선택</button>
           <input ref={fileInputRef} type="file" multiple hidden onChange={(event) => { addFiles(event.target.files); event.target.value = ''; }} />

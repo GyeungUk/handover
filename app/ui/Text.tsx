@@ -1,4 +1,7 @@
+'use client';
+
 import type { ElementType, ReactNode } from 'react';
+import { useCountUp } from './useCountUp';
 
 type TextTone = 'default' | 'strong' | 'muted';
 type TextSize = 'lg' | 'body' | 'sm' | 'caption';
@@ -19,8 +22,8 @@ export function H1({ as: Tag = 'h1', children, className = '' }: { as?: ElementT
   return <Tag className={`ui-h1 ${className}`}>{children}</Tag>;
 }
 
-export function H2({ as: Tag = 'h2', children, className = '' }: { as?: ElementType; children: ReactNode; className?: string }) {
-  return <Tag className={`ui-h2 ${className}`}>{children}</Tag>;
+export function H2({ as: Tag = 'h2', id, children, className = '' }: { as?: ElementType; id?: string; children: ReactNode; className?: string }) {
+  return <Tag className={`ui-h2 ${className}`} id={id}>{children}</Tag>;
 }
 
 export function H3({ as: Tag = 'h3', children, className = '' }: { as?: ElementType; children: ReactNode; className?: string }) {
@@ -40,8 +43,39 @@ export function Text({
 }
 
 /** Tabular numerals, so a column of figures lines up on the decimal. */
-export function Figure({ children, className = '' }: { children: ReactNode; className?: string }) {
+/**
+ * A number, in tabular figures.
+ *
+ * `count` makes it arrive by counting rather than by appearing — see `useCountUp` for why that is
+ * worth doing and when it declines to. It is opt-in because most figures in the product sit inside
+ * a table or a row where a moving number would be noise; it belongs on the handful that a reader
+ * is meant to look *at* rather than read past.
+ */
+export function Figure({ children, count = false, className = '' }: { children: ReactNode; count?: boolean; className?: string }) {
+  if (count && typeof children === 'number') {
+    return <CountingFigure value={children} className={className} />;
+  }
   return <span className={`ui-figure ${className}`}>{children}</span>;
+}
+
+function CountingFigure({ value, className }: { value: number; className: string }) {
+  const counting = useCountUp<HTMLSpanElement>(value, { delay: 220 });
+  /*
+   * The final value is what a screen reader is given, and what a copy-paste picks up: the count is
+   * a visual event, not a change in what the number is. Announcing every frame of it would be
+   * unreadable, which is what `aria-hidden` on the moving half is for. Both halves render the real
+   * number, so the server's markup and a client with no JavaScript are simply correct.
+   *
+   * Two halves means the number is in the document twice, and a selection dragged across it was
+   * taking both — "4개" copied as "44개". `primitives.css` keeps the moving half out of the
+   * selection, which leaves the settled `.sr-only` copy as the one thing on the clipboard.
+   */
+  return (
+    <span className={`ui-figure ${className}`}>
+      <span ref={counting} aria-hidden="true">{value}</span>
+      <span className="sr-only">{value}</span>
+    </span>
+  );
 }
 
 /**
@@ -54,6 +88,7 @@ export function Figure({ children, className = '' }: { children: ReactNode; clas
 export function SectionHeading({
   eyebrow,
   title,
+  titleId,
   sub,
   align = 'center',
   as = 'h2',
@@ -61,6 +96,8 @@ export function SectionHeading({
 }: {
   eyebrow?: ReactNode;
   title: ReactNode;
+  /** Names the section this heading opens, for a `<section aria-labelledby>`. */
+  titleId?: string;
   sub?: ReactNode;
   align?: 'center' | 'start';
   as?: ElementType;
@@ -69,7 +106,7 @@ export function SectionHeading({
   return (
     <div className={`ui-section-heading ${align === 'center' ? 'center' : ''} ${className}`}>
       {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-      <H2 as={as}>{title}</H2>
+      <H2 as={as} id={titleId}>{title}</H2>
       {sub && <p className="sub">{sub}</p>}
     </div>
   );

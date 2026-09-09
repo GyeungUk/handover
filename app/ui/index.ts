@@ -26,3 +26,25 @@ export { Avatar, Badge, Chip, ChipRail, Empty, Skeleton, Stat, StatGroup } from 
 export type { BadgeTone } from './Display';
 
 export { Cluster, Container, Divider, ScrollX, Section, Stack } from './Layout';
+
+export {
+  IconAlignCenter,
+  IconAlignLeft,
+  IconArchive,
+  IconBulletList,
+  IconCalendarLines,
+  IconLayers,
+  IconMail,
+  IconPaperclip,
+  IconPlus,
+  IconPrint,
+  IconRefresh,
+  IconSearch,
+  IconSettings,
+  IconNumberList,
+  IconRedo,
+  IconSparkle,
+  IconTable,
+  IconUndo,
+  IconUpload,
+} from './icons';

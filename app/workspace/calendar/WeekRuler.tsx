@@ -1,7 +1,7 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
-import { WEEKS_IN_YEAR, months } from '../../org-data';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { WEEKS_IN_YEAR, months, weekLabel } from '../../org-data';
 import { useToday } from '../context';
 
 /* ==========================================================================
@@ -60,13 +60,62 @@ export function WeekHeader({ lead }: { lead: string }) {
 /**
  * Wraps the header and rows so the this-week column can run through all of them
  * at once, rather than each row drawing its own segment of it.
+ *
+ * It is also what makes the track readable at a particular week. Forty-eight
+ * columns across twelve rows is a shape you can see and a fact you cannot: a
+ * reader could tell that August looked busy and had no way to find out which
+ * week of it, or how many people, without counting bars across a 20px column.
+ * Pointing at the track now names the week under the pointer and says how many
+ * people are on something that week — the two questions the picture raises.
+ *
+ * `busyByWeek` is optional, and without it the scrubber does not exist: a part
+ * or a person's own track is small enough to read directly, and a column
+ * following the pointer there would be noise.
  */
-export function CalendarBody({ children }: { children: ReactNode }) {
+export function CalendarBody({ busyByWeek, children }: { busyByWeek?: number[]; children: ReactNode }) {
   const { week } = useToday();
+  const [at, setAt] = useState<number | null>(null);
+  const body = useRef<HTMLDivElement>(null);
+
+  /* The lead column is a fixed width and the 48 weeks share what is left, so the
+     week under the pointer is that remainder divided up — the same arithmetic
+     `.today-column` positions itself with, read backwards. */
+  const weekAt = (clientX: number) => {
+    const node = body.current;
+    if (!node) return null;
+    const box = node.getBoundingClientRect();
+    const lead = parseFloat(getComputedStyle(node).getPropertyValue('--calendar-lead')) || 0;
+    const track = box.width - lead;
+    if (track <= 0) return null;
+    const offset = clientX - box.left - lead;
+    if (offset < 0 || offset >= track) return null;
+    return Math.min(WEEKS_IN_YEAR - 1, Math.floor((offset / track) * WEEKS_IN_YEAR));
+  };
+
+  /* Pointer only. A finger has no hover, and a touch that moved the column would
+     be a touch the reader meant as a scroll. */
+  const track = busyByWeek
+    ? {
+      onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+        if (event.pointerType !== 'mouse') return;
+        setAt(weekAt(event.clientX));
+      },
+      onPointerLeave: () => setAt(null),
+    }
+    : {};
+
+  const reading = at === null ? null : { week: at, busy: busyByWeek?.[at] ?? 0 };
+
   return (
-    <div className="calendar-body">
+    <div className="calendar-body" ref={body} {...track}>
       {children}
       {week !== null && <span className="today-column" style={{ '--start': week } as CSSProperties} />}
+      {reading && (
+        <span className="week-scrubber" style={{ '--start': reading.week } as CSSProperties} aria-hidden="true">
+          <b>{weekLabel(reading.week)}</b>
+          <em>{reading.busy}명</em>
+        </span>
+      )}
     </div>
   );
 }

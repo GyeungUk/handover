@@ -1,4 +1,4 @@
-import { Field, Input, Text } from '../ui';
+import { Field, IconMail, Input, Text } from '../ui';
 
 export const digitsOnly = (value: string) => value.replace(/[^0-9]/g, '');
 
@@ -116,7 +116,7 @@ export function IdentifiedAs({ employeeId }: { employeeId: string }) {
 export function DeliveryNote({ maskedEmail }: { maskedEmail: string }) {
   return (
     <div className="auth-note">
-      <span className="glyph" aria-hidden="true">✉</span>
+      <span className="glyph" aria-hidden="true"><IconMail size={18} /></span>
       <div>
         <b>{maskedEmail}</b>
         <Text size="caption">이 주소로 6자리 인증번호를 보냅니다.</Text>
